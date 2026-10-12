@@ -177,7 +177,7 @@ export function PrView({ detail, onReload }: { detail: ReviewSetDetail; onReload
                 items={items}
                 options={options}
                 renderAnnotation={renderAnnotation}
-                style={{ height: '100%' }}
+                style={{ height: '100%', overflow: 'auto' }}
               />
             ) : (
               <div className="empty-state">There are no reviewable file changes in this pull request.</div>
