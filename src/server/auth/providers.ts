@@ -334,9 +334,26 @@ export function logout(ctx: Ctx): Response {
   return json({ ok: true }, 200, { 'Set-Cookie': endSession(ctx.req) });
 }
 
+function manageUrlFor(connection: ForgeConnectionRow): string | null {
+  if (connection.kind === 'github') {
+    return config.githubClientId ? `https://github.com/settings/connections/applications/${config.githubClientId}` : null;
+  }
+  if (connection.kind === 'forgejo') return `${connection.base_url}/user/settings/applications`;
+  if (connection.kind === 'ado') return `${connection.base_url}/_usersSettings/tokens`;
+  return null;
+}
+
 function connectionInfo(connection: ForgeConnectionRow): ForgeConnectionInfo {
   const host = new URL(connection.base_url).host;
-  return { id: connection.id, kind: connection.kind, baseUrl: connection.base_url, host, login: connection.login, avatarUrl: connection.avatar_url };
+  return {
+    id: connection.id,
+    kind: connection.kind,
+    baseUrl: connection.base_url,
+    host,
+    login: connection.login,
+    avatarUrl: connection.avatar_url,
+    manageUrl: manageUrlFor(connection),
+  };
 }
 
 export function me(ctx: Ctx): Response {

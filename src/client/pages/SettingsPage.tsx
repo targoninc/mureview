@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Avatar, Button, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
-import { MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon, CloudIcon, TrashIcon } from '@primer/octicons-react';
+import { MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon, CloudIcon, ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
 import { AdoForm, AtprotoForm, ForgejoForm } from '../components/Login';
@@ -92,6 +92,19 @@ export function SettingsPage() {
                   </div>
                   <div className="row">
                     <Label variant="secondary">{forgeLabel[connection.kind]}</Label>
+                    {connection.manageUrl ? (
+                      <Button
+                        as="a"
+                        href={connection.manageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        size="small"
+                        variant="invisible"
+                        leadingVisual={ShieldIcon}
+                      >
+                        Manage access
+                      </Button>
+                    ) : null}
                     <Button
                       size="small"
                       leadingVisual={TrashIcon}

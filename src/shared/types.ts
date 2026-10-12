@@ -21,6 +21,7 @@ export interface ForgeConnectionInfo {
   host: string;
   login: string;
   avatarUrl: string;
+  manageUrl: string | null;
 }
 
 export interface MeResponse {
