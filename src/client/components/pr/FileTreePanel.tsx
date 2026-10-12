@@ -31,7 +31,16 @@ const treeTheme = {
   '--trees-theme-scrollbar-thumb': 'var(--borderColor-muted)',
 } as CSSProperties;
 
-export function FileTreePanel({ pr, onSelectItem }: { pr: PrStatus; onSelectItem: (itemId: string) => void }) {
+const composition = { contextMenu: { enabled: true, triggerMode: 'right-click' as const } };
+
+interface FileTreePanelProps {
+  pr: PrStatus;
+  reviewedItems: Set<string>;
+  onSelectItem: (itemId: string) => void;
+  onToggleReviewed: (itemId: string) => void;
+}
+
+export function FileTreePanel({ pr, reviewedItems, onSelectItem, onToggleReviewed }: FileTreePanelProps) {
   const entries = useMemo(() => {
     const list: { treePath: string; itemId: string; status: GitStatus }[] = [];
     for (const repo of pr.repos) {
@@ -46,15 +55,26 @@ export function FileTreePanel({ pr, onSelectItem }: { pr: PrStatus; onSelectItem
   const itemIdByTreePath = useMemo(() => new Map(entries.map((entry) => [entry.treePath, entry.itemId])), [entries]);
   const itemIdRef = useRef(itemIdByTreePath);
   itemIdRef.current = itemIdByTreePath;
+  const reviewedRef = useRef(reviewedItems);
+  reviewedRef.current = reviewedItems;
+  const toggleRef = useRef(onToggleReviewed);
+  toggleRef.current = onToggleReviewed;
 
   const paths = useMemo(() => entries.map((entry) => entry.treePath), [entries]);
   const gitStatus = useMemo<GitStatusEntry[]>(() => entries.map((entry) => ({ path: entry.treePath, status: entry.status })), [entries]);
+  const reviewedKey = useMemo(() => [...reviewedItems].sort().join('|'), [reviewedItems]);
 
   const { model } = useFileTree({
     paths,
     gitStatus,
     initialExpansion: 'open',
     density: 'compact',
+    composition,
+    renderRowDecoration: (context) => {
+      const itemId = itemIdRef.current.get(context.row.path);
+      if (!itemId || !reviewedRef.current.has(itemId)) return null;
+      return { parts: [{ text: '✓', color: 'var(--fgColor-success)' }], text: '✓', title: 'Reviewed' };
+    },
     onSelectionChange: (selected) => {
       const first = selected[0];
       const itemId = first ? itemIdRef.current.get(first) : undefined;
@@ -67,5 +87,37 @@ export function FileTreePanel({ pr, onSelectItem }: { pr: PrStatus; onSelectItem
     model.setGitStatus(gitStatus);
   }, [model, paths, gitStatus]);
 
-  return <FileTree model={model} className="file-tree-host" style={treeTheme} />;
+  useEffect(() => {
+    // Row decorations are captured at creation time; toggling the icon surface
+    // repaints the rows with the current reviewed state without disturbing the
+    // context-menu composition managed by the React wrapper.
+    model.setIcons(undefined);
+  }, [model, reviewedKey]);
+
+  return (
+    <FileTree
+      model={model}
+      className="file-tree-host"
+      style={treeTheme}
+      renderContextMenu={(item, context) => {
+        if (item.kind !== 'file') return null;
+        const itemId = itemIdRef.current.get(item.path);
+        if (!itemId) return null;
+        return (
+          <div className="tree-menu">
+            <button
+              type="button"
+              className="tree-menu-item"
+              onClick={() => {
+                context.close({ restoreFocus: false });
+                toggleRef.current(itemId);
+              }}
+            >
+              {reviewedRef.current.has(itemId) ? 'Mark as not reviewed' : 'Mark as reviewed'}
+            </button>
+          </div>
+        );
+      }}
+    />
+  );
 }

@@ -5,6 +5,7 @@ import { constants } from './config';
 import { db } from './db';
 import { type GithubCompareFile, compareCached, getBlobTextCached, getBranchCached, getTreeCached } from './github';
 import { addedFilePatch, countLines, withPatchHeader } from './patch';
+import { listReviewed } from './reviewed';
 import { compileRegex, githubErrorMessage, inspectRepos, multiMatchError } from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
@@ -129,6 +130,7 @@ function ensurePrLifecycle(reviewSetId: number, hasOpenRepos: boolean): PrLifecy
   if (existing) {
     db.run(`UPDATE pull_requests SET closed_at = datetime('now') WHERE id = ?`, [existing.id]);
     db.run('DELETE FROM comments WHERE pr_id = ?', [existing.id]);
+    db.run('DELETE FROM reviewed_files WHERE pr_id = ?', [existing.id]);
     return { prId: null, justClosed: true };
   }
   return { prId: null, justClosed: false };
@@ -166,14 +168,19 @@ export async function buildPrStatus(token: string, reviewSet: ReviewSet, fresh =
     zeroStats(),
   );
 
+  const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
   if (hasOpen && lifecycle) {
-    return { state: 'open', errors, repos, prId: lifecycle.prId, comments: lifecycle.prId ? listComments(lifecycle.prId) : [], stats };
+    return {
+      state: 'open',
+      errors,
+      repos,
+      prId: lifecycle.prId,
+      comments: lifecycle.prId ? listComments(lifecycle.prId) : [],
+      reviewed: lifecycle.prId ? listReviewed(lifecycle.prId) : [],
+      stats,
+    };
   }
-  if (matchedOk.length > 0) {
-    return { state: 'closed', errors, repos, prId: null, comments: [], stats: zeroStats() };
-  }
-  if (errors.length > 0) {
-    return { state: 'invalid', errors, repos, prId: null, comments: [], stats: zeroStats() };
-  }
-  return { state: 'empty', errors, repos, prId: null, comments: [], stats: zeroStats() };
+  if (matchedOk.length > 0) return { state: 'closed', errors, repos, ...empty };
+  if (errors.length > 0) return { state: 'invalid', errors, repos, ...empty };
+  return { state: 'empty', errors, repos, ...empty };
 }

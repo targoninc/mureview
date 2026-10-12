@@ -47,7 +47,7 @@ export function listComments(prId: number): Comment[] {
   return rows.map(toComment);
 }
 
-function loadOwnedPr(user: UserRow, id: number): PrRow {
+export function loadOwnedPr(user: UserRow, id: number): PrRow {
   const pr = db
     .query<PrRow, [number]>(
       `SELECT p.id, p.closed_at, r.owner_id FROM pull_requests p JOIN review_sets r ON r.id = p.review_set_id WHERE p.id = ?`,

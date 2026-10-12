@@ -2,6 +2,7 @@ import { handleCallback, handleLogin, handleLogout, handleMe, type UserRow } fro
 import { createCommentRoute, deleteCommentRoute, listCommentsRoute } from './comments';
 import { config } from './config';
 import { mergeReviewSet } from './merge';
+import { setReviewedRoute } from './reviewed';
 import { createReviewSet, deleteReviewSet, getReviewSet, listReviewSets, updateReviewSet } from './reviewSets';
 import { Router } from './router';
 
@@ -22,6 +23,7 @@ api.post('/api/review-sets/:id/merge', mergeReviewSet);
 api.get('/api/prs/:id/comments', listCommentsRoute);
 api.post('/api/prs/:id/comments', createCommentRoute);
 api.delete('/api/comments/:id', deleteCommentRoute);
+api.put('/api/prs/:id/reviewed', setReviewedRoute);
 
 export function handleApi(req: Request, path: string, user: UserRow | null) {
   return api.handle(req, path, user, new URL(config.baseUrl).origin);

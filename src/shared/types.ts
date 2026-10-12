@@ -64,6 +64,11 @@ export interface Comment {
   createdAt: string;
 }
 
+export interface ReviewMark {
+  repo: string;
+  path: string;
+}
+
 export interface CommentInput {
   repo: string | null;
   path: string | null;
@@ -78,6 +83,7 @@ export interface PrStatus {
   repos: RepoStatus[];
   prId: number | null;
   comments: Comment[];
+  reviewed: ReviewMark[];
   stats: { repos: number; files: number; additions: number; deletions: number };
 }
 

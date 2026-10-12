@@ -32,9 +32,10 @@ interface PrHeaderProps {
   onReload: (fresh?: boolean) => void;
   onMerge: () => void;
   merging: boolean;
+  reviewedCount: number;
 }
 
-export function PrHeader({ detail, onReload, onMerge, merging }: PrHeaderProps) {
+export function PrHeader({ detail, onReload, onMerge, merging, reviewedCount }: PrHeaderProps) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const state = stateVariant(pr.state);
@@ -56,7 +57,8 @@ export function PrHeader({ detail, onReload, onMerge, merging }: PrHeaderProps) 
               <>
                 Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'} into{' '}
                 <span className="mono">{reviewSet.targetBranch}</span> · {pr.stats.files} files{' '}
-                <span className="additions">+{pr.stats.additions}</span> <span className="deletions">−{pr.stats.deletions}</span>
+                <span className="additions">+{pr.stats.additions}</span> <span className="deletions">−{pr.stats.deletions}</span> ·{' '}
+                {reviewedCount}/{pr.stats.files} viewed
               </>
             ) : (
               <>

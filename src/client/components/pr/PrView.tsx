@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
-import { Button, Flash, useConfirm } from '@primer/react';
+import { Button, Checkbox } from '@primer/react';
 import { CommentDiscussionIcon, FileDiffIcon } from '@primer/octicons-react';
-import type { Comment, MergeResult, PrStatus, ReviewSetDetail } from '../../../shared/types';
-import { post } from '../../lib/api';
+import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
+import { put } from '../../lib/api';
 import { fileItemId } from '../../lib/format';
+import { MergeResultsFlash, useMerge } from './merge';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
 import { FileTreePanel } from './FileTreePanel';
@@ -42,24 +43,6 @@ function parseFiles(pr: PrStatus): ParsedFile[] {
   return parsed;
 }
 
-function MergeResultsFlash({ results }: { results: MergeResult[] }) {
-  const failed = results.filter((result) => !result.ok);
-  const variant = failed.length === 0 ? 'success' : failed.length === results.length ? 'danger' : 'warning';
-  return (
-    <Flash variant={variant}>
-      <strong>{failed.length === 0 ? 'Merge complete' : failed.length === results.length ? 'Merge failed' : 'Merge partially complete'}</strong>
-      <ul className="error-list">
-        {results.map((result) => (
-          <li key={`${result.repo}:${result.message}`}>
-            {result.repo ? <span className="mono">{result.repo}: </span> : null}
-            {result.message}
-          </li>
-        ))}
-      </ul>
-    </Flash>
-  );
-}
-
 interface PrViewProps {
   detail: ReviewSetDetail;
   onReload: (fresh?: boolean) => void;
@@ -71,12 +54,12 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
-  const [merging, setMerging] = useState(false);
-  const [mergeResults, setMergeResults] = useState<MergeResult[] | null>(null);
+  const [reviewed, setReviewed] = useState<Set<string>>(() => new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path))));
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null);
-  const confirm = useConfirm();
+  const { merge, merging, results: mergeResults } = useMerge(pr, reviewSet, onDetail);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
+  useEffect(() => setReviewed(new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path)))), [pr.reviewed]);
 
   const parsed = useMemo(() => parseFiles(pr), [pr]);
   const parsedById = useMemo(() => new Map(parsed.map((entry) => [entry.id, entry])), [parsed]);
@@ -152,49 +135,50 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
     [pr.prId],
   );
 
+  const toggleReviewed = useCallback(
+    async (itemId: string) => {
+      const entry = parsedRef.current.get(itemId);
+      if (!entry || !pr.prId) return;
+      const next = !reviewed.has(itemId);
+      const apply = (value: boolean) =>
+        setReviewed((current) => {
+          const copy = new Set(current);
+          if (value) copy.add(itemId);
+          else copy.delete(itemId);
+          return copy;
+        });
+
+      apply(next);
+      try {
+        await put(`/prs/${pr.prId}/reviewed`, { repo: entry.repo, path: entry.path, reviewed: next });
+      } catch (error) {
+        apply(!next);
+        console.error('Could not update the reviewed state:', error);
+      }
+    },
+    [reviewed, pr.prId],
+  );
+
+  const renderHeaderMetadata = useCallback(
+    (item: CodeViewItem<AnnotationMeta>) => {
+      const entry = parsedRef.current.get(item.id);
+      if (!entry || !pr.prId) return null;
+      return (
+        <label className="viewed-toggle" title="Mark this file as reviewed">
+          <Checkbox checked={reviewed.has(entry.id)} onChange={() => toggleReviewed(entry.id)} />
+          Viewed
+        </label>
+      );
+    },
+    [reviewed, toggleReviewed, pr.prId],
+  );
+
   const hasFiles = parsed.length > 0;
-
-  const merge = useCallback(async () => {
-    const openRepos = pr.repos.filter((repo) => repo.state === 'open' && repo.branch);
-    if (!openRepos.length) return;
-    const approved = await confirm({
-      title: `Merge into ${reviewSet.targetBranch}?`,
-      content: (
-        <>
-          <p>mureview will merge on GitHub:</p>
-          <ul className="error-list">
-            {openRepos.map((repo) => (
-              <li key={repo.repo}>
-                <span className="mono">
-                  {repo.repo}: {repo.branch} → {reviewSet.targetBranch}
-                </span>
-              </li>
-            ))}
-          </ul>
-          <p>When every matched branch is merged, this review closes and its comments are deleted.</p>
-        </>
-      ),
-      confirmButtonContent: 'Merge',
-      cancelButtonContent: 'Cancel',
-    });
-    if (!approved) return;
-
-    setMerging(true);
-    setMergeResults(null);
-    try {
-      const result = await post<{ results: MergeResult[]; detail: ReviewSetDetail }>(`/review-sets/${reviewSet.id}/merge`, {});
-      setMergeResults(result.results);
-      onDetail(result.detail);
-    } catch (error) {
-      setMergeResults([{ repo: '', ok: false, message: (error as Error).message }]);
-    } finally {
-      setMerging(false);
-    }
-  }, [pr, reviewSet, confirm, onDetail]);
+  const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
 
   return (
     <div className="pr-page">
-      <PrHeader detail={detail} onReload={onReload} onMerge={merge} merging={merging} />
+      <PrHeader detail={detail} onReload={onReload} onMerge={merge} merging={merging} reviewedCount={reviewedCount} />
       <div className="pr-banners">
         <PrStatusBanner pr={pr} reviewSet={reviewSet} />
         {mergeResults ? <MergeResultsFlash results={mergeResults} /> : null}
@@ -222,7 +206,12 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
           <div className="pr-sidebar-content">
             {tab === 'files' ? (
               hasFiles ? (
-                <FileTreePanel pr={pr} onSelectItem={(itemId) => codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' })} />
+                <FileTreePanel
+                  pr={pr}
+                  reviewedItems={reviewed}
+                  onSelectItem={(itemId) => codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' })}
+                  onToggleReviewed={toggleReviewed}
+                />
               ) : (
                 <div className="empty-state">No text diffs to show.</div>
               )
@@ -244,6 +233,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
                 items={items}
                 options={options}
                 renderAnnotation={renderAnnotation}
+                renderHeaderMetadata={renderHeaderMetadata}
                 style={{ height: '100%', overflow: 'auto' }}
               />
             ) : (

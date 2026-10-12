@@ -27,6 +27,12 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   conversation. Comments are stored in SQLite **only while the PR is open**.
   Once the matched branches are merged into the target (or all disappear), the
   PR is closed and its comments are discarded — the PR is ephemeral.
+- Mark files as viewed from the checkbox in each file header, or right-click a
+  file in the tree. Viewed files show a green check in the tree and a
+  `x/y viewed` counter in the header; the marks are ephemeral like comments.
+- Merge the whole review: each matched branch is merged into the target on
+  GitHub (the target is created when missing) behind a confirmation dialog.
+  When every branch is merged the PR closes automatically.
 
 Data is stored in a single SQLite database. Everything is scoped to the signed-in
 owner: users only ever see their own review sets, and every GitHub request uses
