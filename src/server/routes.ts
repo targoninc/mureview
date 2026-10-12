@@ -1,6 +1,7 @@
 import { handleCallback, handleLogin, handleLogout, handleMe, type UserRow } from './auth';
 import { createCommentRoute, deleteCommentRoute, listCommentsRoute } from './comments';
 import { config } from './config';
+import { mergeReviewSet } from './merge';
 import { createReviewSet, deleteReviewSet, getReviewSet, listReviewSets, updateReviewSet } from './reviewSets';
 import { Router } from './router';
 
@@ -16,6 +17,7 @@ api.post('/api/review-sets', createReviewSet);
 api.get('/api/review-sets/:id', getReviewSet);
 api.put('/api/review-sets/:id', updateReviewSet);
 api.delete('/api/review-sets/:id', deleteReviewSet);
+api.post('/api/review-sets/:id/merge', mergeReviewSet);
 
 api.get('/api/prs/:id/comments', listCommentsRoute);
 api.post('/api/prs/:id/comments', createCommentRoute);

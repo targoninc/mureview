@@ -85,3 +85,9 @@ export interface ReviewSetDetail {
   reviewSet: ReviewSet;
   pr: PrStatus;
 }
+
+export interface MergeResult {
+  repo: string;
+  ok: boolean;
+  message: string;
+}

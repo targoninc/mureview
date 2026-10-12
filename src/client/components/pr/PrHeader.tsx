@@ -1,5 +1,5 @@
 import { Button, Heading, Label } from '@primer/react';
-import { PencilIcon, SyncIcon } from '@primer/octicons-react';
+import { GitMergeIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, RepoStatus, ReviewSetDetail } from '../../../shared/types';
 import { repoLabel } from '../../lib/format';
@@ -27,7 +27,14 @@ function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: 
   }
 }
 
-export function PrHeader({ detail, onReload }: { detail: ReviewSetDetail; onReload: (fresh?: boolean) => void }) {
+interface PrHeaderProps {
+  detail: ReviewSetDetail;
+  onReload: (fresh?: boolean) => void;
+  onMerge: () => void;
+  merging: boolean;
+}
+
+export function PrHeader({ detail, onReload, onMerge, merging }: PrHeaderProps) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const state = stateVariant(pr.state);
@@ -60,6 +67,11 @@ export function PrHeader({ detail, onReload }: { detail: ReviewSetDetail; onRelo
           </span>
         </div>
         <div className="row">
+          {pr.state === 'open' ? (
+            <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge} loading={merging}>
+              Merge
+            </Button>
+          ) : null}
           <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
             Settings
           </Button>

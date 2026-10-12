@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Avatar, Button, Flash, IconButton, Textarea } from '@primer/react';
+import { Avatar, Button, Flash, IconButton, Textarea, useConfirm } from '@primer/react';
 import { TrashIcon } from '@primer/octicons-react';
 import type { Comment } from '../../../shared/types';
 import { del, post } from '../../lib/api';
@@ -14,6 +14,20 @@ export interface CommentAnchor {
 }
 
 export function CommentThread({ comments, onDeleted }: { comments: Comment[]; onDeleted: (id: number) => void }) {
+  const confirm = useConfirm();
+
+  const remove = async (id: number) => {
+    const approved = await confirm({
+      title: 'Delete this comment?',
+      content: 'The comment will be permanently removed from this review.',
+      confirmButtonContent: 'Delete',
+      confirmButtonType: 'danger',
+    });
+    if (!approved) return;
+    await del(`/comments/${id}`);
+    onDeleted(id);
+  };
+
   return (
     <div className="comment-thread">
       {comments.map((comment) => (
@@ -23,15 +37,7 @@ export function CommentThread({ comments, onDeleted }: { comments: Comment[]; on
             <strong>{comment.author.login}</strong>
             <span>commented {timeAgo(comment.createdAt)}</span>
             <span style={{ flex: 1 }} />
-            <IconButton
-              icon={TrashIcon}
-              aria-label="Delete comment"
-              variant="invisible"
-              size="small"
-              onClick={() => {
-                del(`/comments/${comment.id}`).then(() => onDeleted(comment.id));
-              }}
-            />
+            <IconButton icon={TrashIcon} aria-label="Delete comment" variant="invisible" size="small" onClick={() => remove(comment.id)} />
           </div>
           <div className="comment-body">{comment.body}</div>
         </div>

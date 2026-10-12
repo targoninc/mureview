@@ -33,7 +33,7 @@ function toReviewSet(row: ReviewSetRow): ReviewSet {
   };
 }
 
-function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
+export function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
   const row = db
     .query<ReviewSetRow, [number, number]>('SELECT * FROM review_sets WHERE id = ? AND owner_id = ?')
     .get(id, user.id);
@@ -41,7 +41,7 @@ function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
   return toReviewSet(row);
 }
 
-function requireId(ctx: Ctx): number {
+export function requireId(ctx: Ctx): number {
   const id = Number(ctx.params.id);
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'Review set not found');
   return id;
@@ -72,7 +72,7 @@ function isFresh(ctx: Ctx): boolean {
   return ctx.url.searchParams.get('fresh') === '1';
 }
 
-async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
+export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const reviewSet = loadOwnedReviewSet(user, id);
   const pr = await buildPrStatus(userToken(user), reviewSet, fresh);
   return { reviewSet, pr };

@@ -23,6 +23,10 @@ export class Cache<T> {
     return entry.value;
   }
 
+  clear(): void {
+    this.entries.clear();
+  }
+
   set(key: string, value: T, ttlMs = this.ttlMs): void {
     if (this.entries.size >= this.maxEntries) {
       const oldest = this.entries.keys().next().value;

@@ -4,7 +4,7 @@ import { listComments } from './comments';
 import { constants } from './config';
 import { db } from './db';
 import { type GithubCompareFile, compareCached, getBlobTextCached, getBranchCached, getTreeCached } from './github';
-import { addedFilePatch, countLines } from './patch';
+import { addedFilePatch, countLines, withPatchHeader } from './patch';
 import { compileRegex, githubErrorMessage, inspectRepos, multiMatchError } from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
@@ -27,7 +27,9 @@ interface BranchDiff {
 const targetlessCache = new Cache<BranchDiff>(30, 60 * 60_000);
 
 function toFileDiff(file: GithubCompareFile): FileDiff {
-  return {
+  // GitHub's compare API returns hunk-only patches; add the git headers so the
+  // diff renderer knows the file name.
+  const diff: FileDiff = {
     path: file.filename,
     prevPath: file.previous_filename,
     type: statusMap[file.status] ?? 'modified',
@@ -35,6 +37,8 @@ function toFileDiff(file: GithubCompareFile): FileDiff {
     deletions: file.deletions,
     patch: file.patch ?? null,
   };
+  if (diff.patch !== null) diff.patch = withPatchHeader(diff);
+  return diff;
 }
 
 function summarize(files: FileDiff[]): { additions: number; deletions: number } {

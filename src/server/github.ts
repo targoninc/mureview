@@ -113,6 +113,40 @@ const compareCache = new Cache<GithubCompare>(60, 60 * 60_000);
 const treeCache = new Cache<{ tree: GithubTreeEntry[]; truncated: boolean }>(60, 24 * 60 * 60_000);
 const blobCache = new Cache<string>(400, 24 * 60 * 60_000);
 
+async function ghPost(token: string, path: string, body: unknown): Promise<Response> {
+  const res = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: headers(token, { 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok && res.status !== 204) {
+    let message = res.statusText;
+    try {
+      message = ((await res.json()) as { message?: string }).message ?? message;
+    } catch {
+      // keep the status text
+    }
+    throw new GitHubError(res.status, message);
+  }
+  return res;
+}
+
+export async function mergeBranch(token: string, repo: string, base: string, head: string, commitMessage: string): Promise<string> {
+  const res = await ghPost(token, `/repos/${repo}/merges`, { base, head, commit_message: commitMessage });
+  if (res.status === 204) return 'already up to date';
+  const data = (await res.json()) as { sha?: string };
+  return data.sha ? `merged as ${data.sha.slice(0, 7)}` : 'merged';
+}
+
+export async function createRef(token: string, repo: string, branch: string, sha: string): Promise<void> {
+  await ghPost(token, `/repos/${repo}/git/refs`, { ref: `refs/heads/${branch}`, sha });
+}
+
+export function invalidateBranchCaches(): void {
+  branchListCache.clear();
+  branchCache.clear();
+}
+
 export function getRepoCached(token: string, repo: string, fresh = false) {
   if (fresh) return getRepo(token, repo);
   return cached(repoCache, repo, () => getRepo(token, repo));
