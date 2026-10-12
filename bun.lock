@@ -5,6 +5,7 @@
     "": {
       "name": "mureview",
       "dependencies": {
+        "@atproto-labs/handle-resolver": "^0.4.10",
         "@atproto/api": "^0.25.0",
         "@atproto/oauth-client-node": "^0.5.9",
         "@pierre/diffs": "^1.5.2",

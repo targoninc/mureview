@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Flash, FormControl, Heading, Label, Spinner, TextInput } from '@primer/react';
-import { PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
+import { AnchoredOverlay, Button, Checkbox, Flash, FormControl, Heading, IconButton, Label, Spinner, TextInput } from '@primer/react';
+import { FilterIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
 import type { AvailableRepo, ReviewSetDetail, ReviewSetRepo } from '../../shared/types';
 import { del, post, put, api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
@@ -26,6 +26,8 @@ export function ReviewSetFormPage() {
   const [available, setAvailable] = useState<AvailableRepo[] | null>(null);
   const [repoErrors, setRepoErrors] = useState<{ connectionId: number; message: string }[]>([]);
   const [search, setSearch] = useState('');
+  const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
+  const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
     api<{ repos: AvailableRepo[]; errors: { connectionId: number; message: string }[] }>('/repos')
@@ -48,18 +50,47 @@ export function ReviewSetFormPage() {
 
   const update = (patch: Partial<FormState>) => setForm((current) => ({ ...current, ...patch }));
 
+  const sources = useMemo(() => {
+    if (!available) return [];
+    const unique = new Map<string, { key: string; label: string }>();
+    for (const repo of available) {
+      const key = `${repo.kind}:${repo.host}`;
+      if (!unique.has(key)) {
+        const kindLabel = repo.kind === 'github' ? '' : repo.kind === 'ado' ? 'azure devops · ' : `${repo.kind} · `;
+        unique.set(key, { key, label: `${kindLabel}${repo.host}` });
+      }
+    }
+    return [...unique.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [available]);
+
   const results = useMemo(() => {
     if (!available) return [];
     const needle = search.trim().toLowerCase();
     return available
+      .filter((repo) => !hiddenSources.has(`${repo.kind}:${repo.host}`))
       .filter((repo) => !form.selected.some((item) => item.connectionId === repo.connectionId && item.repo === repo.repo))
       .filter((repo) => !needle || `${repo.host}/${repo.repo}`.toLowerCase().includes(needle))
-      .slice(0, 60);
-  }, [available, form.selected, search]);
+      .slice(0, 100);
+  }, [available, form.selected, search, hiddenSources]);
 
   const addRepo = (repo: AvailableRepo) => {
     update({ selected: [...form.selected, { connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host }] });
     setSearch('');
+  };
+
+  const addAllResults = () => {
+    const additions = results.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host }));
+    update({ selected: [...form.selected, ...additions] });
+    setSearch('');
+  };
+
+  const toggleSource = (key: string) => {
+    setHiddenSources((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   };
 
   const removeRepo = (connectionId: number, repo: string) => {
@@ -138,36 +169,69 @@ export function ReviewSetFormPage() {
 
         <FormControl>
           <FormControl.Label>Repositories</FormControl.Label>
-          <FormControl.Caption>
-            Search across all your connected forges and add the repositories this review set should watch.
-          </FormControl.Caption>
-          <TextInput
-            block
-            leadingVisual={PlusIcon}
-            placeholder="Filter repositories, e.g. targoninc/"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
+          <div className="repo-picker-search">
+            <TextInput
+              block
+              leadingVisual={PlusIcon}
+              placeholder="Filter repositories, e.g. targoninc/"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <AnchoredOverlay
+              open={filterOpen}
+              onOpen={() => setFilterOpen(true)}
+              onClose={() => setFilterOpen(false)}
+              width="medium"
+              renderAnchor={(anchorProps) => (
+                <IconButton
+                  {...anchorProps}
+                  icon={FilterIcon}
+                  aria-label="Filter repositories by forge"
+                  variant={hiddenSources.size > 0 ? 'primary' : 'default'}
+                />
+              )}
+            >
+              <div className="stack" style={{ padding: 12, gap: 8 }}>
+                <strong style={{ fontSize: 12 }}>Sources</strong>
+                {sources.map((source) => (
+                  <label key={source.key} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                    <Checkbox checked={!hiddenSources.has(source.key)} onChange={() => toggleSource(source.key)} />
+                    {source.label}
+                  </label>
+                ))}
+                {sources.length === 0 ? <span style={{ fontSize: 12 }}>No forges connected.</span> : null}
+              </div>
+            </AnchoredOverlay>
+          </div>
           {available === null ? <Spinner size="small" aria-label="Loading repositories" /> : null}
           {available !== null && results.length > 0 ? (
-            <div className="repo-picker-results">
-              {results.map((repo) => (
-                <button
-                  type="button"
-                  className="repo-picker-item"
-                  key={`${repo.connectionId}:${repo.repo}`}
-                  onClick={() => addRepo(repo)}
-                >
-                  <span className="mono">
-                    {repo.host}/{repo.repo}
-                  </span>
-                  {repo.private ? <Label variant="secondary">private</Label> : null}
-                </button>
-              ))}
-            </div>
+            <>
+              <div className="repo-picker-actions">
+                <Button size="small" variant="invisible" onClick={addAllResults}>
+                  Select all {results.length} shown
+                </Button>
+              </div>
+              <div className="repo-picker-results">
+                {results.map((repo) => (
+                  <button
+                    type="button"
+                    className="repo-picker-item"
+                    key={`${repo.connectionId}:${repo.repo}`}
+                    onClick={() => addRepo(repo)}
+                  >
+                    <span className="mono">
+                      {repo.host}/{repo.repo}
+                    </span>
+                    {repo.private ? <Label variant="secondary">private</Label> : null}
+                  </button>
+                ))}
+              </div>
+            </>
           ) : null}
-          {available !== null && results.length === 0 && search ? (
-            <FormControl.Caption>No repositories match "{search}".</FormControl.Caption>
+          {available !== null && results.length === 0 ? (
+            <FormControl.Caption>
+              {search ? `No repositories match "${search}".` : 'No repositories available. Connect a forge under Settings.'}
+            </FormControl.Caption>
           ) : null}
         </FormControl>
 

@@ -99,6 +99,9 @@ export class AdoClient implements ForgeClient {
       body: json !== undefined ? JSON.stringify(json) : rest.body,
     });
     if (!ok(response) && response.status !== 204) {
+      if (response.status === 203) {
+        throw new ForgeError(401, 'Azure DevOps rejected the credentials and returned its sign-in page');
+      }
       let message = `${response.status} ${response.statusText}`;
       try {
         const body = (await response.json()) as { message?: string };
@@ -106,7 +109,7 @@ export class AdoClient implements ForgeClient {
       } catch {
         // keep the status line
       }
-      throw new ForgeError(response.status === 203 ? 401 : response.status, message);
+      throw new ForgeError(response.status, message);
     }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
@@ -122,6 +125,22 @@ export class AdoClient implements ForgeClient {
 
   async ensureOrg(): Promise<void> {
     await this.request(`${this.baseUrl}/_apis/projects?api-version=7.1&$top=1`);
+  }
+
+  /**
+   * The account-level profile endpoint (app.vssps.visualstudio.com) rejects
+   * organization-scoped tokens, which are the default when creating a PAT.
+   * connectionData is scoped to the organization and works for both kinds.
+   */
+  async currentUser(): Promise<{ id: string; name: string }> {
+    const data = await this.request<{
+      authenticatedUser?: { id: string; providerDisplayName?: string; customDisplayName?: string };
+    }>(`${this.baseUrl}/_apis/connectionData?api-version=7.1-preview.1`);
+    const user = data.authenticatedUser;
+    if (!user?.id || user.providerDisplayName === 'Anonymous') {
+      throw new ForgeError(401, 'the personal access token is invalid, expired, or belongs to a different organization');
+    }
+    return { id: user.id, name: user.customDisplayName || user.providerDisplayName || 'azure devops' };
   }
 
   async listRepos(): Promise<ForgeRepo[]> {
@@ -313,15 +332,4 @@ export class AdoClient implements ForgeClient {
   }
 }
 
-export async function getAdoProfile(token: string): Promise<{ id: string; displayName: string; emailAddress: string }> {
-  const credentials = Buffer.from(`:${token}`).toString('base64');
-  const response = await fetch('https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1', {
-    headers: { Authorization: `Basic ${credentials}`, Accept: 'application/json', 'User-Agent': 'mureview' },
-  });
-  if (!ok(response)) throw new ForgeError(response.status, 'the personal access token is invalid, expired, or lacks access');
-  try {
-    return (await response.json()) as { id: string; displayName: string; emailAddress: string };
-  } catch {
-    throw new ForgeError(response.status, 'the personal access token is invalid, expired, or lacks access');
-  }
-}
+

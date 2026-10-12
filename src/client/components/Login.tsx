@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Flash, FormControl, TextInput } from '@primer/react';
-import { MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon } from '@primer/octicons-react';
+import { FileDiffIcon, MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon } from '@primer/octicons-react';
 import type { AuthProvider } from '../../shared/types';
 import { basePath, post } from '../lib/api';
 
@@ -26,14 +26,26 @@ const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
 export function Login({ providers, onSignedIn }: LoginProps) {
   const [choice, setChoice] = useState<AuthProvider | null>(null);
   const [register, setRegister] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const error = params.get('authError');
+    if (!error) return;
+    setAuthError(error);
+    params.delete('authError');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  }, []);
 
   return (
     <div className="centered">
       <div className="stack" style={{ width: 440, maxWidth: '100%', padding: 24 }}>
         <div className="login-logo">
-          <MarkGithubIcon size={48} />
+          <FileDiffIcon size={48} />
         </div>
         <h1 style={{ margin: 0, textAlign: 'center' }}>mureview</h1>
+        {authError ? <Flash variant="danger">{authError}</Flash> : null}
         <p style={{ margin: 0, color: 'var(--fgColor-muted)', textAlign: 'center' }}>
           Review a set of branches across many repositories as one pull request: every diff, every comment and the merge in a
           single place.

@@ -1,3 +1,5 @@
+import { resolveTxt } from 'node:dns/promises';
+import { AtprotoHandleResolver } from '@atproto-labs/handle-resolver';
 import { NodeOAuthClient } from '@atproto/oauth-client-node';
 import { Agent } from '@atproto/api';
 import { config } from '../config';
@@ -5,7 +7,7 @@ import { decrypt, encrypt } from '../crypto';
 import { HttpError, clearCookie, parseCookies, setCookie } from '../http';
 import type { Ctx } from '../router';
 import type { OAuthMode } from './oauthState';
-import { completeAuth } from './providers';
+import { completeAuth, handleAuthError } from './providers';
 import { cookiePath, isSecure, requireUser } from './session';
 
 class MemoryStore<T> {
@@ -37,6 +39,32 @@ export const atprotoMetadata = {
   application_type: 'web',
 };
 
+async function resolveHandleTxt(hostname: string): Promise<string[] | null> {
+  try {
+    const records = await resolveTxt(hostname);
+    return records.map((chunks) => chunks.join(''));
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'EBADNAME') throw error;
+    return null;
+  }
+}
+
+const locks = new Map<string, Promise<unknown>>();
+
+function requestLock<T>(name: string, fn: () => T | PromiseLike<T>): Promise<T> {
+  const previous = locks.get(name) ?? Promise.resolve();
+  const next = previous.then(
+    () => fn(),
+    () => fn(),
+  );
+  locks.set(
+    name,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
 let client: NodeOAuthClient | null = null;
 
 function atprotoClient(): NodeOAuthClient {
@@ -45,6 +73,12 @@ function atprotoClient(): NodeOAuthClient {
       clientMetadata: atprotoMetadata as ConstructorParameters<typeof NodeOAuthClient>[0]['clientMetadata'],
       stateStore: new MemoryStore(),
       sessionStore: new MemoryStore(),
+      requestLock,
+      // The default handle resolver wraps fetch in the Node SSRF dispatcher,
+      // which needs process.versions.undici and therefore fails on Bun. Use the
+      // plain resolver with the global fetch instead.
+      handleResolver: new AtprotoHandleResolver({ fetch: globalThis.fetch, resolveTxt: resolveHandleTxt }),
+      fetch: globalThis.fetch as unknown as NonNullable<ConstructorParameters<typeof NodeOAuthClient>[0]['fetch']>,
     });
   }
   return client;
@@ -79,6 +113,14 @@ export async function atprotoLoginStart(ctx: Ctx): Promise<Response> {
 }
 
 export async function atprotoCallback(ctx: Ctx): Promise<Response> {
+  try {
+    return await atprotoCallbackInner(ctx);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+async function atprotoCallbackInner(ctx: Ctx): Promise<Response> {
   if (!ctx.url.searchParams.get('code') || !ctx.url.searchParams.get('state')) {
     throw new HttpError(400, 'The atproto provider did not return a code.');
   }

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar, Button, IconButton, Tooltip } from '@primer/react';
-import { MarkGithubIcon, GearIcon, SignOutIcon, ShieldIcon } from '@primer/octicons-react';
+import { FileDiffIcon, GearIcon, SignOutIcon, ShieldIcon } from '@primer/octicons-react';
 import type { User } from '../../shared/types';
 import { basePath } from '../lib/api';
 import { useAppContext } from '../lib/appContext';
@@ -20,7 +20,7 @@ export function Shell({ user, onSignOut, children }: ShellProps) {
     <div className="app-shell">
       <header className="app-header">
         <a className="app-header-brand" href={`${basePath}/`}>
-          <MarkGithubIcon size={24} />
+          <FileDiffIcon size={24} />
           <span>mureview</span>
         </a>
         <div className="app-header-actions">

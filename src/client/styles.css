@@ -106,9 +106,30 @@ body {
   background-color: var(--bgColor-muted);
 }
 
+.repo-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.repo-picker-search > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-picker-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  width: 100%;
+}
+
 .repo-picker-results {
-  margin-top: 8px;
-  max-height: 240px;
+  margin-top: 4px;
+  width: 100%;
+  box-sizing: border-box;
+  max-height: 280px;
   overflow: auto;
   border: 1px solid var(--borderColor-default);
   border-radius: 6px;

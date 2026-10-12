@@ -1,9 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { AuthProvider, ForgeConnectionInfo, IdentityInfo, MeResponse } from '../../shared/types';
+import { Cache } from '../cache';
 import { config } from '../config';
 import { type ForgeConnectionRow, db } from '../db';
 import { ForgeError } from '../forges';
-import { AdoClient, getAdoProfile, normalizeAdoOrganization } from '../forges/ado';
+import { AdoClient, normalizeAdoOrganization } from '../forges/ado';
 import { getForgejoUser } from '../forges/forgejo';
 import { getUser as getGithubUser } from '../forges/github';
 import { HttpError, json, readJson } from '../http';
@@ -82,9 +83,37 @@ export function completeAuth(profile: IdentityProfile, connection: ConnectionInp
 
 // --- GitHub -----------------------------------------------------------------
 
-export function githubLoginStart(ctx: Ctx): Response {
+const githubCredentialsCache = new Cache<boolean>(1, 60 * 60_000);
+
+/**
+ * GitHub shows a bare 404 for unknown client ids, which is impossible to
+ * explain to users. Probe the token endpoint once per hour instead: with a
+ * valid client id/secret a bogus code returns bad_verification_code.
+ */
+async function githubCredentialsValid(): Promise<boolean> {
+  if (githubCredentialsCache.get('github') !== undefined) return true;
+  const response = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: config.githubClientId, client_secret: config.githubClientSecret, code: 'mureview-credentials-check' }),
+  });
+  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  if (body.error === undefined) return true; // unexpected response, don't block sign-in
+  // A bogus code against real credentials answers bad_verification_code; unknown
+  // client ids answer "Not Found" (what users otherwise see as GitHub's 404).
+  const valid = body.error === 'bad_verification_code';
+  if (valid) githubCredentialsCache.set('github', true);
+  return valid;
+}
+
+export async function githubLoginStart(ctx: Ctx): Promise<Response> {
   if (!config.githubClientId || !config.githubClientSecret) {
-    throw new HttpError(500, 'GitHub sign-in is not configured on this server.');
+    return redirectWithError('GitHub sign-in is not configured on this server.');
+  }
+  if (!(await githubCredentialsValid())) {
+    return redirectWithError(
+      'The configured GitHub OAuth app credentials were rejected by GitHub. Check GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.',
+    );
   }
   const mode: OAuthMode = ctx.url.searchParams.get('mode') === 'connect' ? 'connect' : 'login';
   const user = mode === 'connect' ? requireUser(ctx) : null;
@@ -98,7 +127,24 @@ export function githubLoginStart(ctx: Ctx): Response {
   return redirect(url.toString());
 }
 
+export function redirectWithError(message: string): Response {
+  return redirect(`${config.baseUrl}${config.basePath}/?authError=${encodeURIComponent(message)}`);
+}
+
+export function handleAuthError(error: unknown): Response {
+  if (error instanceof HttpError) return redirectWithError(error.message);
+  throw error;
+}
+
 export async function githubCallback(ctx: Ctx): Promise<Response> {
+  try {
+    return await githubCallbackInner(ctx);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+async function githubCallbackInner(ctx: Ctx): Promise<Response> {
   const code = ctx.url.searchParams.get('code');
   const state = ctx.url.searchParams.get('state');
   if (!code || !state) throw new HttpError(400, 'GitHub did not return a code.');
@@ -164,6 +210,14 @@ export async function forgejoLoginStart(ctx: Ctx): Promise<Response> {
 }
 
 export async function forgejoCallback(ctx: Ctx): Promise<Response> {
+  try {
+    return await forgejoCallbackInner(ctx);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+async function forgejoCallbackInner(ctx: Ctx): Promise<Response> {
   const code = ctx.url.searchParams.get('code');
   const state = ctx.url.searchParams.get('state');
   if (!code || !state) throw new HttpError(400, 'The forge did not return a code.');
@@ -311,15 +365,19 @@ export async function connectAdo(ctx: Ctx): Promise<Response> {
     throw new HttpError(400, (error as Error).message);
   }
 
+  const client = new AdoClient(baseUrl, token);
   let login: string;
   try {
-    const profile = await getAdoProfile(token);
-    login = profile.displayName || profile.emailAddress || 'azure devops';
+    login = (await client.currentUser()).name;
   } catch (error) {
-    throw new HttpError(400, `Azure DevOps rejected the personal access token: ${(error as ForgeError).message}.`);
+    throw new HttpError(
+      400,
+      `Azure DevOps rejected the personal access token: ${(error as Error).message}. Check that the token is not expired, has the ` +
+        `"Project and Team (read)" and "Code (read & write)" scopes, and is scoped to this organization (or "all accessible organizations").`,
+    );
   }
   try {
-    await new AdoClient(baseUrl, token).ensureOrg();
+    await client.ensureOrg();
   } catch (error) {
     throw new HttpError(400, `Could not reach ${baseUrl}: ${(error as Error).message}`);
   }
