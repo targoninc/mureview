@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Avatar, Button, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
-import { MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon, TrashIcon } from '@primer/octicons-react';
-import type { AuthProvider, MeResponse } from '../../shared/types';
+import { MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon, CloudIcon, TrashIcon } from '@primer/octicons-react';
+import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
-import { AtprotoForm, ForgejoForm } from '../components/Login';
+import { AdoForm, AtprotoForm, ForgejoForm } from '../components/Login';
+
+const forgeLabel: Record<ForgeKind, string> = { github: 'github', forgejo: 'forgejo', ado: 'azure devops' };
 
 const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
   github: MarkGithubIcon,
@@ -15,7 +17,7 @@ const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState<AuthProvider | null>(null);
+  const [adding, setAdding] = useState<AuthProvider | 'ado' | null>(null);
   const confirm = useConfirm();
 
   const load = useCallback(() => {
@@ -89,7 +91,7 @@ export function SettingsPage() {
                     </span>
                   </div>
                   <div className="row">
-                    <Label variant="secondary">{connection.kind}</Label>
+                    <Label variant="secondary">{forgeLabel[connection.kind]}</Label>
                     <Button
                       size="small"
                       leadingVisual={TrashIcon}
@@ -124,6 +126,9 @@ export function SettingsPage() {
             <Button leadingVisual={GlobeIcon} onClick={() => setAdding(adding === 'atproto' ? null : 'atproto')}>
               Connect atproto
             </Button>
+            <Button leadingVisual={CloudIcon} onClick={() => setAdding(adding === 'ado' ? null : 'ado')}>
+              Connect Azure DevOps
+            </Button>
           </div>
           {adding === 'forgejo' ? (
             <div className="settings-panel">
@@ -133,6 +138,16 @@ export function SettingsPage() {
           {adding === 'atproto' ? (
             <div className="settings-panel">
               <AtprotoForm mode="connect" />
+            </div>
+          ) : null}
+          {adding === 'ado' ? (
+            <div className="settings-panel">
+              <AdoForm
+                onDone={() => {
+                  setAdding(null);
+                  load();
+                }}
+              />
             </div>
           ) : null}
         </div>

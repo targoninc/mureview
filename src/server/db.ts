@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import type { ForgeKind } from '../shared/types';
 import { config } from './config';
 
 mkdirSync(dirname(config.dbPath), { recursive: true });
@@ -30,7 +31,7 @@ export interface IdentityRow {
 export interface ForgeConnectionRow {
   id: number;
   user_id: number;
-  kind: 'github' | 'forgejo';
+  kind: ForgeKind;
   base_url: string;
   client_id: string;
   client_secret: string;

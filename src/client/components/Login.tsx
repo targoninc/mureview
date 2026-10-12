@@ -175,6 +175,51 @@ export function ForgejoForm({ mode, onBack }: { mode: 'login' | 'connect'; onBac
   );
 }
 
+export function AdoForm({ onDone, onBack }: { onDone: () => void; onBack?: () => void }) {
+  const [organization, setOrganization] = useState('');
+  const [token, setToken] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await post('/connections/ado', { organization, token });
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack">
+      <h2 style={{ margin: 0, textAlign: 'center', fontSize: 16 }}>Connect Azure DevOps</h2>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--fgColor-muted)' }}>
+        Create a personal access token in Azure DevOps (User settings → Personal access tokens) with the Code (read &amp; write) and
+        Project and Team (read) scopes.
+      </p>
+      {error ? <Flash variant="danger">{error}</Flash> : null}
+      <FormControl>
+        <FormControl.Label>Organization</FormControl.Label>
+        <TextInput block placeholder="myorg or https://dev.azure.com/myorg" value={organization} onChange={(event) => setOrganization(event.target.value)} />
+      </FormControl>
+      <FormControl>
+        <FormControl.Label>Personal access token</FormControl.Label>
+        <TextInput block type="password" value={token} onChange={(event) => setToken(event.target.value)} />
+      </FormControl>
+      <div className="form-actions">
+        {onBack ? <Button onClick={onBack}>Back</Button> : null}
+        <Button variant="primary" onClick={submit} disabled={busy || !organization || !token}>
+          {busy ? 'Connecting…' : 'Connect'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AtprotoForm({ mode, onBack }: { mode: 'login' | 'connect'; onBack?: () => void }) {
   const [handle, setHandle] = useState('');
   return (

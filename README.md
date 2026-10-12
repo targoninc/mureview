@@ -2,10 +2,10 @@
 
 # mureview
 
-Multi-repository code review. A **review set** groups repositories with a branch
-pattern; mureview finds the matching branch in each repository and renders one
-fake pull request that diffs every matched branch against a shared target
-branch.
+Multi-forge code review. A **review set** groups repositories (GitHub, Forgejo
+or Azure DevOps, mixed freely) with a branch pattern; mureview finds the
+matching branch in each repository and renders one fake pull request that diffs
+every matched branch against a shared target branch.
 
 Built with [Bun](https://bun.sh), [React](https://react.dev),
 [Primer](https://primer.style) (the GitHub design system) and
@@ -22,7 +22,9 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   `${BASE_URL}/api/auth/callback/forgejo` and paste its client id/secret into
   mureview. GitHub uses a server-wide OAuth app (see below); atproto needs no
   configuration, but `${BASE_URL}/oauth-client-metadata.json` must be publicly
-  reachable.
+  reachable. Azure DevOps is connected with a personal access token (Code:
+  read & write, Project and Team: read) — it is a forge connection, so sign in
+  with one of the other providers and add it under Settings.
 - Create a **review set**: a name, repositories picked with a search across all
   your connected forges, a branch pattern (regular expression) and a target
   branch. Review sets can mix repositories from different forges.

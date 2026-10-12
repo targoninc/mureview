@@ -28,9 +28,10 @@ function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: 
 }
 
 function RepoChip({ repo }: { repo: RepoStatus }) {
+  const kindLabel = repo.kind === 'github' ? '' : repo.kind === 'ado' ? 'azure devops · ' : `${repo.kind} · `;
   return (
     <Label variant={repoVariant(repo)}>
-      {repo.kind === 'forgejo' ? 'forgejo · ' : ''}
+      {kindLabel}
       {repo.host}/{repo.repo}
       {repo.branch ? ` · ${repo.branch}` : ''} — {repoStatusText(repo)}
     </Label>

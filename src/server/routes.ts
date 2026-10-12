@@ -1,5 +1,6 @@
 import { atprotoCallback, atprotoLoginStart } from './auth/atproto';
 import {
+  connectAdo,
   deleteConnection,
   forgejoCallback,
   forgejoLoginStart,
@@ -36,6 +37,7 @@ api.get('/api/auth/login/atproto', atprotoLoginStart, true);
 api.get('/api/auth/callback/atproto', atprotoCallback, true);
 
 api.get('/api/connections', listConnections);
+api.post('/api/connections/ado', connectAdo);
 api.delete('/api/connections/:id', deleteConnection);
 api.get('/api/repos', (ctx: Ctx) => listAvailableRepos(requireUser(ctx), ctx.url.searchParams.get('fresh') === '1').then((result) => json(result)));
 

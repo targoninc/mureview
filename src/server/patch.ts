@@ -28,6 +28,17 @@ export function addedFilePatch(path: string, content: string): string {
   return patchHeader({ path, type: 'added' }) + hunk;
 }
 
+export function patchStats(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (line.startsWith('+')) additions++;
+    else if (line.startsWith('-')) deletions++;
+  }
+  return { additions, deletions };
+}
+
 export function countLines(content: string): number {
   const lines = content.split('\n');
   if (lines.length && lines[lines.length - 1] === '') lines.pop();

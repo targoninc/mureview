@@ -3,6 +3,7 @@ import type { AuthProvider, ForgeConnectionInfo, IdentityInfo, MeResponse } from
 import { config } from '../config';
 import { type ForgeConnectionRow, db } from '../db';
 import { ForgeError } from '../forges';
+import { AdoClient, getAdoProfile, normalizeAdoOrganization } from '../forges/ado';
 import { getForgejoUser } from '../forges/forgejo';
 import { getUser as getGithubUser } from '../forges/github';
 import { HttpError, json, readJson } from '../http';
@@ -294,6 +295,37 @@ export function me(ctx: Ctx): Response {
     githubOAuthAppUrl: config.githubClientId ? `https://github.com/settings/connections/applications/${config.githubClientId}` : null,
   };
   return json(payload);
+}
+
+export async function connectAdo(ctx: Ctx): Promise<Response> {
+  const user = requireUser(ctx);
+  const body = await readJson<{ organization?: unknown; token?: unknown }>(ctx.req);
+  const organization = typeof body.organization === 'string' ? body.organization.trim() : '';
+  const token = typeof body.token === 'string' ? body.token.trim() : '';
+  if (!organization || !token) throw new HttpError(400, 'Organization and personal access token are required.');
+
+  let baseUrl: string;
+  try {
+    baseUrl = normalizeAdoOrganization(organization);
+  } catch (error) {
+    throw new HttpError(400, (error as Error).message);
+  }
+
+  let login: string;
+  try {
+    const profile = await getAdoProfile(token);
+    login = profile.displayName || profile.emailAddress || 'azure devops';
+  } catch (error) {
+    throw new HttpError(400, `Azure DevOps rejected the personal access token: ${(error as ForgeError).message}.`);
+  }
+  try {
+    await new AdoClient(baseUrl, token).ensureOrg();
+  } catch (error) {
+    throw new HttpError(400, `Could not reach ${baseUrl}: ${(error as Error).message}`);
+  }
+
+  const connection = upsertConnection(user.id, { kind: 'ado', baseUrl, accessToken: token, login });
+  return json({ connection: connectionInfo(connection) }, 201);
 }
 
 export function listConnections(ctx: Ctx): Response {

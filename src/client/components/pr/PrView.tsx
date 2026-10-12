@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
@@ -172,6 +173,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
       enableGutterUtility: true,
       stickyHeaders: true,
       hunkSeparators: 'line-info',
+      itemMetrics: { lineHeight: 22 },
       layout: { paddingTop: 8, paddingBottom: 24, gap: 8 },
       onGutterUtilityClick: (range, context) => {
         const entry = parsedRef.current.get(context.item.id);
@@ -320,7 +322,14 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
                 onScroll={updateVisibleItems}
                 renderAnnotation={renderAnnotation}
                 renderHeaderMetadata={renderHeaderMetadata}
-                style={{ height: '100%', overflow: 'auto' }}
+                style={
+                  {
+                    height: '100%',
+                    overflow: 'auto',
+                    '--diffs-font-size': '15px',
+                    '--diffs-line-height': '22px',
+                  } as CSSProperties
+                }
               />
             ) : (
               <div className="empty-state">There are no reviewable file changes in this pull request.</div>
