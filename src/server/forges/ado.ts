@@ -1,7 +1,23 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from '../patch';
-import { type BranchInfo, type CompareFile, type CompareResult, type ForgeCallOptions, type ForgeClient, type ForgeRepo, ForgeError, type TreeListing, decodeText, statusMap } from './types';
+import {
+  type BranchInfo,
+  type CheckInfo,
+  type ChecksSummary,
+  type CompareFile,
+  type CompareResult,
+  type ForgeCallOptions,
+  type ForgeClient,
+  type ForgeRepo,
+  ForgeError,
+  type PullRequestRef,
+  type ReviewComment,
+  type TreeListing,
+  decodeText,
+  statusMap,
+  summarizeChecks,
+} from './types';
 
 const maxFileBytes = 200_000;
 const maxFiles = 300;
@@ -302,14 +318,18 @@ export class AdoClient implements ForgeClient {
     return value;
   }
 
-  async mergeBranch(repo: string, base: string, head: string, message: string): Promise<string> {
-    let pullRequestId: number;
+  async ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef> {
     try {
       const created = await this.request<AdoPull>(`${this.repoUrl(repo)}/pullrequests?api-version=7.1`, {
         method: 'POST',
-        json: { sourceRefName: `refs/heads/${head}`, targetRefName: `refs/heads/${base}`, title: message },
+        json: {
+          sourceRefName: `refs/heads/${head}`,
+          targetRefName: `refs/heads/${base}`,
+          title,
+          description: body ?? 'Created by mureview.',
+        },
       });
-      pullRequestId = created.pullRequestId;
+      return { number: created.pullRequestId, created: true };
     } catch (error) {
       if (!(error instanceof ForgeError) || error.status !== 409) throw error;
       const query =
@@ -318,19 +338,74 @@ export class AdoClient implements ForgeClient {
         `&searchCriteria.status=active&api-version=7.1`;
       const active = await this.request<{ value: AdoPull[] }>(`${this.repoUrl(repo)}/pullrequests?${query}`);
       if (!active.value?.length) throw new ForgeError(409, 'a conflicting pull request already exists');
-      pullRequestId = active.value[0].pullRequestId;
+      return { number: active.value[0].pullRequestId, created: false };
     }
+  }
 
-    const pull = await this.request<AdoPull>(`${this.repoUrl(repo)}/pullrequests/${pullRequestId}?api-version=7.1`);
-    await this.request(`${this.repoUrl(repo)}/pullrequests/${pullRequestId}?api-version=7.1`, {
+  async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
+    const pull = await this.request<AdoPull>(`${this.repoUrl(repo)}/pullrequests/${number}?api-version=7.1`);
+    await this.request(`${this.repoUrl(repo)}/pullrequests/${number}?api-version=7.1`, {
       method: 'PATCH',
       json: {
         status: 'completed',
         lastMergeSourceCommit: pull.lastMergeSourceCommit,
-        completionOptions: { mergeStrategy: 'noFastForward', deleteSourceBranch: false },
+        completionOptions: { mergeStrategy: 'noFastForward', deleteSourceBranch: false, mergeCommitMessage: message },
       },
     });
-    return `merged pull request #${pullRequestId}`;
+    return `merged pull request #${number}`;
+  }
+
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'> {
+    const line = { line: comment.line, offset: 1 };
+    const context =
+      comment.side === 'additions'
+        ? { filePath: `/${comment.path}`, rightFileStart: line, rightFileEnd: line }
+        : { filePath: `/${comment.path}`, leftFileStart: line, leftFileEnd: line };
+    try {
+      await this.request(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
+        method: 'POST',
+        json: {
+          comments: [{ parentCommentId: 0, content: comment.body, commentType: 'text' }],
+          status: 'active',
+          threadContext: context,
+        },
+      });
+      return 'line';
+    } catch (error) {
+      if (!(error instanceof ForgeError)) throw error;
+      await this.request(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
+        method: 'POST',
+        json: {
+          comments: [{ parentCommentId: 0, content: `${comment.path}:${comment.line}\n\n${comment.body}`, commentType: 'text' }],
+          status: 'active',
+        },
+      });
+      return 'pull-request';
+    }
+  }
+
+  async checks(repo: string, sha: string): Promise<ChecksSummary> {
+    try {
+      const statuses = await this.request<{
+        value: { state: string; description?: string; context?: { name?: string; genre?: string }; targetUrl?: string }[];
+      }>(`${this.repoUrl(repo)}/commits/${sha}/statuses?api-version=7.1`);
+      const runs: CheckInfo[] = (statuses.value ?? []).map((entry) => ({
+        name: entry.context?.name ?? 'status',
+        state:
+          entry.state === 'succeeded'
+            ? 'success'
+            : entry.state === 'pending'
+              ? 'pending'
+              : entry.state === 'notApplicable'
+                ? 'neutral'
+                : 'failure',
+        description: entry.description,
+        url: entry.targetUrl,
+      }));
+      return { state: summarizeChecks(runs), runs };
+    } catch {
+      return { state: 'unknown', runs: [] };
+    }
   }
 
   async createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void> {

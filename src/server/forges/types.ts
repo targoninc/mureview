@@ -1,4 +1,6 @@
-import type { FileStatus, ForgeKind } from '../../shared/types';
+import type { CheckInfo, ChecksSummary, FileStatus, ForgeKind } from '../../shared/types';
+
+export type { CheckInfo, ChecksSummary };
 
 export class ForgeError extends Error {
   status: number;
@@ -52,6 +54,19 @@ export interface ForgeCallOptions {
   fresh?: boolean;
 }
 
+export interface PullRequestRef {
+  number: number;
+  created: boolean;
+}
+
+export interface ReviewComment {
+  body: string;
+  path: string;
+  line: number;
+  side: 'additions' | 'deletions';
+  commitId?: string;
+}
+
 export interface ForgeClient {
   readonly kind: ForgeKind;
   readonly baseUrl: string;
@@ -64,7 +79,10 @@ export interface ForgeClient {
   mergeBase(repo: string, baseSha: string, headSha: string): Promise<string | null>;
   listBlobs(repo: string, sha: string): Promise<TreeListing>;
   getBlobText(repo: string, sha: string): Promise<string | null>;
-  mergeBranch(repo: string, base: string, head: string, message: string): Promise<string>;
+  ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef>;
+  mergePullRequest(repo: string, number: number, message: string): Promise<string>;
+  postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'>;
+  checks(repo: string, sha: string): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
 }
 
@@ -85,4 +103,11 @@ export const statusMap: Record<string, FileStatus> = {
 export function decodeText(buffer: Buffer): string | null {
   if (buffer.includes(0)) return null;
   return buffer.toString('utf8');
+}
+
+export function summarizeChecks(runs: CheckInfo[]): ChecksSummary['state'] {
+  if (!runs.length) return 'none';
+  if (runs.some((run) => run.state === 'failure')) return 'failure';
+  if (runs.some((run) => run.state === 'pending' || run.state === 'unknown')) return 'pending';
+  return 'success';
 }

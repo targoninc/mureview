@@ -106,6 +106,47 @@ body {
   background-color: var(--bgColor-default);
 }
 
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.check-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.checks-success {
+  color: var(--fgColor-success);
+  background-color: var(--fgColor-success);
+}
+
+.checks-failure {
+  color: var(--fgColor-danger);
+  background-color: var(--fgColor-danger);
+}
+
+.checks-pending {
+  color: var(--fgColor-attention);
+  background-color: var(--fgColor-attention);
+}
+
+.checks-neutral,
+.checks-skipped,
+.checks-unknown {
+  color: var(--fgColor-muted);
+  background-color: var(--fgColor-muted);
+}
+
+svg.checks-success,
+svg.checks-failure,
+svg.checks-pending {
+  background-color: transparent;
+}
+
 .merge-conflicts {
   margin-top: 10px;
   display: flex;

@@ -155,6 +155,18 @@ export interface MergeResult {
 
 export type ConflictState = 'none' | 'detected' | 'unknown';
 
+export interface CheckInfo {
+  name: string;
+  state: 'success' | 'failure' | 'pending' | 'neutral' | 'skipped' | 'unknown';
+  description?: string;
+  url?: string;
+}
+
+export interface ChecksSummary {
+  state: 'none' | 'pending' | 'success' | 'failure' | 'unknown';
+  runs: CheckInfo[];
+}
+
 export interface MergePreviewRepo {
   connectionId: number;
   kind: ForgeKind;
@@ -173,6 +185,7 @@ export interface MergePreviewRepo {
   conflictFiles: string[];
   checkedFiles: number;
   uncheckedFiles: number;
+  checks: ChecksSummary;
   error?: string;
 }
 

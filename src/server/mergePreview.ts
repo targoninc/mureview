@@ -88,13 +88,16 @@ export async function buildMergePreview(connections: ForgeConnectionRow[], revie
       conflictFiles: [],
       checkedFiles: 0,
       uncheckedFiles: 0,
+      checks: { state: 'none', runs: [] },
     };
-    if (!client) return { ...base, conflicts: 'unknown', error: 'the forge connection was removed' };
-    if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
+    if (!client) return { ...base, conflicts: 'unknown', checks: { state: 'unknown', runs: [] }, error: 'the forge connection was removed' };
     try {
-      const targetRef = await client.getBranch(repo.repo, reviewSet.targetBranch, { fresh: true });
       const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
-      if (!targetRef || !headRef) return base;
+      if (!headRef) return base;
+      base.checks = await client.checks(repo.repo, headRef.sha);
+      if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
+      const targetRef = await client.getBranch(repo.repo, reviewSet.targetBranch, { fresh: true });
+      if (!targetRef) return base;
       return await checkRepo(client, base, headRef.sha, targetRef.sha);
     } catch (error) {
       return { ...base, conflicts: 'unknown', error: forgeErrorMessage(error) };
@@ -104,6 +107,7 @@ export async function buildMergePreview(connections: ForgeConnectionRow[], revie
   return {
     target: reviewSet.targetBranch,
     repos,
-    canMerge: repos.length > 0 && repos.every((repo) => !repo.error && repo.conflicts !== 'detected'),
+    canMerge:
+      repos.length > 0 && repos.every((repo) => !repo.error && repo.conflicts !== 'detected' && repo.checks.state !== 'failure'),
   };
 }

@@ -1,7 +1,22 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
 import { withPatchHeader } from '../patch';
-import { type BranchInfo, type CompareResult, type ForgeCallOptions, type ForgeClient, type ForgeRepo, ForgeError, type TreeListing, decodeText, statusMap } from './types';
+import {
+  type BranchInfo,
+  type CheckInfo,
+  type ChecksSummary,
+  type CompareResult,
+  type ForgeCallOptions,
+  type ForgeClient,
+  type ForgeRepo,
+  ForgeError,
+  type PullRequestRef,
+  type ReviewComment,
+  type TreeListing,
+  decodeText,
+  statusMap,
+  summarizeChecks,
+} from './types';
 
 const API = 'https://api.github.com';
 
@@ -191,29 +206,96 @@ export class GithubClient implements ForgeClient {
     return value;
   }
 
-  async mergeBranch(repo: string, base: string, head: string, message: string): Promise<string> {
-    const response = await fetch(`${API}/repos/${repo}/merges`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${this.token}`,
-        'Content-Type': 'application/json',
-        'User-Agent': 'mureview',
-      },
-      body: JSON.stringify({ base, head, commit_message: message }),
-    });
-    if (response.status === 204) return 'already up to date';
-    if (!response.ok) {
-      let errorMessage = response.statusText;
-      try {
-        errorMessage = ((await response.json()) as { message?: string }).message ?? errorMessage;
-      } catch {
-        // keep status text
-      }
-      throw new ForgeError(response.status, errorMessage);
+  async ensurePullRequest(repo: string, base: string, head: string, title: string, body = ''): Promise<PullRequestRef> {
+    try {
+      const created = await this.request<{ number: number }>(`/repos/${repo}/pulls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, head, base, body }),
+      });
+      return { number: created.number, created: true };
+    } catch (error) {
+      if (!(error instanceof ForgeError) || error.status !== 422) throw error;
+      const [owner] = repo.split('/');
+      const existing = await this.request<{ number: number }[]>(
+        `/repos/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${head}`)}&base=${encodeURIComponent(base)}`,
+      );
+      if (!existing.length) throw error;
+      return { number: existing[0].number, created: false };
     }
-    const data = (await response.json()) as { sha?: string };
-    return data.sha ? `merged as ${data.sha.slice(0, 7)}` : 'merged';
+  }
+
+  async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
+    await this.request(`/repos/${repo}/pulls/${number}/merge`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ merge_method: 'merge', commit_title: message }),
+    });
+    return `merged pull request #${number}`;
+  }
+
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'> {
+    try {
+      await this.request(`/repos/${repo}/pulls/${number}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          body: comment.body,
+          path: comment.path,
+          line: comment.line,
+          side: comment.side === 'additions' ? 'RIGHT' : 'LEFT',
+          commit_id: comment.commitId,
+        }),
+      });
+      return 'line';
+    } catch (error) {
+      if (!(error instanceof ForgeError)) throw error;
+      // The line may not be part of the pull request diff; keep the comment.
+      await this.request(`/repos/${repo}/issues/${number}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
+      });
+      return 'pull-request';
+    }
+  }
+
+  async checks(repo: string, sha: string): Promise<ChecksSummary> {
+    const runs: CheckInfo[] = [];
+    try {
+      const checkRuns = await this.request<{
+        check_runs: { name: string; status: string; conclusion: string | null; details_url?: string; output?: { title?: string } }[];
+      }>(`/repos/${repo}/commits/${sha}/check-runs?per_page=100`);
+      for (const run of checkRuns.check_runs) {
+        const state: CheckInfo['state'] =
+          run.status !== 'completed'
+            ? 'pending'
+            : run.conclusion === 'success' || run.conclusion === 'skipped' || run.conclusion === 'neutral'
+              ? (run.conclusion as CheckInfo['state'])
+              : run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled' || run.conclusion === 'action_required' || run.conclusion === 'stale'
+                ? 'failure'
+                : 'unknown';
+        runs.push({ name: run.name, state, description: run.output?.title, url: run.details_url });
+      }
+    } catch {
+      // no permission for check runs; fall back to commit statuses only
+    }
+    try {
+      const status = await this.request<{ statuses: { context: string; state: string; description?: string; target_url?: string }[] }>(
+        `/repos/${repo}/commits/${sha}/status`,
+      );
+      for (const entry of status.statuses) {
+        runs.push({
+          name: entry.context,
+          state: entry.state === 'success' ? 'success' : entry.state === 'pending' ? 'pending' : 'failure',
+          description: entry.description,
+          url: entry.target_url,
+        });
+      }
+    } catch {
+      // no commit statuses
+    }
+    return { state: summarizeChecks(runs), runs };
   }
 
   async createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void> {

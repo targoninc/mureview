@@ -1,7 +1,23 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch } from '../patch';
-import { type BranchInfo, type CompareFile, type CompareResult, type ForgeCallOptions, type ForgeClient, type ForgeRepo, ForgeError, type TreeListing, decodeText, statusMap } from './types';
+import {
+  type BranchInfo,
+  type CheckInfo,
+  type ChecksSummary,
+  type CompareFile,
+  type CompareResult,
+  type ForgeCallOptions,
+  type ForgeClient,
+  type ForgeRepo,
+  ForgeError,
+  type PullRequestRef,
+  type ReviewComment,
+  type TreeListing,
+  decodeText,
+  statusMap,
+  summarizeChecks,
+} from './types';
 
 interface GiteaRepo {
   full_name: string;
@@ -235,29 +251,84 @@ export class ForgejoClient implements ForgeClient {
     });
   }
 
-  async mergeBranch(repo: string, base: string, head: string, message: string): Promise<string> {
-    let number: number;
+  async ensurePullRequest(repo: string, base: string, head: string, title: string, body = 'Created by mureview.'): Promise<PullRequestRef> {
     try {
       const pull = await this.request<GiteaPull>(`/repos/${repo}/pulls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ head, base, title: message, body: 'Created by mureview.' }),
+        body: JSON.stringify({ head, base, title, body }),
       });
-      number = pull.number;
+      return { number: pull.number, created: true };
     } catch (error) {
       if (!(error instanceof ForgeError) || error.status !== 409) throw error;
       const pulls = await this.request<GiteaPull[]>(`/repos/${repo}/pulls?state=open&limit=50`);
       const existing = pulls.find((pull) => pull.head.ref === head && pull.base.ref === base);
       if (!existing) throw new ForgeError(409, 'a conflicting pull request already exists');
-      number = existing.number;
+      return { number: existing.number, created: false };
     }
+  }
 
+  async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
     await this.request(`/repos/${repo}/pulls/${number}/merge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ Do: 'merge', MergeTitleField: message, MergeMessageField: message }),
     });
     return `merged pull request #${number}`;
+  }
+
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'> {
+    try {
+      await this.request(`/repos/${repo}/pulls/${number}/reviews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'COMMENT',
+          commit_id: comment.commitId,
+          comments: [
+            {
+              path: comment.path,
+              body: comment.body,
+              new_position: comment.side === 'additions' ? comment.line : 0,
+              old_position: comment.side === 'deletions' ? comment.line : 0,
+            },
+          ],
+        }),
+      });
+      return 'line';
+    } catch (error) {
+      if (!(error instanceof ForgeError)) throw error;
+      await this.request(`/repos/${repo}/issues/${number}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
+      });
+      return 'pull-request';
+    }
+  }
+
+  async checks(repo: string, sha: string): Promise<ChecksSummary> {
+    try {
+      const statuses = await this.request<{ context: string; status: string; description?: string; target_url?: string }[]>(
+        `/repos/${repo}/commits/${sha}/statuses`,
+      );
+      const runs: CheckInfo[] = statuses.map((entry) => ({
+        name: entry.context,
+        state:
+          entry.status === 'success'
+            ? 'success'
+            : entry.status === 'pending'
+              ? 'pending'
+              : entry.status === 'warning'
+                ? 'neutral'
+                : 'failure',
+        description: entry.description,
+        url: entry.target_url,
+      }));
+      return { state: summarizeChecks(runs), runs };
+    } catch {
+      return { state: 'unknown', runs: [] };
+    }
   }
 
   async createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void> {
