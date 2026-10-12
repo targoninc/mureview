@@ -14,7 +14,7 @@ import {
 } from './auth/providers';
 import { createCommentRoute, deleteCommentRoute, listCommentsRoute } from './comments';
 import { config } from './config';
-import { mergeReviewSet } from './merge';
+import { getMergePreview, mergeReviewSet } from './merge';
 import { listAvailableRepos } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
 import { createReviewSet, deleteReviewSet, getReviewSet, listReviewSets, updateReviewSet } from './reviewSets';
@@ -49,6 +49,7 @@ api.post('/api/review-sets', createReviewSet);
 api.get('/api/review-sets/:id', getReviewSet);
 api.put('/api/review-sets/:id', updateReviewSet);
 api.delete('/api/review-sets/:id', deleteReviewSet);
+api.get('/api/review-sets/:id/merge', getMergePreview);
 api.post('/api/review-sets/:id/merge', mergeReviewSet);
 
 api.get('/api/prs/:id/comments', listCommentsRoute);

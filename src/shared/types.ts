@@ -152,3 +152,32 @@ export interface MergeResult {
   ok: boolean;
   message: string;
 }
+
+export type ConflictState = 'none' | 'detected' | 'unknown';
+
+export interface MergePreviewRepo {
+  connectionId: number;
+  kind: ForgeKind;
+  host: string;
+  repo: string;
+  branch: string;
+  target: string;
+  targetExists: boolean;
+  aheadBy: number;
+  behindBy: number;
+  files: number;
+  additions: number;
+  deletions: number;
+  truncated: boolean;
+  conflicts: ConflictState;
+  conflictFiles: string[];
+  checkedFiles: number;
+  uncheckedFiles: number;
+  error?: string;
+}
+
+export interface MergePreview {
+  target: string;
+  repos: MergePreviewRepo[];
+  canMerge: boolean;
+}

@@ -5,6 +5,7 @@ import type { MeResponse } from '../shared/types';
 import { Shell } from './components/Shell';
 import { Login } from './components/Login';
 import { Dashboard } from './pages/Dashboard';
+import { MergePage } from './pages/MergePage';
 import { ReviewSetFormPage } from './pages/ReviewSetFormPage';
 import { ReviewSetPage } from './pages/ReviewSetPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -49,6 +50,7 @@ export function App() {
             <Route path="/review-sets/new" element={<ReviewSetFormPage />} />
             <Route path="/review-sets/:id" element={<ReviewSetPage />} />
             <Route path="/review-sets/:id/settings" element={<ReviewSetFormPage />} />
+            <Route path="/review-sets/:id/merge" element={<MergePage />} />
             <Route path="*" element={<div className="empty-state">Page not found.</div>} />
           </Routes>
         </Shell>

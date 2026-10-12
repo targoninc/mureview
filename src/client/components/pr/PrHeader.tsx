@@ -42,11 +42,10 @@ interface PrHeaderProps {
   detail: ReviewSetDetail;
   onReload: (fresh?: boolean) => void;
   onMerge: () => void;
-  merging: boolean;
   reviewedCount: number;
 }
 
-export function PrHeader({ detail, onReload, onMerge, merging, reviewedCount }: PrHeaderProps) {
+export function PrHeader({ detail, onReload, onMerge, reviewedCount }: PrHeaderProps) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const state = stateVariant(pr.state);
@@ -81,7 +80,7 @@ export function PrHeader({ detail, onReload, onMerge, merging, reviewedCount }: 
         </div>
         <div className="row">
           {pr.state === 'open' ? (
-            <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge} loading={merging}>
+            <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
               Merge
             </Button>
           ) : null}

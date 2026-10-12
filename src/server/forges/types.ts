@@ -61,6 +61,7 @@ export interface ForgeClient {
   listBranches(repo: string, options?: ForgeCallOptions): Promise<BranchInfo[]>;
   getBranch(repo: string, branch: string, options?: ForgeCallOptions): Promise<BranchInfo | null>;
   compare(repo: string, baseSha: string, headSha: string): Promise<CompareResult>;
+  mergeBase(repo: string, baseSha: string, headSha: string): Promise<string | null>;
   listBlobs(repo: string, sha: string): Promise<TreeListing>;
   getBlobText(repo: string, sha: string): Promise<string | null>;
   mergeBranch(repo: string, base: string, head: string, message: string): Promise<string>;

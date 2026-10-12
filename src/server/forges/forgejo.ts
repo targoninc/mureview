@@ -141,6 +141,30 @@ export class ForgejoClient implements ForgeClient {
     return value;
   }
 
+  private async ancestors(repo: string, sha: string, limit = 200): Promise<Set<string>> {
+    const visited = new Set<string>();
+    const queue = [sha];
+    while (queue.length > 0 && visited.size < limit) {
+      const current = queue.shift()!;
+      if (visited.has(current)) continue;
+      visited.add(current);
+      try {
+        const commit = await this.request<{ parents?: { sha: string }[] }>(`/repos/${repo}/git/commits/${current}`);
+        for (const parent of commit.parents ?? []) queue.push(parent.sha);
+      } catch {
+        // treat unreadable commits as roots
+      }
+    }
+    return visited;
+  }
+
+  async mergeBase(repo: string, baseSha: string, headSha: string): Promise<string | null> {
+    const ours = await this.ancestors(repo, headSha);
+    const theirs = await this.ancestors(repo, baseSha);
+    for (const sha of ours) if (theirs.has(sha)) return sha;
+    return null;
+  }
+
   listBlobs(repo: string, sha: string): Promise<TreeListing> {
     return cached(treeCache, `${this.baseUrl}#${repo}#${sha}`, async () => {
       const tree = await this.request<GiteaTree>(`/repos/${repo}/git/trees/${sha}?recursive=true&per_page=1000`);

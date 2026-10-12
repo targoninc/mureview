@@ -5,7 +5,7 @@ import { useDetail } from '../lib/useDetail';
 
 export function ReviewSetPage() {
   const { id } = useParams();
-  const { detail, error, reload, setDetail } = useDetail(id);
+  const { detail, error, reload } = useDetail(id);
 
   if (error) {
     return (
@@ -25,5 +25,5 @@ export function ReviewSetPage() {
     );
   }
 
-  return <PrView detail={detail} onReload={reload} onDetail={setDetail} />;
+  return <PrView detail={detail} onReload={reload} />;
 }

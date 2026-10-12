@@ -33,6 +33,7 @@ interface AdoDiffs {
   aheadCount: number;
   behindCount: number;
   allChangesIncluded?: boolean;
+  commonCommit?: string;
   changes?: AdoChange[];
 }
 
@@ -263,6 +264,14 @@ export class AdoClient implements ForgeClient {
         truncated: changed.length > capped.length,
       };
     });
+  }
+
+  async mergeBase(repo: string, baseSha: string, headSha: string): Promise<string | null> {
+    const diffs = await this.request<AdoDiffs>(
+      `${this.repoUrl(repo)}/diffs/commits?baseVersion=${baseSha}&targetVersion=${headSha}` +
+        `&baseVersionType=commit&targetVersionType=commit&$top=1&api-version=7.1`,
+    );
+    return diffs.commonCommit ?? null;
   }
 
   listBlobs(repo: string, sha: string): Promise<TreeListing> {

@@ -4,10 +4,17 @@ import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
 import { invalidateForgeCaches } from './forges';
 import { HttpError, json } from './http';
+import { buildMergePreview } from './mergePreview';
 import { buildPrStatus, clientsFor } from './pr';
 import { buildDetail, loadOwnedReviewSet, requireId } from './reviewSets';
 import type { Ctx } from './router';
 import { forgeErrorMessage } from './validate';
+
+export async function getMergePreview(ctx: Ctx): Promise<Response> {
+  const user = requireUser(ctx);
+  const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
+  return json(await buildMergePreview(connectionsFor(user.id), reviewSet));
+}
 
 export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);

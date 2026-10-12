@@ -31,6 +31,7 @@ interface GithubCompare {
   ahead_by: number;
   behind_by: number;
   files?: GithubCompareFile[];
+  merge_base_commit?: { sha: string };
 }
 
 interface GithubTreeEntry {
@@ -162,6 +163,11 @@ export class GithubClient implements ForgeClient {
         truncated: files.length >= 300,
       };
     });
+  }
+
+  async mergeBase(repo: string, baseSha: string, headSha: string): Promise<string | null> {
+    const comparison = await this.request<GithubCompare>(`/repos/${repo}/compare/${baseSha}...${headSha}`);
+    return comparison.merge_base_commit?.sha ?? null;
   }
 
   listBlobs(repo: string, sha: string): Promise<TreeListing> {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
@@ -9,7 +10,6 @@ import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, treePathFor } from '../../lib/format';
-import { MergeResultsFlash, useMerge } from './merge';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
 import { FileTreePanel } from './FileTreePanel';
@@ -53,11 +53,11 @@ function parseFiles(pr: PrStatus): ParsedFile[] {
 interface PrViewProps {
   detail: ReviewSetDetail;
   onReload: (fresh?: boolean) => void;
-  onDetail: (detail: ReviewSetDetail) => void;
 }
 
-export function PrView({ detail, onReload, onDetail }: PrViewProps) {
+export function PrView({ detail, onReload }: PrViewProps) {
   const { reviewSet, pr } = detail;
+  const navigate = useNavigate();
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
@@ -69,7 +69,6 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleFrame = useRef<number | null>(null);
   const visibleTrailing = useRef<number | null>(null);
-  const { merge, merging, results: mergeResults } = useMerge(pr, reviewSet, onDetail);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
   useEffect(
@@ -263,10 +262,14 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
 
   return (
     <div className="pr-page">
-      <PrHeader detail={detail} onReload={onReload} onMerge={merge} merging={merging} reviewedCount={reviewedCount} />
+      <PrHeader
+        detail={detail}
+        onReload={onReload}
+        onMerge={() => navigate(`/review-sets/${reviewSet.id}/merge`)}
+        reviewedCount={reviewedCount}
+      />
       <div className="pr-banners">
         <PrStatusBanner pr={pr} reviewSet={reviewSet} />
-        {mergeResults ? <MergeResultsFlash results={mergeResults} /> : null}
       </div>
       <div className="pr-body">
         <aside className="pr-sidebar">
