@@ -31,11 +31,12 @@ const statusClass: Record<FileStatus, string> = {
 interface FileTreePanelProps {
   pr: PrStatus;
   reviewedItems: Set<string>;
+  visibleItems: Set<string>;
   onSelectItem: (itemId: string) => void;
   onSetReviewed: (itemIds: string[], reviewed: boolean) => void;
 }
 
-export function FileTreePanel({ pr, reviewedItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
+export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -92,7 +93,7 @@ export function FileTreePanel({ pr, reviewedItems, onSelectItem, onSetReviewed }
       return [
         <div
           key={node.key}
-          className={`tree-row tree-file${selected === node.entry.itemId ? ' selected' : ''}`}
+          className={`tree-row tree-file${visibleItems.has(node.entry.itemId) ? ' visible' : ''}${selected === node.entry.itemId ? ' selected' : ''}`}
           style={indent}
           onClick={() => {
             setSelected(node.entry.itemId);

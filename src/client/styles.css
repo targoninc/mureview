@@ -352,6 +352,10 @@ body {
   background-color: var(--control-transparent-bgColor-hover);
 }
 
+.tree-row.visible {
+  background-color: var(--bgColor-neutral-muted);
+}
+
 .tree-row.selected {
   background-color: var(--bgColor-accent-muted);
 }

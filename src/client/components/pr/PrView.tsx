@@ -56,15 +56,60 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
   const [reviewed, setReviewedItems] = useState<Set<string>>(() => new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path))));
+  const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const visibleFrame = useRef<number | null>(null);
+  const visibleTrailing = useRef<number | null>(null);
   const { merge, merging, results: mergeResults } = useMerge(pr, reviewSet, onDetail);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
   useEffect(() => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path)))), [pr.reviewed]);
 
+  const computeVisibleItems = useCallback(() => {
+    const viewer = codeViewRef.current?.getInstance();
+    const scroll = scrollRef.current;
+    if (!viewer || !scroll) return;
+    const bounds = scroll.getBoundingClientRect();
+    const next = new Set<string>();
+    for (const rendered of viewer.getRenderedItems()) {
+      const rect = rendered.element.getBoundingClientRect();
+      if (rect.bottom > bounds.top + 1 && rect.top < bounds.bottom - 1) next.add(rendered.id);
+    }
+    setVisibleItems((current) => (current.size === next.size && [...next].every((id) => current.has(id)) ? current : next));
+  }, []);
+
+  const updateVisibleItems = useCallback(() => {
+    if (visibleFrame.current === null) {
+      visibleFrame.current = requestAnimationFrame(() => {
+        visibleFrame.current = null;
+        computeVisibleItems();
+      });
+    }
+    // Virtualized items mount after the scroll event, so check again once settled.
+    if (visibleTrailing.current !== null) clearTimeout(visibleTrailing.current);
+    visibleTrailing.current = window.setTimeout(() => {
+      visibleTrailing.current = null;
+      computeVisibleItems();
+    }, 150);
+  }, [computeVisibleItems]);
+
+  useEffect(
+    () => () => {
+      if (visibleFrame.current !== null) cancelAnimationFrame(visibleFrame.current);
+      if (visibleTrailing.current !== null) clearTimeout(visibleTrailing.current);
+    },
+    [],
+  );
+
   const parsed = useMemo(() => parseFiles(pr), [pr]);
   // Match the file tree's order (directories first, then files, alphabetical).
   const ordered = useMemo(() => orderByTree(parsed.map((entry) => ({ ...entry, itemId: entry.id }))), [parsed]);
+
+  useEffect(() => {
+    const timer = setTimeout(updateVisibleItems, 150);
+    return () => clearTimeout(timer);
+  }, [ordered, updateVisibleItems]);
   const parsedById = useMemo(() => new Map(parsed.map((entry) => [entry.id, entry])), [parsed]);
   const parsedRef = useRef(parsedById);
   parsedRef.current = parsedById;
@@ -218,6 +263,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
                 <FileTreePanel
                   pr={pr}
                   reviewedItems={reviewed}
+                  visibleItems={visibleItems}
                   onSelectItem={(itemId) => codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' })}
                   onSetReviewed={applyReviewed}
                 />
@@ -241,6 +287,8 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
                 ref={codeViewRef}
                 items={items}
                 options={options}
+                containerRef={scrollRef}
+                onScroll={updateVisibleItems}
                 renderAnnotation={renderAnnotation}
                 renderHeaderMetadata={renderHeaderMetadata}
                 style={{ height: '100%', overflow: 'auto' }}
