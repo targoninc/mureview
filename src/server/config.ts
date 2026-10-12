@@ -11,6 +11,9 @@ export const config = {
   dbPath: process.env.DATABASE_PATH ?? 'data/mureview.db',
   githubClientId: process.env.GITHUB_CLIENT_ID ?? '',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
+  // Optional full callback URL override, e.g. when the OAuth app has a legacy
+  // URL registered. Defaults to ${BASE_URL}/api/auth/callback/github.
+  githubRedirectUri: (process.env.GITHUB_REDIRECT_URI ?? '').replace(/\/+$/, ''),
   sessionSecret: process.env.SESSION_SECRET ?? '',
   distDir,
 };

@@ -46,7 +46,7 @@ function forgejoRedirectUri(): string {
 }
 
 function githubRedirectUri(): string {
-  return `${config.baseUrl}/api/auth/callback/github`;
+  return config.githubRedirectUri || `${config.baseUrl}/api/auth/callback/github`;
 }
 
 export function normalizeForgeHost(input: string): string {

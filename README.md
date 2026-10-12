@@ -58,6 +58,7 @@ review sets, and every forge request uses their own connection tokens.
 | `BASE_URL` | `http://localhost:8081` | Public URL. Used for OAuth redirects and may include a path prefix. |
 | `GITHUB_CLIENT_ID` | | GitHub OAuth app client id. |
 | `GITHUB_CLIENT_SECRET` | | GitHub OAuth app client secret. |
+| `GITHUB_REDIRECT_URI` | `${BASE_URL}/api/auth/callback/github` | Override when the OAuth app has a different callback URL registered. |
 | `SESSION_SECRET` | generated & stored in DB | Optional override for session/token encryption. |
 | `PORT` | `8081` | HTTP port. |
 | `DATABASE_PATH` | `data/mureview.db` | SQLite file location. |
@@ -65,6 +66,9 @@ review sets, and every forge request uses their own connection tokens.
 Create an OAuth app at <https://github.com/settings/developers> with the callback
 URL set to `${BASE_URL}/api/auth/callback/github`. GitHub sign-in and
 connections are optional: without credentials the other providers still work.
+If your app still has the legacy `${BASE_URL}/api/auth/callback` registered
+(that route is still served), set `GITHUB_REDIRECT_URI` to it so the authorize
+request uses the URL GitHub knows.
 
 ## Development
 

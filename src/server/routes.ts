@@ -31,6 +31,9 @@ api.post('/api/auth/login', passwordLogin, true);
 api.post('/api/auth/logout', logout, true);
 api.get('/api/auth/login/github', githubLoginStart, true);
 api.get('/api/auth/callback/github', githubCallback, true);
+// Legacy callback path, kept so OAuth apps registered before the provider
+// split keep working.
+api.get('/api/auth/callback', githubCallback, true);
 api.post('/api/auth/login/forgejo', forgejoLoginStart, true);
 api.get('/api/auth/callback/forgejo', forgejoCallback, true);
 api.get('/api/auth/login/atproto', atprotoLoginStart, true);
