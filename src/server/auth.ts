@@ -114,5 +114,10 @@ export function handleLogout(ctx: Ctx): Response {
 }
 
 export function handleMe(ctx: Ctx): Response {
-  return json({ user: ctx.user ? publicUser(ctx.user) : null });
+  return json({
+    user: ctx.user ? publicUser(ctx.user) : null,
+    oauthAppUrl: config.githubClientId
+      ? `https://github.com/settings/connections/applications/${config.githubClientId}`
+      : null,
+  });
 }

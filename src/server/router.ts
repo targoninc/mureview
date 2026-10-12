@@ -19,6 +19,22 @@ interface Route {
 }
 
 const mutating = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const compressThreshold = 64_000;
+
+async function gzipLargeJson(response: Response, req: Request): Promise<Response> {
+  const type = response.headers.get('content-type') ?? '';
+  if (!type.includes('application/json')) return response;
+  if (!(req.headers.get('accept-encoding') ?? '').includes('gzip')) return response;
+
+  const body = Buffer.from(await response.arrayBuffer());
+  if (body.length < compressThreshold) return new Response(body, response);
+
+  const compressed = Bun.gzipSync(body);
+  const headers = new Headers(response.headers);
+  headers.set('Content-Encoding', 'gzip');
+  headers.set('Content-Length', String(compressed.length));
+  return new Response(compressed, { status: response.status, headers });
+}
 
 export class Router {
   private routes: Route[] = [];
@@ -66,7 +82,7 @@ export class Router {
         return json({ error: 'Cross-origin request rejected' }, 403);
       }
       try {
-        return await route.handler({ req, url: new URL(req.url), path, params, user });
+        return await gzipLargeJson(await route.handler({ req, url: new URL(req.url), path, params, user }), req);
       } catch (error) {
         if (error instanceof HttpError) return json({ error: error.message }, error.status);
         console.error(`${req.method} ${path} failed:`, error);

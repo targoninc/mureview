@@ -1,5 +1,6 @@
 import type { RepoStatus } from '../shared/types';
-import { GitHubError, getRepo, listBranches } from './github';
+import { mapLimit } from './cache';
+import { GitHubError, getRepoCached, listBranchesCached } from './github';
 import { parseRepoList } from './repos';
 
 export function compileRegex(pattern: string): RegExp | null {
@@ -60,27 +61,26 @@ export function multiMatchError(status: RepoStatus): string | null {
   return `${status.repo}: ${status.matches.length} branches match your pattern (${truncateList(status.matches)}). A pattern must match at most one branch per repository.`;
 }
 
-export async function inspectRepos(token: string, repos: string[], regex: RegExp | null): Promise<RepoStatus[]> {
-  const statuses: RepoStatus[] = [];
-  for (const repo of repos) {
+export interface LocatedRepo {
+  status: RepoStatus;
+  sha: string | null;
+}
+
+export async function inspectRepos(token: string, repos: string[], regex: RegExp | null, fresh = false): Promise<LocatedRepo[]> {
+  return mapLimit(repos, 4, async (repo): Promise<LocatedRepo> => {
     try {
-      await getRepo(token, repo);
+      await getRepoCached(token, repo, fresh);
     } catch (error) {
-      statuses.push(emptyRepoStatus(repo, `You don't have access to ${repo} (${githubErrorMessage(error)}).`));
-      continue;
+      return { status: emptyRepoStatus(repo, `You don't have access to ${repo} (${githubErrorMessage(error)}).`), sha: null };
     }
     try {
-      const branches = await listBranches(token, repo);
+      const branches = await listBranchesCached(token, repo, fresh);
       const matches = regex ? matchingBranches(branches.map((branch) => branch.name), regex) : [];
-      statuses.push({
-        ...emptyRepoStatus(repo),
-        accessible: true,
-        matches,
-        branch: matches.length === 1 ? matches[0] : null,
-      });
+      const branch = matches.length === 1 ? matches[0] : null;
+      const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.commit.sha ?? null) : null;
+      return { status: { ...emptyRepoStatus(repo), accessible: true, matches, branch }, sha };
     } catch (error) {
-      statuses.push(emptyRepoStatus(repo, `Could not list branches for ${repo} (${githubErrorMessage(error)}).`));
+      return { status: emptyRepoStatus(repo, `Could not list branches for ${repo} (${githubErrorMessage(error)}).`), sha: null };
     }
-  }
-  return statuses;
+  });
 }

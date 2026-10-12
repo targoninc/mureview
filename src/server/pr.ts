@@ -1,8 +1,9 @@
 import type { FileDiff, FileStatus, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import { Cache, cached, mapLimit } from './cache';
+import { listComments } from './comments';
 import { constants } from './config';
 import { db } from './db';
-import { listComments } from './comments';
-import { GitHubError, type GithubCompareFile, compareBranches, getBlobText, getBranch, getTree } from './github';
+import { type GithubCompareFile, compareCached, getBlobTextCached, getBranchCached, getTreeCached } from './github';
 import { addedFilePatch, countLines } from './patch';
 import { compileRegex, githubErrorMessage, inspectRepos, multiMatchError } from './validate';
 
@@ -16,6 +17,14 @@ const statusMap: Record<string, FileStatus> = {
   copied: 'copied',
   changed: 'changed',
 };
+
+interface BranchDiff {
+  files: FileDiff[];
+  additions: number;
+  truncated: boolean;
+}
+
+const targetlessCache = new Cache<BranchDiff>(30, 60 * 60_000);
 
 function toFileDiff(file: GithubCompareFile): FileDiff {
   return {
@@ -35,61 +44,55 @@ function summarize(files: FileDiff[]): { additions: number; deletions: number } 
   });
 }
 
-async function targetlessDiff(token: string, repo: string, branch: string): Promise<{ files: FileDiff[]; additions: number; truncated: boolean }> {
-  const branchInfo = await getBranch(token, repo, branch);
-  const tree = await getTree(token, repo, branchInfo.commit.sha);
-  const blobs = tree.tree.filter((entry) => entry.type === 'blob' && (entry.size ?? 0) <= constants.maxFileBytes);
-  const capped = blobs.slice(0, constants.maxRepoFiles);
-  const files: FileDiff[] = [];
-
-  for (let i = 0; i < capped.length; i += 5) {
-    const batch = capped.slice(i, i + 5);
-    const loaded = await Promise.all(
-      batch.map(async (entry) => {
-        const content = await getBlobText(token, repo, entry.sha);
-        if (content === null) return null;
-        return {
-          path: entry.path,
-          type: 'added' as const,
-          additions: countLines(content),
-          deletions: 0,
-          patch: addedFilePatch(entry.path, content),
-        } satisfies FileDiff;
-      }),
-    );
-    for (const file of loaded) if (file) files.push(file);
-  }
-
-  return { files, additions: summarize(files).additions, truncated: tree.truncated || capped.length < blobs.length };
+function targetlessDiff(token: string, repo: string, branchSha: string): Promise<BranchDiff> {
+  return cached(targetlessCache, `${repo}#${branchSha}`, async () => {
+    const tree = await getTreeCached(token, repo, branchSha);
+    const blobs = tree.tree.filter((entry) => entry.type === 'blob' && (entry.size ?? 0) <= constants.maxFileBytes);
+    const capped = blobs.slice(0, constants.maxRepoFiles);
+    const loaded = await mapLimit(capped, 10, async (entry): Promise<FileDiff | null> => {
+      const content = await getBlobTextCached(token, repo, entry.sha);
+      if (content === null) return null;
+      return {
+        path: entry.path,
+        type: 'added',
+        additions: countLines(content),
+        deletions: 0,
+        patch: addedFilePatch(entry.path, content),
+      };
+    });
+    const files = loaded.filter((file): file is FileDiff => file !== null);
+    return { files, additions: summarize(files).additions, truncated: tree.truncated || capped.length < blobs.length };
+  });
 }
 
-async function inspectBranch(token: string, status: RepoStatus, target: string): Promise<RepoStatus> {
+async function inspectBranch(token: string, status: RepoStatus, branchSha: string, target: string, fresh: boolean): Promise<RepoStatus> {
   const repo = status.repo;
-  const branch = status.branch!;
   try {
-    let targetExists = true;
-    try {
-      await getBranch(token, repo, target);
-    } catch (error) {
-      if (error instanceof GitHubError && error.status === 404) targetExists = false;
-      else throw error;
+    const targetRef = await getBranchCached(token, repo, target, fresh);
+    if (!targetRef) {
+      const diff = await targetlessDiff(token, repo, branchSha);
+      return {
+        ...status,
+        targetExists: false,
+        state: 'open',
+        aheadBy: diff.files.length,
+        additions: diff.additions,
+        deletions: 0,
+        truncated: diff.truncated,
+        files: diff.files,
+      };
     }
 
-    if (!targetExists) {
-      const diff = await targetlessDiff(token, repo, branch);
-      return { ...status, targetExists, state: 'open', aheadBy: diff.files.length, additions: diff.additions, deletions: 0, truncated: diff.truncated, files: diff.files };
-    }
-
-    const comparison = await compareBranches(token, repo, target, branch);
+    const comparison = await compareCached(token, repo, targetRef.commit.sha, branchSha);
     if (comparison.status === 'behind' || comparison.status === 'identical') {
-      return { ...status, targetExists, state: 'merged', aheadBy: comparison.ahead_by, behindBy: comparison.behind_by };
+      return { ...status, targetExists: true, state: 'merged', aheadBy: comparison.ahead_by, behindBy: comparison.behind_by };
     }
 
     const files = (comparison.files ?? []).map(toFileDiff);
     const totals = summarize(files);
     return {
       ...status,
-      targetExists,
+      targetExists: true,
       state: 'open',
       aheadBy: comparison.ahead_by,
       behindBy: comparison.behind_by,
@@ -127,16 +130,15 @@ function ensurePrLifecycle(reviewSetId: number, hasOpenRepos: boolean): PrLifecy
   return { prId: null, justClosed: false };
 }
 
-export async function buildPrStatus(token: string, reviewSet: ReviewSet): Promise<PrStatus> {
+export async function buildPrStatus(token: string, reviewSet: ReviewSet, fresh = false): Promise<PrStatus> {
   const errors: string[] = [];
   const regex = compileRegex(reviewSet.branchRegex);
   if (!regex) errors.push('The branch pattern is not a valid regular expression.');
 
-  const statuses = await inspectRepos(token, reviewSet.repos, regex);
-  const repos: RepoStatus[] = [];
-  for (const status of statuses) {
-    repos.push(status.branch ? await inspectBranch(token, status, reviewSet.targetBranch) : status);
-  }
+  const located = await inspectRepos(token, reviewSet.repos, regex, fresh);
+  const repos = await mapLimit(located, 4, async ({ status, sha }) =>
+    status.branch && sha ? inspectBranch(token, status, sha, reviewSet.targetBranch, fresh) : status,
+  );
 
   for (const repo of repos) {
     const error = repo.error ?? multiMatchError(repo);

@@ -1,3 +1,5 @@
+import { Cache, cached } from './cache';
+
 const API = 'https://api.github.com';
 const headers = (token: string, extra: HeadersInit = {}): HeadersInit => ({
   Accept: 'application/vnd.github+json',
@@ -102,4 +104,57 @@ export async function getBlobText(token: string, repo: string, sha: string): Pro
   const buf = Buffer.from(await res.arrayBuffer());
   if (buf.includes(0)) return null;
   return buf.toString('utf8');
+}
+
+const repoCache = new Cache<{ full_name: string }>(200, 5 * 60_000);
+const branchListCache = new Cache<GithubBranch[]>(100, 45_000);
+const branchCache = new Cache<GithubBranch | null>(300, 45_000);
+const compareCache = new Cache<GithubCompare>(60, 60 * 60_000);
+const treeCache = new Cache<{ tree: GithubTreeEntry[]; truncated: boolean }>(60, 24 * 60 * 60_000);
+const blobCache = new Cache<string>(400, 24 * 60 * 60_000);
+
+export function getRepoCached(token: string, repo: string, fresh = false) {
+  if (fresh) return getRepo(token, repo);
+  return cached(repoCache, repo, () => getRepo(token, repo));
+}
+
+export function listBranchesCached(token: string, repo: string, fresh = false) {
+  if (fresh) return listBranches(token, repo);
+  return cached(branchListCache, repo, () => listBranches(token, repo));
+}
+
+export async function getBranchCached(token: string, repo: string, branch: string, fresh = false): Promise<GithubBranch | null> {
+  const key = `${repo}#${branch}`;
+  if (fresh) return loadBranch(token, repo, branch);
+  const hit = branchCache.get(key);
+  if (hit !== undefined) return hit;
+  const value = await loadBranch(token, repo, branch);
+  branchCache.set(key, value);
+  return value;
+}
+
+async function loadBranch(token: string, repo: string, branch: string): Promise<GithubBranch | null> {
+  try {
+    return await getBranch(token, repo, branch);
+  } catch (error) {
+    if (error instanceof GitHubError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export function compareCached(token: string, repo: string, baseSha: string, headSha: string) {
+  return cached(compareCache, `${repo}:${baseSha}...${headSha}`, () => compareBranches(token, repo, baseSha, headSha));
+}
+
+export function getTreeCached(token: string, repo: string, sha: string) {
+  return cached(treeCache, `${repo}#${sha}`, () => getTree(token, repo, sha));
+}
+
+export async function getBlobTextCached(token: string, repo: string, sha: string): Promise<string | null> {
+  const key = `${repo}#${sha}`;
+  const hit = blobCache.get(key);
+  if (hit !== undefined) return hit;
+  const value = await getBlobText(token, repo, sha);
+  if (value !== null) blobCache.set(key, value);
+  return value;
 }

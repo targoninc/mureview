@@ -27,7 +27,7 @@ function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: 
   }
 }
 
-export function PrHeader({ detail, onReload }: { detail: ReviewSetDetail; onReload: () => void }) {
+export function PrHeader({ detail, onReload }: { detail: ReviewSetDetail; onReload: (fresh?: boolean) => void }) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const state = stateVariant(pr.state);
@@ -63,7 +63,7 @@ export function PrHeader({ detail, onReload }: { detail: ReviewSetDetail; onRelo
           <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
             Settings
           </Button>
-          <Button leadingVisual={SyncIcon} onClick={onReload}>
+          <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
             Refresh
           </Button>
         </div>

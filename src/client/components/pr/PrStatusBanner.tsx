@@ -1,13 +1,31 @@
 import { Flash } from '@primer/react';
 import type { PrStatus, ReviewSet } from '../../../shared/types';
+import { useAppContext } from '../../lib/appContext';
+
+function AccessHint() {
+  const { oauthAppUrl } = useAppContext();
+  if (!oauthAppUrl) return null;
+  return (
+    <p style={{ margin: '8px 0 0' }}>
+      Missing access to a repository that belongs to an organization?{' '}
+      <a href={oauthAppUrl} target="_blank" rel="noreferrer">
+        Grant the GitHub app access to it
+      </a>{' '}
+      and refresh.
+    </p>
+  );
+}
 
 function ErrorList({ errors }: { errors: string[] }) {
   return (
-    <ul className="error-list">
-      {errors.map((message) => (
-        <li key={message}>{message}</li>
-      ))}
-    </ul>
+    <>
+      <ul className="error-list">
+        {errors.map((message) => (
+          <li key={message}>{message}</li>
+        ))}
+      </ul>
+      <AccessHint />
+    </>
   );
 }
 

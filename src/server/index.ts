@@ -17,6 +17,8 @@ const server = Bun.serve({
       else if (path.startsWith(`${config.basePath}/`)) path = path.slice(config.basePath.length);
     }
 
+    if (path === '/healthz') return json({ ok: true });
+
     if (path.startsWith('/api/')) {
       const response = await handleApi(req, path, getSessionUser(req));
       return response ?? json({ error: 'Not found' }, 404);

@@ -68,9 +68,13 @@ function saveRepos(reviewSetId: number, repos: string[]): void {
   apply();
 }
 
-async function buildDetail(user: UserRow, id: number): Promise<ReviewSetDetail> {
+function isFresh(ctx: Ctx): boolean {
+  return ctx.url.searchParams.get('fresh') === '1';
+}
+
+async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const reviewSet = loadOwnedReviewSet(user, id);
-  const pr = await buildPrStatus(userToken(user), reviewSet);
+  const pr = await buildPrStatus(userToken(user), reviewSet, fresh);
   return { reviewSet, pr };
 }
 
@@ -98,7 +102,7 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
 
 export async function getReviewSet(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
-  return json({ detail: await buildDetail(user, requireId(ctx)) });
+  return json({ detail: await buildDetail(user, requireId(ctx), isFresh(ctx)) });
 }
 
 export async function updateReviewSet(ctx: Ctx): Promise<Response> {

@@ -41,7 +41,7 @@ function parseFiles(pr: PrStatus): ParsedFile[] {
   return parsed;
 }
 
-export function PrView({ detail, onReload }: { detail: ReviewSetDetail; onReload: () => void }) {
+export function PrView({ detail, onReload }: { detail: ReviewSetDetail; onReload: (fresh?: boolean) => void }) {
   const { reviewSet, pr } = detail;
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -86,7 +86,7 @@ export function PrView({ detail, onReload }: { detail: ReviewSetDetail; onReload
   const options = useMemo<CodeViewReactOptions<AnnotationMeta, undefined>>(
     () => ({
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
-      themeType: 'system',
+      themeType: 'dark',
       diffStyle: 'unified',
       enableGutterUtility: true,
       stickyHeaders: true,
