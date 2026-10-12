@@ -24,7 +24,7 @@ export function Shell({ user, onSignOut, children }: ShellProps) {
         <div className="app-header-actions">
           <span className="app-header-user">
             <Avatar src={user.avatarUrl} size={24} alt={user.name} />
-            {user.name}
+            <span className="app-header-username">{user.name}</span>
           </span>
           <IconButton icon={GearIcon} aria-label="Settings" variant="invisible" onClick={() => navigate('/settings')} />
           <IconButton icon={SignOutIcon} aria-label="Sign out" variant="invisible" onClick={onSignOut} />

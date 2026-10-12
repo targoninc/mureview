@@ -1,5 +1,5 @@
-import { Button, Heading, Label } from '@primer/react';
-import { GitMergeIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
+import { Button, IconButton, Label } from '@primer/react';
+import { CommentDiscussionIcon, FileDiffIcon, GitMergeIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, RepoStatus, ReviewSetDetail } from '../../../shared/types';
 import { repoStatusText } from '../../lib/format';
@@ -43,9 +43,22 @@ interface PrHeaderProps {
   onReload: (fresh?: boolean) => void;
   onMerge: () => void;
   reviewedCount: number;
+  compact: boolean;
+  commentCount: number;
+  onOpenFiles: () => void;
+  onOpenConversation: () => void;
 }
 
-export function PrHeader({ detail, onReload, onMerge, reviewedCount }: PrHeaderProps) {
+export function PrHeader({
+  detail,
+  onReload,
+  onMerge,
+  reviewedCount,
+  compact,
+  commentCount,
+  onOpenFiles,
+  onOpenConversation,
+}: PrHeaderProps) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const state = stateVariant(pr.state);
@@ -54,12 +67,10 @@ export function PrHeader({ detail, onReload, onMerge, reviewedCount }: PrHeaderP
 
   return (
     <div className="pr-header">
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="pr-header-top">
         <div className="stack" style={{ gap: 6 }}>
           <div className="row">
-            <Heading as="h1" variant="medium">
-              {reviewSet.name}
-            </Heading>
+            <h1 className="pr-title">{reviewSet.name}</h1>
             <Label variant={state.variant}>{state.text}</Label>
           </div>
           <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
@@ -78,21 +89,36 @@ export function PrHeader({ detail, onReload, onMerge, reviewedCount }: PrHeaderP
             {skipped > 0 ? ` · ${skipped} non-text files skipped` : ''}
           </span>
         </div>
-        <div className="row">
+        <div className="row pr-header-actions">
           {pr.state === 'open' ? (
             <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
               Merge
             </Button>
           ) : null}
-          <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
-            Settings
-          </Button>
-          <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
-            Refresh
-          </Button>
+          {compact ? (
+            <>
+              <Button leadingVisual={FileDiffIcon} onClick={onOpenFiles}>
+                Files
+              </Button>
+              <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
+                Conversation ({commentCount})
+              </Button>
+              <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
+              <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
+            </>
+          ) : (
+            <>
+              <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
+                Settings
+              </Button>
+              <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
+                Refresh
+              </Button>
+            </>
+          )}
         </div>
       </div>
-      <div className="row">
+      <div className="row pr-header-chips">
         {pr.repos.map((repo) => (
           <RepoChip key={`${repo.connectionId}:${repo.repo}`} repo={repo} />
         ))}

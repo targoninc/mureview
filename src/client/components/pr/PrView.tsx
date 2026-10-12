@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
-import { Button, Checkbox } from '@primer/react';
+import { Button, Checkbox, Dialog } from '@primer/react';
 import { CommentDiscussionIcon, FileDiffIcon } from '@primer/octicons-react';
 import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, treePathFor } from '../../lib/format';
+import { useIsMobile } from '../../lib/useIsMobile';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
 import { FileTreePanel } from './FileTreePanel';
@@ -58,7 +59,9 @@ interface PrViewProps {
 export function PrView({ detail, onReload }: PrViewProps) {
   const { reviewSet, pr } = detail;
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
+  const [panel, setPanel] = useState<'files' | 'conversation' | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
   const [reviewed, setReviewedItems] = useState<Set<string>>(
@@ -186,6 +189,22 @@ export function PrView({ detail, onReload }: PrViewProps) {
           side: range.side ?? 'additions',
         });
       },
+      onLineNumberClick: (props, context) => {
+        // Touch devices have no hover gutter; tapping a line number opens the
+        // comment composer instead.
+        if (!window.matchMedia('(pointer: coarse)').matches) return;
+        if (!('annotationSide' in props)) return;
+        const entry = parsedRef.current.get(context.item.id);
+        if (!entry) return;
+        setDraft({
+          itemId: entry.id,
+          connectionId: entry.connectionId,
+          repo: entry.repo,
+          path: entry.path,
+          line: props.lineNumber,
+          side: props.annotationSide,
+        });
+      },
     }),
     [],
   );
@@ -260,6 +279,36 @@ export function PrView({ detail, onReload }: PrViewProps) {
   const hasFiles = parsed.length > 0;
   const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
 
+  const openPanel = (next: 'files' | 'conversation') => {
+    setTab(next);
+    setPanel(next);
+  };
+
+  const panelContent =
+    tab === 'files' ? (
+      hasFiles ? (
+        <FileTreePanel
+          pr={pr}
+          reviewedItems={reviewed}
+          visibleItems={visibleItems}
+          onSelectItem={(itemId) => {
+            codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });
+            if (isMobile) setPanel(null);
+          }}
+          onSetReviewed={applyReviewed}
+        />
+      ) : (
+        <div className="empty-state">No text diffs to show.</div>
+      )
+    ) : (
+      <ConversationPanel
+        prId={pr.prId}
+        comments={comments}
+        onAdded={(comment) => setComments((current) => [...current, comment])}
+        onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
+      />
+    );
+
   return (
     <div className="pr-page">
       <PrHeader
@@ -267,53 +316,38 @@ export function PrView({ detail, onReload }: PrViewProps) {
         onReload={onReload}
         onMerge={() => navigate(`/review-sets/${reviewSet.id}/merge`)}
         reviewedCount={reviewedCount}
+        compact={isMobile}
+        commentCount={comments.length}
+        onOpenFiles={() => openPanel('files')}
+        onOpenConversation={() => openPanel('conversation')}
       />
       <div className="pr-banners">
         <PrStatusBanner pr={pr} reviewSet={reviewSet} />
       </div>
       <div className="pr-body">
-        <aside className="pr-sidebar">
-          <div className="pr-sidebar-tabs">
-            <Button
-              size="small"
-              variant={tab === 'files' ? 'primary' : 'invisible'}
-              leadingVisual={FileDiffIcon}
-              onClick={() => setTab('files')}
-            >
-              Files
-            </Button>
-            <Button
-              size="small"
-              variant={tab === 'conversation' ? 'primary' : 'invisible'}
-              leadingVisual={CommentDiscussionIcon}
-              onClick={() => setTab('conversation')}
-            >
-              Conversation ({comments.length})
-            </Button>
-          </div>
-          <div className="pr-sidebar-content">
-            {tab === 'files' ? (
-              hasFiles ? (
-                <FileTreePanel
-                  pr={pr}
-                  reviewedItems={reviewed}
-                  visibleItems={visibleItems}
-                  onSelectItem={(itemId) => codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' })}
-                  onSetReviewed={applyReviewed}
-                />
-              ) : (
-                <div className="empty-state">No text diffs to show.</div>
-              )
-            ) : (
-              <ConversationPanel
-                prId={pr.prId}
-                comments={comments}
-                onAdded={(comment) => setComments((current) => [...current, comment])}
-                onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
-              />
-            )}
-          </div>
-        </aside>
+        {isMobile ? null : (
+          <aside className="pr-sidebar">
+            <div className="pr-sidebar-tabs">
+              <Button
+                size="small"
+                variant={tab === 'files' ? 'primary' : 'invisible'}
+                leadingVisual={FileDiffIcon}
+                onClick={() => setTab('files')}
+              >
+                Files
+              </Button>
+              <Button
+                size="small"
+                variant={tab === 'conversation' ? 'primary' : 'invisible'}
+                leadingVisual={CommentDiscussionIcon}
+                onClick={() => setTab('conversation')}
+              >
+                Conversation ({comments.length})
+              </Button>
+            </div>
+            <div className="pr-sidebar-content">{panelContent}</div>
+          </aside>
+        )}
         <div className="pr-main">
           <div className="pr-diffs">
             {hasFiles ? (
@@ -340,6 +374,18 @@ export function PrView({ detail, onReload }: PrViewProps) {
           </div>
         </div>
       </div>
+
+      {isMobile && panel ? (
+        <Dialog
+          title={panel === 'files' ? 'Files' : 'Conversation'}
+          width="calc(100vw - 24px)"
+          height="auto"
+          onClose={() => setPanel(null)}
+          footerButtons={[{ content: 'Close', onClick: () => setPanel(null), buttonType: 'default' }]}
+        >
+          <div className="mobile-panel">{panelContent}</div>
+        </Dialog>
+      ) : null}
     </div>
   );
 }
