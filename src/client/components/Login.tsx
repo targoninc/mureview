@@ -1,17 +1,17 @@
-import { Button, Flash } from '@primer/react';
+import { Button } from '@primer/react';
 import { MarkGithubIcon } from '@primer/octicons-react';
 import { basePath } from '../lib/api';
 
-export function Login({ error }: { error?: string }) {
+export function Login() {
   return (
     <div className="centered">
-      <div className="stack" style={{ width: 360, textAlign: 'center' }}>
+      <div className="stack" style={{ width: 400, maxWidth: '100%', textAlign: 'center', padding: 24 }}>
         <MarkGithubIcon size={48} />
-        <h1>mureview</h1>
-        <p style={{ color: 'var(--fgColor-muted)' }}>
-          Multi-repository review sets, diffed against your target branch.
+        <h1 style={{ margin: 0 }}>mureview</h1>
+        <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>
+          Review a set of branches across many repositories as one pull request: every diff, every comment and the merge in a
+          single place.
         </p>
-        {error ? <Flash variant="danger">{error}</Flash> : null}
         <Button
           variant="primary"
           leadingVisual={MarkGithubIcon}
@@ -23,6 +23,10 @@ export function Login({ error }: { error?: string }) {
         >
           Sign in with GitHub
         </Button>
+        <a className="source-link" href="https://github.com/targoninc/mureview" target="_blank" rel="noreferrer">
+          <MarkGithubIcon size={16} />
+          Source on GitHub
+        </a>
       </div>
     </div>
   );

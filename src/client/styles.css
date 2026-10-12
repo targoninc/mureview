@@ -89,9 +89,26 @@ body {
 
 .centered {
   flex: 1;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 24px;
+}
+
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+  text-decoration: none;
+}
+
+.source-link:hover {
+  color: var(--fgColor-accent);
+  text-decoration: underline;
 }
 
 .repo-list {
