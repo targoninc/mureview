@@ -6,6 +6,7 @@ import { Button, Checkbox } from '@primer/react';
 import { CommentDiscussionIcon, FileDiffIcon } from '@primer/octicons-react';
 import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
+import { orderByTree } from '../../lib/fileTree';
 import { fileItemId } from '../../lib/format';
 import { MergeResultsFlash, useMerge } from './merge';
 import { PrStatusBanner } from './PrStatusBanner';
@@ -62,6 +63,8 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   useEffect(() => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path)))), [pr.reviewed]);
 
   const parsed = useMemo(() => parseFiles(pr), [pr]);
+  // Match the file tree's order (directories first, then files, alphabetical).
+  const ordered = useMemo(() => orderByTree(parsed.map((entry) => ({ ...entry, itemId: entry.id }))), [parsed]);
   const parsedById = useMemo(() => new Map(parsed.map((entry) => [entry.id, entry])), [parsed]);
   const parsedRef = useRef(parsedById);
   parsedRef.current = parsedById;
@@ -70,7 +73,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
 
   const items = useMemo<CodeViewItem<AnnotationMeta>[]>(
     () =>
-      parsed.map((entry) => {
+      ordered.map((entry) => {
         const threads = threadsByItem.get(entry.id) ?? [];
         const annotations: DiffLineAnnotation<AnnotationMeta>[] = threads.map((thread) => ({
           side: thread.side,
@@ -91,7 +94,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
         }
         return { id: entry.id, type: 'diff', fileDiff: entry.fileDiff, annotations, version: threadVersion(threads, draft?.itemId ?? null, entry.id) };
       }),
-    [parsed, threadsByItem, draft],
+    [ordered, threadsByItem, draft],
   );
 
   const options = useMemo<CodeViewReactOptions<AnnotationMeta, undefined>>(

@@ -3,31 +3,12 @@ import type { ReactNode } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon, FileIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, PrStatus } from '../../../shared/types';
-import { fileItemId, treePath } from '../../lib/format';
+import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
+import { fileItemId } from '../../lib/format';
 
-interface Entry {
-  repo: string;
-  path: string;
-  itemId: string;
+interface Entry extends TreeEntry {
   file: FileDiff;
 }
-
-interface FileNode {
-  kind: 'file';
-  name: string;
-  key: string;
-  entry: Entry;
-}
-
-interface DirNode {
-  kind: 'dir';
-  name: string;
-  key: string;
-  children: TreeNode[];
-  fileIds: string[];
-}
-
-type TreeNode = FileNode | DirNode;
 
 const statusLetter: Record<FileStatus, string> = {
   added: 'A',
@@ -46,43 +27,6 @@ const statusClass: Record<FileStatus, string> = {
   copied: 'status-renamed',
   changed: 'status-modified',
 };
-
-function buildTree(entries: Entry[]): TreeNode[] {
-  const root: DirNode = { kind: 'dir', name: '', key: '', children: [], fileIds: [] };
-
-  for (const entry of entries) {
-    const segments = treePath(entry.repo, entry.path).split('/');
-    let node = root;
-    segments.slice(0, -1).forEach((segment, index) => {
-      const key = segments.slice(0, index + 1).join('/');
-      let child = node.children.find((candidate): candidate is DirNode => candidate.kind === 'dir' && candidate.key === key);
-      if (!child) {
-        child = { kind: 'dir', name: segment, key, children: [], fileIds: [] };
-        node.children.push(child);
-      }
-      node = child;
-    });
-    node.children.push({ kind: 'file', name: segments[segments.length - 1], key: treePath(entry.repo, entry.path), entry });
-  }
-
-  const assignFileIds = (node: DirNode): string[] => {
-    const ids: string[] = [];
-    for (const child of node.children) {
-      if (child.kind === 'file') ids.push(child.entry.itemId);
-      else ids.push(...assignFileIds(child));
-    }
-    node.fileIds = ids;
-    return ids;
-  };
-  assignFileIds(root);
-
-  const sort = (nodes: TreeNode[]): TreeNode[] => {
-    nodes.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1));
-    for (const node of nodes) if (node.kind === 'dir') sort(node.children);
-    return nodes;
-  };
-  return sort(root.children);
-}
 
 interface FileTreePanelProps {
   pr: PrStatus;
@@ -106,7 +50,7 @@ export function FileTreePanel({ pr, reviewedItems, onSelectItem, onSetReviewed }
     return list;
   }, [pr]);
 
-  const tree = useMemo(() => buildTree(entries), [entries]);
+  const tree = useMemo(() => buildFileTree(entries), [entries]);
 
   const toggleDir = (key: string) =>
     setCollapsed((current) => {
@@ -116,7 +60,7 @@ export function FileTreePanel({ pr, reviewedItems, onSelectItem, onSetReviewed }
       return next;
     });
 
-  const renderNodes = (nodes: TreeNode[], depth: number): ReactNode[] =>
+  const renderNodes = (nodes: TreeNode<Entry>[], depth: number): ReactNode[] =>
     nodes.flatMap((node) => {
       const indent = { paddingLeft: depth * 12 + 8 };
       if (node.kind === 'dir') {
