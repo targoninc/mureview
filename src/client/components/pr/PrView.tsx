@@ -54,12 +54,12 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
-  const [reviewed, setReviewed] = useState<Set<string>>(() => new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path))));
+  const [reviewed, setReviewedItems] = useState<Set<string>>(() => new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path))));
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null);
   const { merge, merging, results: mergeResults } = useMerge(pr, reviewSet, onDetail);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
-  useEffect(() => setReviewed(new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path)))), [pr.reviewed]);
+  useEffect(() => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path)))), [pr.reviewed]);
 
   const parsed = useMemo(() => parseFiles(pr), [pr]);
   const parsedById = useMemo(() => new Map(parsed.map((entry) => [entry.id, entry])), [parsed]);
@@ -135,28 +135,34 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
     [pr.prId],
   );
 
-  const toggleReviewed = useCallback(
-    async (itemId: string) => {
-      const entry = parsedRef.current.get(itemId);
-      if (!entry || !pr.prId) return;
-      const next = !reviewed.has(itemId);
-      const apply = (value: boolean) =>
-        setReviewed((current) => {
+  const applyReviewed = useCallback(
+    async (itemIds: string[], value: boolean) => {
+      if (!pr.prId) return;
+      const files = itemIds.map((itemId) => parsedRef.current.get(itemId)).filter((entry): entry is ParsedFile => Boolean(entry));
+      if (!files.length) return;
+
+      const apply = (on: boolean) =>
+        setReviewedItems((current) => {
           const copy = new Set(current);
-          if (value) copy.add(itemId);
-          else copy.delete(itemId);
+          for (const file of files) {
+            if (on) copy.add(file.id);
+            else copy.delete(file.id);
+          }
           return copy;
         });
 
-      apply(next);
+      apply(value);
       try {
-        await put(`/prs/${pr.prId}/reviewed`, { repo: entry.repo, path: entry.path, reviewed: next });
+        await put(`/prs/${pr.prId}/reviewed`, {
+          reviewed: value,
+          files: files.map((file) => ({ repo: file.repo, path: file.path })),
+        });
       } catch (error) {
-        apply(!next);
+        apply(!value);
         console.error('Could not update the reviewed state:', error);
       }
     },
-    [reviewed, pr.prId],
+    [pr.prId],
   );
 
   const renderHeaderMetadata = useCallback(
@@ -165,12 +171,12 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
       if (!entry || !pr.prId) return null;
       return (
         <label className="viewed-toggle" title="Mark this file as reviewed">
-          <Checkbox checked={reviewed.has(entry.id)} onChange={() => toggleReviewed(entry.id)} />
+          <Checkbox checked={reviewed.has(entry.id)} onChange={() => applyReviewed([entry.id], !reviewed.has(entry.id))} />
           Viewed
         </label>
       );
     },
-    [reviewed, toggleReviewed, pr.prId],
+    [reviewed, applyReviewed, pr.prId],
   );
 
   const hasFiles = parsed.length > 0;
@@ -210,7 +216,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
                   pr={pr}
                   reviewedItems={reviewed}
                   onSelectItem={(itemId) => codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' })}
-                  onToggleReviewed={toggleReviewed}
+                  onSetReviewed={applyReviewed}
                 />
               ) : (
                 <div className="empty-state">No text diffs to show.</div>

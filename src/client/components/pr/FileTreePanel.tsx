@@ -24,6 +24,7 @@ interface DirNode {
   name: string;
   key: string;
   children: TreeNode[];
+  fileIds: string[];
 }
 
 type TreeNode = FileNode | DirNode;
@@ -47,7 +48,7 @@ const statusClass: Record<FileStatus, string> = {
 };
 
 function buildTree(entries: Entry[]): TreeNode[] {
-  const root: DirNode = { kind: 'dir', name: '', key: '', children: [] };
+  const root: DirNode = { kind: 'dir', name: '', key: '', children: [], fileIds: [] };
 
   for (const entry of entries) {
     const segments = treePath(entry.repo, entry.path).split('/');
@@ -56,13 +57,24 @@ function buildTree(entries: Entry[]): TreeNode[] {
       const key = segments.slice(0, index + 1).join('/');
       let child = node.children.find((candidate): candidate is DirNode => candidate.kind === 'dir' && candidate.key === key);
       if (!child) {
-        child = { kind: 'dir', name: segment, key, children: [] };
+        child = { kind: 'dir', name: segment, key, children: [], fileIds: [] };
         node.children.push(child);
       }
       node = child;
     });
     node.children.push({ kind: 'file', name: segments[segments.length - 1], key: treePath(entry.repo, entry.path), entry });
   }
+
+  const assignFileIds = (node: DirNode): string[] => {
+    const ids: string[] = [];
+    for (const child of node.children) {
+      if (child.kind === 'file') ids.push(child.entry.itemId);
+      else ids.push(...assignFileIds(child));
+    }
+    node.fileIds = ids;
+    return ids;
+  };
+  assignFileIds(root);
 
   const sort = (nodes: TreeNode[]): TreeNode[] => {
     nodes.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1));
@@ -76,10 +88,10 @@ interface FileTreePanelProps {
   pr: PrStatus;
   reviewedItems: Set<string>;
   onSelectItem: (itemId: string) => void;
-  onToggleReviewed: (itemId: string) => void;
+  onSetReviewed: (itemIds: string[], reviewed: boolean) => void;
 }
 
-export function FileTreePanel({ pr, reviewedItems, onSelectItem, onToggleReviewed }: FileTreePanelProps) {
+export function FileTreePanel({ pr, reviewedItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -109,8 +121,18 @@ export function FileTreePanel({ pr, reviewedItems, onSelectItem, onToggleReviewe
       const indent = { paddingLeft: depth * 12 + 8 };
       if (node.kind === 'dir') {
         const isCollapsed = collapsed.has(node.key);
+        const allReviewed = node.fileIds.length > 0 && node.fileIds.every((id) => reviewedItems.has(id));
+        const someReviewed = !allReviewed && node.fileIds.some((id) => reviewedItems.has(id));
         return [
           <div key={node.key} className="tree-row tree-dir" style={indent} onClick={() => toggleDir(node.key)}>
+            <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={allReviewed}
+                indeterminate={someReviewed}
+                onChange={() => onSetReviewed(node.fileIds, !allReviewed)}
+                aria-label={`Mark ${node.name} as reviewed`}
+              />
+            </span>
             <span className="tree-chevron">{isCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}</span>
             <span className="tree-icon tree-icon-dir">
               <FileDirectoryIcon size={14} />
@@ -134,8 +156,13 @@ export function FileTreePanel({ pr, reviewedItems, onSelectItem, onToggleReviewe
           }}
         >
           <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
-            <Checkbox checked={isReviewed} onChange={() => onToggleReviewed(node.entry.itemId)} aria-label={`Mark ${node.name} as reviewed`} />
+            <Checkbox
+              checked={isReviewed}
+              onChange={() => onSetReviewed([node.entry.itemId], !isReviewed)}
+              aria-label={`Mark ${node.name} as reviewed`}
+            />
           </span>
+          <span className="tree-chevron" />
           <span className="tree-icon">
             <FileIcon size={14} />
           </span>

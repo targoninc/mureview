@@ -12,9 +12,20 @@ export function listReviewed(prId: number): ReviewMark[] {
 }
 
 interface ReviewedInput {
+  reviewed?: unknown;
   repo?: unknown;
   path?: unknown;
-  reviewed?: unknown;
+  files?: unknown;
+}
+
+const maxBatch = 5000;
+
+function parseMark(value: unknown): ReviewMark {
+  const record = (value ?? {}) as { repo?: unknown; path?: unknown };
+  if (typeof record.repo !== 'string' || !record.repo) throw new HttpError(400, 'Each file needs a "repo".');
+  if (typeof record.path !== 'string' || !record.path) throw new HttpError(400, 'Each file needs a "path".');
+  if (record.path.length > 1000) throw new HttpError(400, '"path" is too long.');
+  return { repo: record.repo, path: record.path };
 }
 
 export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
@@ -23,15 +34,24 @@ export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
   if (pr.closed_at) throw new HttpError(400, 'This pull request is closed. Reviewed files only live while it is open.');
 
   const input = await readJson<ReviewedInput>(ctx.req);
-  if (typeof input.repo !== 'string' || !input.repo) throw new HttpError(400, '"repo" is required');
-  if (typeof input.path !== 'string' || !input.path) throw new HttpError(400, '"path" is required');
-  if (input.path.length > 1000) throw new HttpError(400, '"path" is too long');
   if (typeof input.reviewed !== 'boolean') throw new HttpError(400, '"reviewed" must be a boolean');
+  const reviewed = input.reviewed;
 
-  if (input.reviewed) {
-    db.run('INSERT OR IGNORE INTO reviewed_files (pr_id, repo, path) VALUES (?, ?, ?)', [pr.id, input.repo, input.path]);
-  } else {
-    db.run('DELETE FROM reviewed_files WHERE pr_id = ? AND repo = ? AND path = ?', [pr.id, input.repo, input.path]);
-  }
-  return json({ ok: true });
+  const marks: ReviewMark[] = Array.isArray(input.files)
+    ? input.files.map(parseMark)
+    : [parseMark({ repo: input.repo, path: input.path })];
+  if (!marks.length) throw new HttpError(400, 'No files given.');
+  if (marks.length > maxBatch) throw new HttpError(400, `At most ${maxBatch} files per request.`);
+
+  const apply = db.transaction((entries: ReviewMark[]) => {
+    for (const entry of entries) {
+      if (reviewed) {
+        db.run('INSERT OR IGNORE INTO reviewed_files (pr_id, repo, path) VALUES (?, ?, ?)', [pr.id, entry.repo, entry.path]);
+      } else {
+        db.run('DELETE FROM reviewed_files WHERE pr_id = ? AND repo = ? AND path = ?', [pr.id, entry.repo, entry.path]);
+      }
+    }
+  });
+  apply(marks);
+  return json({ ok: true, count: marks.length });
 }
