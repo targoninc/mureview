@@ -6,7 +6,9 @@ export function Login() {
   return (
     <div className="centered">
       <div className="stack" style={{ width: 400, maxWidth: '100%', textAlign: 'center', padding: 24 }}>
-        <MarkGithubIcon size={48} />
+        <div className="login-logo">
+          <MarkGithubIcon size={48} />
+        </div>
         <h1 style={{ margin: 0 }}>mureview</h1>
         <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>
           Review a set of branches across many repositories as one pull request: every diff, every comment and the merge in a
