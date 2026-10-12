@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { ThemeProvider } from '@primer/react';
+import '@primer/primitives/dist/css/base/motion/motion.css';
 import '@primer/primitives/dist/css/base/size/size.css';
 import '@primer/primitives/dist/css/base/typography/typography.css';
 import '@primer/primitives/dist/css/functional/themes/light.css';

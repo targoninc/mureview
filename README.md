@@ -8,8 +8,8 @@ fake pull request that diffs every matched branch against a shared target
 branch.
 
 Built with [Bun](https://bun.sh), [React](https://react.dev),
-[Primer](https://primer.style) (the GitHub design system),
-[Diffs](https://diffs.com) and [Trees](https://trees.software).
+[Primer](https://primer.style) (the GitHub design system) and
+[Diffs](https://diffs.com).
 
 ## How it works
 
@@ -27,9 +27,9 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   conversation. Comments are stored in SQLite **only while the PR is open**.
   Once the matched branches are merged into the target (or all disappear), the
   PR is closed and its comments are discarded — the PR is ephemeral.
-- Mark files as viewed from the checkbox in each file header, or right-click a
-  file in the tree. Viewed files show a green check in the tree and a
-  `x/y viewed` counter in the header; the marks are ephemeral like comments.
+- Mark files as viewed from the checkbox on each file row in the sidebar tree,
+  or the Viewed checkbox in the file's diff header. The header shows an
+  `x/y viewed` counter; the marks are ephemeral like comments.
 - Merge the whole review: each matched branch is merged into the target on
   GitHub (the target is created when missing) behind a confirmation dialog.
   When every branch is merged the PR closes automatically.
