@@ -13,8 +13,7 @@ FROM oven/bun:slim
 WORKDIR /usr/src/app
 
 COPY --from=build /usr/src/app/dist ./dist
-COPY --from=build /usr/src/app/src/server ./src/server
-COPY --from=build /usr/src/app/src/shared ./src/shared
+COPY --from=build /usr/src/app/dist-server ./dist-server
 COPY --from=build /usr/src/app/package.json ./
 
 ENV PORT=8081

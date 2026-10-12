@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { processFile } from '@pierre/diffs';
-import { addedFilePatch, countLines, withPatchHeader } from './patch';
+import { addedFilePatch, countLines, deletedFilePatch, modifiedFilePatch, withPatchHeader } from './patch';
 
 describe('addedFilePatch', () => {
   test('produces a patch the diff renderer can parse', () => {
@@ -13,10 +13,30 @@ describe('addedFilePatch', () => {
   });
 });
 
+describe('deletedFilePatch', () => {
+  test('parses as a deletion', () => {
+    const patch = deletedFilePatch('src/old.ts', 'a\nb\n');
+    const parsed = processFile(patch, { cacheKey: 'test' });
+    expect(parsed).toBeDefined();
+    expect(parsed!.name).toBe('src/old.ts');
+    expect(parsed!.type).toBe('deleted');
+  });
+});
+
+describe('modifiedFilePatch', () => {
+  test('generates hunks from old and new contents', () => {
+    const patch = modifiedFilePatch({ path: 'src/app.ts', type: 'modified' }, 'one\ntwo\nthree\n', 'one\nTWO\nthree\nfour\n');
+    const parsed = processFile(patch, { cacheKey: 'test' });
+    expect(parsed).toBeDefined();
+    expect(parsed!.name).toBe('src/app.ts');
+    expect(parsed!.type).toBe('change');
+  });
+});
+
 describe('withPatchHeader', () => {
   test('wraps GitHub hunk-only patches so the renderer sees the file name', () => {
     const hunk = '@@ -1,3 +1,4 @@\n context\n-removed\n+added\n+added too\n';
-    const patch = withPatchHeader({ path: 'src/app.ts', type: 'modified', additions: 2, deletions: 1, patch: hunk });
+    const patch = withPatchHeader({ path: 'src/app.ts', type: 'modified', patch: hunk });
     const parsed = processFile(patch, { cacheKey: 'test' });
     expect(parsed).toBeDefined();
     expect(parsed!.name).toBe('src/app.ts');
@@ -24,7 +44,7 @@ describe('withPatchHeader', () => {
 
   test('keeps rename information', () => {
     const hunk = '@@ -1 +1 @@\n-old\n+new\n';
-    const patch = withPatchHeader({ path: 'src/new.ts', prevPath: 'src/old.ts', type: 'renamed', additions: 1, deletions: 1, patch: hunk });
+    const patch = withPatchHeader({ path: 'src/new.ts', prevPath: 'src/old.ts', type: 'renamed', patch: hunk });
     const parsed = processFile(patch, { cacheKey: 'test' });
     expect(parsed).toBeDefined();
     expect(parsed!.name).toBe('src/new.ts');

@@ -1,23 +1,14 @@
-import type { FileDiff, FileStatus, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import type { FileDiff, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
 import { Cache, cached, mapLimit } from './cache';
 import { listComments } from './comments';
 import { constants } from './config';
-import { db } from './db';
-import { type GithubCompareFile, compareCached, getBlobTextCached, getBranchCached, getTreeCached } from './github';
-import { addedFilePatch, countLines, withPatchHeader } from './patch';
+import { type ForgeConnectionRow, db } from './db';
+import { type CompareFile, type ForgeClient, clientFor } from './forges';
+import { addedFilePatch, countLines } from './patch';
 import { listReviewed } from './reviewed';
-import { compileRegex, githubErrorMessage, inspectRepos, multiMatchError } from './validate';
+import { compileRegex, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
-
-const statusMap: Record<string, FileStatus> = {
-  added: 'added',
-  removed: 'deleted',
-  modified: 'modified',
-  renamed: 'renamed',
-  copied: 'copied',
-  changed: 'changed',
-};
 
 interface BranchDiff {
   files: FileDiff[];
@@ -25,21 +16,21 @@ interface BranchDiff {
   truncated: boolean;
 }
 
-const targetlessCache = new Cache<BranchDiff>(30, 60 * 60_000);
+const targetlessCache = new Cache<BranchDiff>(60, 60 * 60_000);
 
-function toFileDiff(file: GithubCompareFile): FileDiff {
-  // GitHub's compare API returns hunk-only patches; add the git headers so the
-  // diff renderer knows the file name.
-  const diff: FileDiff = {
-    path: file.filename,
-    prevPath: file.previous_filename,
-    type: statusMap[file.status] ?? 'modified',
+export function clientsFor(connections: ForgeConnectionRow[]): Map<number, ForgeClient> {
+  return new Map(connections.map((connection) => [connection.id, clientFor(connection)]));
+}
+
+function toFileDiff(file: CompareFile): FileDiff {
+  return {
+    path: file.path,
+    prevPath: file.prevPath,
+    type: file.type,
     additions: file.additions,
     deletions: file.deletions,
-    patch: file.patch ?? null,
+    patch: file.patch,
   };
-  if (diff.patch !== null) diff.patch = withPatchHeader(diff);
-  return diff;
 }
 
 function summarize(files: FileDiff[]): { additions: number; deletions: number } {
@@ -49,13 +40,13 @@ function summarize(files: FileDiff[]): { additions: number; deletions: number } 
   });
 }
 
-function targetlessDiff(token: string, repo: string, branchSha: string): Promise<BranchDiff> {
-  return cached(targetlessCache, `${repo}#${branchSha}`, async () => {
-    const tree = await getTreeCached(token, repo, branchSha);
-    const blobs = tree.tree.filter((entry) => entry.type === 'blob' && (entry.size ?? 0) <= constants.maxFileBytes);
+function targetlessDiff(client: ForgeClient, repo: string, branchSha: string): Promise<BranchDiff> {
+  return cached(targetlessCache, `${client.baseUrl}#${repo}#${branchSha}`, async () => {
+    const tree = await client.listBlobs(repo, branchSha);
+    const blobs = tree.blobs.filter((entry) => entry.size <= constants.maxFileBytes);
     const capped = blobs.slice(0, constants.maxRepoFiles);
     const loaded = await mapLimit(capped, 10, async (entry): Promise<FileDiff | null> => {
-      const content = await getBlobTextCached(token, repo, entry.sha);
+      const content = await client.getBlobText(repo, entry.sha);
       if (content === null) return null;
       return {
         path: entry.path,
@@ -70,12 +61,18 @@ function targetlessDiff(token: string, repo: string, branchSha: string): Promise
   });
 }
 
-async function inspectBranch(token: string, status: RepoStatus, branchSha: string, target: string, fresh: boolean): Promise<RepoStatus> {
+async function inspectBranch(
+  client: ForgeClient,
+  status: RepoStatus,
+  branchSha: string,
+  target: string,
+  fresh: boolean,
+): Promise<RepoStatus> {
   const repo = status.repo;
   try {
-    const targetRef = await getBranchCached(token, repo, target, fresh);
+    const targetRef = await client.getBranch(repo, target, { fresh });
     if (!targetRef) {
-      const diff = await targetlessDiff(token, repo, branchSha);
+      const diff = await targetlessDiff(client, repo, branchSha);
       return {
         ...status,
         targetExists: false,
@@ -88,26 +85,26 @@ async function inspectBranch(token: string, status: RepoStatus, branchSha: strin
       };
     }
 
-    const comparison = await compareCached(token, repo, targetRef.commit.sha, branchSha);
-    if (comparison.status === 'behind' || comparison.status === 'identical') {
-      return { ...status, targetExists: true, state: 'merged', aheadBy: comparison.ahead_by, behindBy: comparison.behind_by };
+    const comparison = await client.compare(repo, targetRef.sha, branchSha);
+    if (comparison.merged) {
+      return { ...status, targetExists: true, state: 'merged', aheadBy: comparison.aheadBy, behindBy: comparison.behindBy };
     }
 
-    const files = (comparison.files ?? []).map(toFileDiff);
+    const files = comparison.files.map(toFileDiff);
     const totals = summarize(files);
     return {
       ...status,
       targetExists: true,
       state: 'open',
-      aheadBy: comparison.ahead_by,
-      behindBy: comparison.behind_by,
+      aheadBy: comparison.aheadBy,
+      behindBy: comparison.behindBy,
       additions: totals.additions,
       deletions: totals.deletions,
-      truncated: files.length >= constants.maxRepoFiles,
+      truncated: comparison.truncated,
       files,
     };
   } catch (error) {
-    return { ...status, error: `Could not build the diff for ${repo} (${githubErrorMessage(error)}).`, state: 'error' };
+    return { ...status, error: `Could not build the diff for ${status.host}/${repo} (${forgeErrorMessage(error)}).`, state: 'error' };
   }
 }
 
@@ -136,15 +133,17 @@ function ensurePrLifecycle(reviewSetId: number, hasOpenRepos: boolean): PrLifecy
   return { prId: null, justClosed: false };
 }
 
-export async function buildPrStatus(token: string, reviewSet: ReviewSet, fresh = false): Promise<PrStatus> {
+export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet: ReviewSet, fresh = false): Promise<PrStatus> {
   const errors: string[] = [];
+  const clients = clientsFor(connections);
   const regex = compileRegex(reviewSet.branchRegex);
   if (!regex) errors.push('The branch pattern is not a valid regular expression.');
 
-  const located = await inspectRepos(token, reviewSet.repos, regex, fresh);
-  const repos = await mapLimit(located, 4, async ({ status, sha }) =>
-    status.branch && sha ? inspectBranch(token, status, sha, reviewSet.targetBranch, fresh) : status,
-  );
+  const located = await inspectRepos(clients, reviewSet.repos, regex, fresh);
+  const repos = await mapLimit(located, 4, async ({ status, sha }) => {
+    const client = clients.get(status.connectionId);
+    return status.branch && sha && client ? inspectBranch(client, status, sha, reviewSet.targetBranch, fresh) : status;
+  });
 
   for (const repo of repos) {
     const error = repo.error ?? multiMatchError(repo);

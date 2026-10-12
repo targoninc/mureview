@@ -7,6 +7,7 @@ import { timeAgo } from '../../lib/format';
 import type { Side } from './annotations';
 
 export interface CommentAnchor {
+  connectionId: number | null;
   repo: string | null;
   path: string | null;
   line: number | null;
@@ -33,8 +34,8 @@ export function CommentThread({ comments, onDeleted }: { comments: Comment[]; on
       {comments.map((comment) => (
         <div className="comment" key={comment.id}>
           <div className="comment-header">
-            <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.login} />
-            <strong>{comment.author.login}</strong>
+            <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
+            <strong>{comment.author.name}</strong>
             <span>commented {timeAgo(comment.createdAt)}</span>
             <span style={{ flex: 1 }} />
             <IconButton icon={TrashIcon} aria-label="Delete comment" variant="invisible" size="small" onClick={() => remove(comment.id)} />

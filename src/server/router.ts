@@ -1,4 +1,4 @@
-import type { UserRow } from './auth';
+import type { UserRow } from './db';
 import { HttpError, json } from './http';
 
 export interface Ctx {

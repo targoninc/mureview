@@ -1,8 +1,5 @@
-import { treePath } from './format';
-
 export interface TreeEntry {
-  repo: string;
-  path: string;
+  treePath: string;
   itemId: string;
 }
 
@@ -27,7 +24,7 @@ export function buildFileTree<T extends TreeEntry>(entries: T[]): TreeNode<T>[] 
   const root: DirNode<T> = { kind: 'dir', name: '', key: '', children: [], fileIds: [] };
 
   for (const entry of entries) {
-    const segments = treePath(entry.repo, entry.path).split('/');
+    const segments = entry.treePath.split('/');
     let node = root;
     segments.slice(0, -1).forEach((segment, index) => {
       const key = segments.slice(0, index + 1).join('/');
@@ -38,7 +35,7 @@ export function buildFileTree<T extends TreeEntry>(entries: T[]): TreeNode<T>[] 
       }
       node = child;
     });
-    node.children.push({ kind: 'file', name: segments[segments.length - 1], key: treePath(entry.repo, entry.path), entry });
+    node.children.push({ kind: 'file', name: segments[segments.length - 1], key: entry.treePath, entry });
   }
 
   const assignFileIds = (node: DirNode<T>): string[] => {

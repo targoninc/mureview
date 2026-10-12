@@ -87,6 +87,79 @@ body {
   gap: 16px;
 }
 
+.link-button {
+  background: none;
+  border: none;
+  color: var(--fgColor-accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.settings-panel {
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  padding: 16px;
+  background-color: var(--bgColor-muted);
+}
+
+.repo-picker-results {
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background-color: var(--bgColor-default);
+}
+
+.repo-picker-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid var(--borderColor-muted);
+  background: none;
+  color: var(--fgColor-default);
+  text-align: left;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.repo-picker-item:last-child {
+  border-bottom: none;
+}
+
+.repo-picker-item:hover {
+  background-color: var(--control-transparent-bgColor-hover);
+}
+
+.repo-picker-selected {
+  margin-top: 8px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.repo-picker-selected-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--borderColor-muted);
+  font-size: 12px;
+}
+
+.repo-picker-selected-item:last-child {
+  border-bottom: none;
+}
+
 .centered {
   flex: 1;
   height: 100%;

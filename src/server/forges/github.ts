@@ -1,0 +1,228 @@
+import type { FileStatus, ForgeKind } from '../../shared/types';
+import { Cache, cached } from '../cache';
+import { withPatchHeader } from '../patch';
+import { type BranchInfo, type CompareResult, type ForgeCallOptions, type ForgeClient, type ForgeRepo, ForgeError, type TreeListing, decodeText, statusMap } from './types';
+
+const API = 'https://api.github.com';
+
+interface GithubUser {
+  id: number;
+  login: string;
+  name: string | null;
+  avatar_url: string;
+}
+
+interface GithubBranch {
+  name: string;
+  commit: { sha: string };
+}
+
+interface GithubCompareFile {
+  filename: string;
+  previous_filename?: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  patch?: string;
+}
+
+interface GithubCompare {
+  status: 'ahead' | 'behind' | 'diverged' | 'identical';
+  ahead_by: number;
+  behind_by: number;
+  files?: GithubCompareFile[];
+}
+
+interface GithubTreeEntry {
+  path: string;
+  sha: string;
+  type: 'blob' | 'tree' | 'commit';
+  size?: number;
+}
+
+interface GithubRepo {
+  full_name: string;
+  private: boolean;
+  updated_at?: string;
+}
+
+const repoCache = new Cache<void>(200, 5 * 60_000);
+const branchListCache = new Cache<BranchInfo[]>(100, 45_000);
+const branchCache = new Cache<BranchInfo | null>(300, 45_000);
+const compareCache = new Cache<CompareResult>(60, 60 * 60_000);
+const treeCache = new Cache<TreeListing>(60, 24 * 60 * 60_000);
+const blobCache = new Cache<string>(400, 24 * 60 * 60_000);
+
+export function invalidateGithubBranchCaches(): void {
+  branchListCache.clear();
+  branchCache.clear();
+}
+
+export class GithubClient implements ForgeClient {
+  readonly kind: ForgeKind = 'github';
+  readonly baseUrl = 'https://github.com';
+  readonly host = 'github.com';
+
+  constructor(private token: string) {}
+
+  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+    const response = await fetch(API + path, {
+      ...init,
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${this.token}`,
+        'User-Agent': 'mureview',
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...init.headers,
+      },
+    });
+    if (!response.ok) {
+      let message = response.statusText;
+      try {
+        message = ((await response.json()) as { message?: string }).message ?? message;
+      } catch {
+        // keep status text
+      }
+      throw new ForgeError(response.status, message);
+    }
+    return (await response.json()) as T;
+  }
+
+  private async paginate<T>(path: string, maxPages = 10): Promise<T[]> {
+    const out: T[] = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const separator = path.includes('?') ? '&' : '?';
+      const items = await this.request<T[]>(`${path}${separator}per_page=100&page=${page}`);
+      out.push(...items);
+      if (items.length < 100) break;
+    }
+    return out;
+  }
+
+  async listRepos(): Promise<ForgeRepo[]> {
+    const repos = await this.paginate<GithubRepo>('/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name');
+    return repos.map((repo) => ({ repo: repo.full_name, private: repo.private, updatedAt: repo.updated_at }));
+  }
+
+  async ensureRepo(repo: string, options: ForgeCallOptions = {}): Promise<void> {
+    if (options.fresh) return void (await this.request(`/repos/${repo}`));
+    await cached(repoCache, repo, async () => void (await this.request(`/repos/${repo}`)));
+  }
+
+  private loadBranches(repo: string): Promise<BranchInfo[]> {
+    return this.paginate<GithubBranch>(`/repos/${repo}/branches`).then((branches) =>
+      branches.map((branch) => ({ name: branch.name, sha: branch.commit.sha })),
+    );
+  }
+
+  async listBranches(repo: string, options: ForgeCallOptions = {}): Promise<BranchInfo[]> {
+    if (options.fresh) return this.loadBranches(repo);
+    return cached(branchListCache, repo, () => this.loadBranches(repo));
+  }
+
+  async getBranch(repo: string, branch: string, options: ForgeCallOptions = {}): Promise<BranchInfo | null> {
+    const key = `${repo}#${branch}`;
+    const load = async (): Promise<BranchInfo | null> => {
+      try {
+        const found = await this.request<GithubBranch>(`/repos/${repo}/branches/${encodeURIComponent(branch)}`);
+        return { name: found.name, sha: found.commit.sha };
+      } catch (error) {
+        if (error instanceof ForgeError && error.status === 404) return null;
+        throw error;
+      }
+    };
+    if (options.fresh) return load();
+    const hit = branchCache.get(key);
+    if (hit !== undefined) return hit;
+    const value = await load();
+    branchCache.set(key, value);
+    return value;
+  }
+
+  compare(repo: string, baseSha: string, headSha: string): Promise<CompareResult> {
+    return cached(compareCache, `${repo}:${baseSha}...${headSha}`, async () => {
+      const comparison = await this.request<GithubCompare>(`/repos/${repo}/compare/${baseSha}...${headSha}`);
+      const merged = comparison.status === 'behind' || comparison.status === 'identical';
+      const files = (comparison.files ?? []).map((file) => {
+        const type: FileStatus = statusMap[file.status] ?? 'modified';
+        return {
+          path: file.filename,
+          prevPath: file.previous_filename,
+          type,
+          additions: file.additions,
+          deletions: file.deletions,
+          patch: file.patch ? withPatchHeader({ path: file.filename, prevPath: file.previous_filename, type, patch: file.patch }) : null,
+        };
+      });
+      return {
+        merged,
+        aheadBy: comparison.ahead_by,
+        behindBy: comparison.behind_by,
+        files,
+        truncated: files.length >= 300,
+      };
+    });
+  }
+
+  listBlobs(repo: string, sha: string): Promise<TreeListing> {
+    return cached(treeCache, `${repo}#${sha}`, async () => {
+      const tree = await this.request<{ tree: GithubTreeEntry[]; truncated: boolean }>(`/repos/${repo}/git/trees/${sha}?recursive=1`);
+      const blobs = tree.tree.filter((entry) => entry.type === 'blob').map((entry) => ({ path: entry.path, sha: entry.sha, size: entry.size ?? 0 }));
+      return { blobs, truncated: tree.truncated };
+    });
+  }
+
+  async getBlobText(repo: string, sha: string): Promise<string | null> {
+    const key = `${repo}#${sha}`;
+    const hit = blobCache.get(key);
+    if (hit !== undefined) return hit;
+    const response = await fetch(`${API}/repos/${repo}/git/blobs/${sha}`, {
+      headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github.raw', 'User-Agent': 'mureview' },
+    });
+    if (!response.ok) return null;
+    const value = decodeText(Buffer.from(await response.arrayBuffer()));
+    if (value !== null) blobCache.set(key, value);
+    return value;
+  }
+
+  async mergeBranch(repo: string, base: string, head: string, message: string): Promise<string> {
+    const response = await fetch(`${API}/repos/${repo}/merges`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'mureview',
+      },
+      body: JSON.stringify({ base, head, commit_message: message }),
+    });
+    if (response.status === 204) return 'already up to date';
+    if (!response.ok) {
+      let errorMessage = response.statusText;
+      try {
+        errorMessage = ((await response.json()) as { message?: string }).message ?? errorMessage;
+      } catch {
+        // keep status text
+      }
+      throw new ForgeError(response.status, errorMessage);
+    }
+    const data = (await response.json()) as { sha?: string };
+    return data.sha ? `merged as ${data.sha.slice(0, 7)}` : 'merged';
+  }
+
+  async createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void> {
+    await this.request(`/repos/${repo}/git/refs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${target}`, sha: from.sha }),
+    });
+  }
+}
+
+export const getUser = (token: string) =>
+  fetch(`${API}/user`, {
+    headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'User-Agent': 'mureview' },
+  }).then(async (response) => {
+    if (!response.ok) throw new ForgeError(response.status, response.statusText);
+    return (await response.json()) as GithubUser;
+  });

@@ -7,7 +7,7 @@ import { CommentDiscussionIcon, FileDiffIcon } from '@primer/octicons-react';
 import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
-import { fileItemId } from '../../lib/format';
+import { fileItemId, treePathFor } from '../../lib/format';
 import { MergeResultsFlash, useMerge } from './merge';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
@@ -18,6 +18,8 @@ import { type AnnotationMeta, type DraftMeta, groupThreads, isDraft, threadVersi
 
 interface ParsedFile {
   id: string;
+  connectionId: number;
+  host: string;
   repo: string;
   path: string;
   fileDiff: FileDiffMetadata;
@@ -25,6 +27,7 @@ interface ParsedFile {
 
 interface Draft {
   itemId: string;
+  connectionId: number;
   repo: string;
   path: string;
   line: number;
@@ -36,9 +39,11 @@ function parseFiles(pr: PrStatus): ParsedFile[] {
   for (const repo of pr.repos) {
     for (const file of repo.files ?? []) {
       if (!file.patch) continue;
-      const id = fileItemId(repo.repo, file.path);
+      const id = fileItemId(repo.connectionId, repo.repo, file.path);
       const fileDiff = processFile(file.patch, { cacheKey: id });
-      if (fileDiff) parsed.push({ id, repo: repo.repo, path: file.path, fileDiff });
+      if (fileDiff) {
+        parsed.push({ id, connectionId: repo.connectionId, host: repo.host, repo: repo.repo, path: file.path, fileDiff });
+      }
     }
   }
   return parsed;
@@ -55,7 +60,9 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
-  const [reviewed, setReviewedItems] = useState<Set<string>>(() => new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path))));
+  const [reviewed, setReviewedItems] = useState<Set<string>>(
+    () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path))),
+  );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -64,7 +71,10 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
   const { merge, merging, results: mergeResults } = useMerge(pr, reviewSet, onDetail);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
-  useEffect(() => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.repo, mark.path)))), [pr.reviewed]);
+  useEffect(
+    () => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path)))),
+    [pr.reviewed],
+  );
 
   const computeVisibleItems = useCallback(() => {
     const viewer = codeViewRef.current?.getInstance();
@@ -104,12 +114,23 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
 
   const parsed = useMemo(() => parseFiles(pr), [pr]);
   // Match the file tree's order (directories first, then files, alphabetical).
-  const ordered = useMemo(() => orderByTree(parsed.map((entry) => ({ ...entry, itemId: entry.id }))), [parsed]);
+  const ordered = useMemo(
+    () =>
+      orderByTree(
+        parsed.map((entry) => ({
+          ...entry,
+          itemId: entry.id,
+          treePath: treePathFor(entry.host, entry.repo, entry.path),
+        })),
+      ),
+    [parsed],
+  );
 
   useEffect(() => {
     const timer = setTimeout(updateVisibleItems, 150);
     return () => clearTimeout(timer);
   }, [ordered, updateVisibleItems]);
+
   const parsedById = useMemo(() => new Map(parsed.map((entry) => [entry.id, entry])), [parsed]);
   const parsedRef = useRef(parsedById);
   parsedRef.current = parsedById;
@@ -129,6 +150,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
           const draftMeta: DraftMeta = {
             draft: true,
             threadKey: `${entry.id}:draft`,
+            connectionId: entry.connectionId,
             repo: entry.repo,
             path: entry.path,
             side: draft.side,
@@ -154,7 +176,14 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
       onGutterUtilityClick: (range, context) => {
         const entry = parsedRef.current.get(context.item.id);
         if (!entry) return;
-        setDraft({ itemId: entry.id, repo: entry.repo, path: entry.path, line: range.start, side: range.side ?? 'additions' });
+        setDraft({
+          itemId: entry.id,
+          connectionId: entry.connectionId,
+          repo: entry.repo,
+          path: entry.path,
+          line: range.start,
+          side: range.side ?? 'additions',
+        });
       },
     }),
     [],
@@ -168,7 +197,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
         return (
           <CommentComposer
             prId={pr.prId ?? 0}
-            anchor={{ repo: meta.repo, path: meta.path, line: meta.line, side: meta.side }}
+            anchor={{ connectionId: meta.connectionId, repo: meta.repo, path: meta.path, line: meta.line, side: meta.side }}
             autoFocus
             onCancel={() => setDraft(null)}
             onDone={(comment) => {
@@ -203,7 +232,7 @@ export function PrView({ detail, onReload, onDetail }: PrViewProps) {
       try {
         await put(`/prs/${pr.prId}/reviewed`, {
           reviewed: value,
-          files: files.map((file) => ({ repo: file.repo, path: file.path })),
+          files: files.map((file) => ({ connectionId: file.connectionId, repo: file.repo, path: file.path })),
         });
       } catch (error) {
         apply(!value);

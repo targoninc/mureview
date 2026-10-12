@@ -1,33 +1,32 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Spinner } from '@primer/react';
-import type { User } from '../shared/types';
+import type { MeResponse } from '../shared/types';
 import { Shell } from './components/Shell';
 import { Login } from './components/Login';
 import { Dashboard } from './pages/Dashboard';
 import { ReviewSetFormPage } from './pages/ReviewSetFormPage';
 import { ReviewSetPage } from './pages/ReviewSetPage';
+import { SettingsPage } from './pages/SettingsPage';
 import { api, basename, post } from './lib/api';
 import { AppContext } from './lib/appContext';
 
 export function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [oauthAppUrl, setOauthAppUrl] = useState<string | null>(null);
+  const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api<{ user: User | null; oauthAppUrl: string | null }>('/me')
-      .then((result) => {
-        setUser(result.user);
-        setOauthAppUrl(result.oauthAppUrl);
-      })
-      .catch(() => setUser(null))
+  const refresh = useCallback(() => {
+    api<MeResponse>('/me')
+      .then(setMe)
+      .catch(() => setMe(null))
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(refresh, [refresh]);
+
   const signOut = useCallback(() => {
     post('/auth/logout', {}).catch(() => undefined);
-    setUser(null);
+    setMe((current) => (current ? { ...current, user: null, identities: [], connections: [] } : current));
   }, []);
 
   if (loading) {
@@ -38,14 +37,15 @@ export function App() {
     );
   }
 
-  if (!user) return <Login />;
+  if (!me?.user) return <Login providers={me?.providers ?? ['email']} onSignedIn={refresh} />;
 
   return (
-    <AppContext.Provider value={{ oauthAppUrl }}>
+    <AppContext.Provider value={{ githubOAuthAppUrl: me.githubOAuthAppUrl }}>
       <BrowserRouter basename={basename}>
-        <Shell user={user} onSignOut={signOut}>
+        <Shell user={me.user} onSignOut={signOut}>
           <Routes>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/review-sets/new" element={<ReviewSetFormPage />} />
             <Route path="/review-sets/:id" element={<ReviewSetPage />} />
             <Route path="/review-sets/:id/settings" element={<ReviewSetFormPage />} />

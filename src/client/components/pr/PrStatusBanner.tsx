@@ -3,7 +3,8 @@ import type { PrStatus, ReviewSet } from '../../../shared/types';
 import { useAppContext } from '../../lib/appContext';
 
 function AccessHint() {
-  const { oauthAppUrl } = useAppContext();
+  const { githubOAuthAppUrl } = useAppContext();
+  const oauthAppUrl = githubOAuthAppUrl;
   if (!oauthAppUrl) return null;
   return (
     <p style={{ margin: '8px 0 0' }}>
@@ -56,7 +57,7 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
         its comments were discarded. Configure a new branch pattern or point at new branches to start the next review.
         {merged.length > 0 ? (
           <div style={{ marginTop: 4 }}>
-            {merged.map((repo) => `${repo.repo}: ${repo.branch}`).join(' · ')}
+            {merged.map((repo) => `${repo.host}/${repo.repo}: ${repo.branch}`).join(' · ')}
           </div>
         ) : null}
       </Flash>

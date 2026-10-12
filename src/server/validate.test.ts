@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { compileRegex, matchingBranches, validateConfigShape } from './validate';
+import type { RepoStatus } from '../shared/types';
+import { compileRegex, emptyRepoStatus, matchingBranches, multiMatchError } from './validate';
 
 describe('compileRegex', () => {
   test('compiles valid patterns', () => {
@@ -18,13 +19,16 @@ describe('matchingBranches', () => {
   });
 });
 
-describe('validateConfigShape', () => {
-  test('passes for a reasonable config', () => {
-    expect(validateConfigShape({ repos: ['targoninc/a'], branchRegex: 'release/.*' })).toEqual([]);
+describe('multiMatchError', () => {
+  const repo = { connectionId: 1, repo: 'owner/name', kind: 'github' as const, host: 'github.com' };
+
+  test('flags patterns matching more than one branch', () => {
+    const status: RepoStatus = { ...emptyRepoStatus(repo), accessible: true, matches: ['a', 'b'], branch: null };
+    expect(multiMatchError(status)).toContain('2 branches match');
   });
 
-  test('explains missing repositories and invalid regexes', () => {
-    const errors = validateConfigShape({ repos: [], branchRegex: 'release/(' });
-    expect(errors).toHaveLength(2);
+  test('accepts zero or one matches', () => {
+    expect(multiMatchError({ ...emptyRepoStatus(repo), accessible: true, matches: [] })).toBeNull();
+    expect(multiMatchError({ ...emptyRepoStatus(repo), accessible: true, matches: ['a'], branch: 'a' })).toBeNull();
   });
 });

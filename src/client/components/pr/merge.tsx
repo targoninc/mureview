@@ -11,8 +11,8 @@ export function MergeResultsFlash({ results }: { results: MergeResult[] }) {
       <strong>{failed.length === 0 ? 'Merge complete' : failed.length === results.length ? 'Merge failed' : 'Merge partially complete'}</strong>
       <ul className="error-list">
         {results.map((result) => (
-          <li key={`${result.repo}:${result.message}`}>
-            {result.repo ? <span className="mono">{result.repo}: </span> : null}
+          <li key={`${result.label}:${result.message}`}>
+            {result.label ? <span className="mono">{result.label}: </span> : null}
             {result.message}
           </li>
         ))}
@@ -33,12 +33,12 @@ export function useMerge(pr: PrStatus, reviewSet: ReviewSet, onDetail: (detail: 
       title: `Merge into ${reviewSet.targetBranch}?`,
       content: (
         <>
-          <p>mureview will merge on GitHub:</p>
+          <p>mureview will merge these branches on their forges:</p>
           <ul className="error-list">
             {openRepos.map((repo) => (
-              <li key={repo.repo}>
+              <li key={`${repo.connectionId}:${repo.repo}`}>
                 <span className="mono">
-                  {repo.repo}: {repo.branch} → {reviewSet.targetBranch}
+                  {repo.host}/{repo.repo}: {repo.branch} → {reviewSet.targetBranch}
                 </span>
               </li>
             ))}
@@ -58,7 +58,7 @@ export function useMerge(pr: PrStatus, reviewSet: ReviewSet, onDetail: (detail: 
       setResults(result.results);
       onDetail(result.detail);
     } catch (error) {
-      setResults([{ repo: '', ok: false, message: (error as Error).message }]);
+      setResults([{ connectionId: 0, label: '', ok: false, message: (error as Error).message }]);
     } finally {
       setMerging(false);
     }

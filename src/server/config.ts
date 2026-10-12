@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 const port = Number(process.env.PORT ?? 8081);
+const distDir = process.env.DIST_DIR ?? join(process.cwd(), 'dist');
 const baseUrl = (process.env.BASE_URL ?? `http://localhost:${port}`).replace(/\/+$/, '');
 
 export const config = {
@@ -11,7 +12,7 @@ export const config = {
   githubClientId: process.env.GITHUB_CLIENT_ID ?? '',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
   sessionSecret: process.env.SESSION_SECRET ?? '',
-  distDir: join(import.meta.dir, '..', '..', 'dist'),
+  distDir,
 };
 
 export const constants = {

@@ -16,7 +16,7 @@ export function ConversationPanel({ prId, comments, onAdded, onDeleted }: Conver
     <div className="conversation">
       <CommentComposer
         prId={prId}
-        anchor={{ repo: null, path: null, line: null, side: null }}
+        anchor={{ connectionId: null, repo: null, path: null, line: null, side: null }}
         placeholder="Start a conversation on this pull request"
         onDone={onAdded}
       />

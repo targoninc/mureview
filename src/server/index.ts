@@ -1,5 +1,6 @@
+import { atprotoMetadata } from './auth/atproto';
+import { getSessionUser } from './auth/session';
 import { config } from './config';
-import { getSessionUser } from './auth';
 import './db';
 import { json } from './http';
 import { handleApi } from './routes';
@@ -18,6 +19,7 @@ const server = Bun.serve({
     }
 
     if (path === '/healthz') return json({ ok: true });
+    if (path === '/oauth-client-metadata.json') return json(atprotoMetadata);
 
     if (path.startsWith('/api/')) {
       const response = await handleApi(req, path, getSessionUser(req));

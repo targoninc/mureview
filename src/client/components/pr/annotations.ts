@@ -5,6 +5,7 @@ export type Side = 'additions' | 'deletions';
 
 export interface ThreadMeta {
   threadKey: string;
+  connectionId: number;
   repo: string;
   path: string;
   side: Side;
@@ -26,8 +27,8 @@ export function isDraft(meta: AnnotationMeta): meta is DraftMeta {
 export function groupThreads(comments: Comment[]): Map<string, ThreadMeta[]> {
   const byItem = new Map<string, Map<string, Comment[]>>();
   for (const comment of comments) {
-    if (!comment.repo || !comment.path || !comment.line || !comment.side) continue;
-    const itemId = fileItemId(comment.repo, comment.path);
+    if (comment.connectionId === null || !comment.repo || !comment.path || !comment.line || !comment.side) continue;
+    const itemId = fileItemId(comment.connectionId, comment.repo, comment.path);
     const threadKey = `${comment.side}:${comment.line}`;
     const threads = byItem.get(itemId) ?? new Map<string, Comment[]>();
     threads.set(threadKey, [...(threads.get(threadKey) ?? []), comment]);
@@ -40,6 +41,7 @@ export function groupThreads(comments: Comment[]): Map<string, ThreadMeta[]> {
       itemId,
       [...threads.entries()].map(([threadKey, list]) => ({
         threadKey: `${itemId}:${threadKey}`,
+        connectionId: list[0].connectionId!,
         repo: list[0].repo!,
         path: list[0].path!,
         side: list[0].side!,

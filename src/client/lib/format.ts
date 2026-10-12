@@ -1,4 +1,4 @@
-import type { FileStatus, RepoStatus } from '../../shared/types';
+import type { RepoStatus } from '../../shared/types';
 
 export function timeAgo(iso: string): string {
   const normalized = iso.includes('T') || iso.endsWith('Z') ? iso : `${iso.replace(' ', 'T')}Z`;
@@ -14,32 +14,23 @@ export function timeAgo(iso: string): string {
   return date.toLocaleDateString();
 }
 
-export function repoLabel(status: RepoStatus): string {
+export function fileItemId(connectionId: number, repo: string, path: string): string {
+  return `${connectionId}:${repo}:${path}`;
+}
+
+export function treePathFor(host: string, repo: string, path: string): string {
+  return `${host}/${repo}/${path}`;
+}
+
+export function repoLabelOf(repo: Pick<RepoStatus, 'host' | 'repo'>): string {
+  return `${repo.host}/${repo.repo}`;
+}
+
+export function repoStatusText(status: RepoStatus): string {
   if (status.state === 'error') return 'error';
   if (status.state === 'merged') return 'merged';
   if (status.state === 'open') return `${status.files?.length ?? 0} files`;
   if (status.matches.length > 1) return `${status.matches.length} matching branches`;
   if (status.branch) return 'merged';
   return 'no matching branch';
-}
-
-export function fileStatusTone(status: FileStatus): 'success' | 'danger' | 'attention' | 'done' | 'accent' {
-  switch (status) {
-    case 'added':
-      return 'success';
-    case 'deleted':
-      return 'danger';
-    case 'renamed':
-      return 'attention';
-    default:
-      return 'accent';
-  }
-}
-
-export function fileItemId(repo: string, path: string): string {
-  return `${repo}:${path}`;
-}
-
-export function treePath(repo: string, path: string): string {
-  return `${repo}/${path}`;
 }

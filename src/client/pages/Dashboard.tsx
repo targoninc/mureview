@@ -32,9 +32,7 @@ export function Dashboard() {
         {!reviewSets && !error ? <Spinner aria-label="Loading review sets" /> : null}
 
         {reviewSets && reviewSets.length === 0 ? (
-          <div className="empty-state">
-            No review sets yet. Create one to watch a branch across repositories.
-          </div>
+          <div className="empty-state">No review sets yet. Create one to watch a branch across repositories.</div>
         ) : null}
 
         {reviewSets && reviewSets.length > 0 ? (
@@ -56,7 +54,7 @@ export function Dashboard() {
                   </div>
                 </div>
                 <span className="mono" style={{ color: 'var(--fgColor-muted)' }}>
-                  {reviewSet.repos.join(', ')}
+                  {reviewSet.repos.map((repo) => `${repo.host}/${repo.repo}`).join(', ')}
                 </span>
               </Link>
             ))}

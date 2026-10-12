@@ -4,7 +4,7 @@ import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon, FileIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, PrStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
-import { fileItemId } from '../../lib/format';
+import { fileItemId, treePathFor } from '../../lib/format';
 
 interface Entry extends TreeEntry {
   file: FileDiff;
@@ -45,7 +45,11 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
     for (const repo of pr.repos) {
       for (const file of repo.files ?? []) {
         if (!file.patch) continue;
-        list.push({ repo: repo.repo, path: file.path, itemId: fileItemId(repo.repo, file.path), file });
+        list.push({
+          treePath: treePathFor(repo.host, repo.repo, file.path),
+          itemId: fileItemId(repo.connectionId, repo.repo, file.path),
+          file,
+        });
       }
     }
     return list;

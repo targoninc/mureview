@@ -1,9 +1,10 @@
-import type { ReviewSet, ReviewSetDetail, ReviewSetInput } from '../shared/types';
-import { requireUser, userToken, type UserRow } from './auth';
-import { db } from './db';
+import type { ForgeKind, ReviewSet, ReviewSetDetail, ReviewSetInput, ReviewSetRepo } from '../shared/types';
+import { type UserRow, db } from './db';
+import { hostOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
 import { buildPrStatus } from './pr';
-import { parseRepoList } from './repos';
+import { normalizeRepo } from './repos';
+import { connectionsFor } from './auth/identities';
 import type { Ctx } from './router';
 
 interface ReviewSetRow {
@@ -15,11 +16,24 @@ interface ReviewSetRow {
   created_at: string;
 }
 
-function reposFor(reviewSetId: number): string[] {
+interface RepoRow {
+  connection_id: number;
+  repo: string;
+  kind: ForgeKind;
+  base_url: string;
+}
+
+function reposFor(reviewSetId: number): ReviewSetRepo[] {
   return db
-    .query<{ repo: string }, [number]>('SELECT repo FROM review_set_repos WHERE review_set_id = ? ORDER BY repo')
+    .query<RepoRow, [number]>(
+      `SELECT rsr.connection_id, rsr.repo, fc.kind, fc.base_url
+       FROM review_set_repos rsr
+       JOIN forge_connections fc ON fc.id = rsr.connection_id
+       WHERE rsr.review_set_id = ?
+       ORDER BY fc.kind, fc.base_url, rsr.repo`,
+    )
     .all(reviewSetId)
-    .map((row) => row.repo);
+    .map((row) => ({ connectionId: row.connection_id, repo: row.repo, kind: row.kind, host: hostOf(row.base_url) }));
 }
 
 function toReviewSet(row: ReviewSetRow): ReviewSet {
@@ -47,23 +61,42 @@ export function requireId(ctx: Ctx): number {
   return id;
 }
 
-function parseInput(body: unknown): ReviewSetInput {
+function parseInput(user: UserRow, body: unknown): ReviewSetInput {
   const record = (body ?? {}) as Record<string, unknown>;
   const name = requireString(record.name, 'name', 200);
   const branchRegex = requireString(record.branchRegex, 'branchRegex', 500);
   const targetBranch = requireString(record.targetBranch, 'targetBranch', 255);
-  const raw = Array.isArray(record.repos) ? record.repos.filter((repo): repo is string => typeof repo === 'string') : [];
-  const { repos, invalid } = parseRepoList(raw);
-  if (invalid.length) throw new HttpError(400, `Invalid repositories: ${invalid.join(', ')}. Use the "owner/name" format.`);
+
+  const raw = Array.isArray(record.repos) ? record.repos : [];
+  const connections = new Set(connectionsFor(user.id).map((connection) => connection.id));
+  const repos: ReviewSetInput['repos'] = [];
+  const seen = new Set<string>();
+
+  for (const entry of raw) {
+    const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown };
+    const connectionId = Number(item.connectionId);
+    if (!Number.isInteger(connectionId) || !connections.has(connectionId)) {
+      throw new HttpError(400, 'Every repository must reference one of your forge connections.');
+    }
+    const repo = typeof item.repo === 'string' ? normalizeRepo(item.repo) : null;
+    if (!repo) throw new HttpError(400, `"${String(item.repo)}" is not a valid repository name. Use "owner/name".`);
+    const key = `${connectionId}:${repo}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    repos.push({ connectionId, repo });
+  }
+
   if (!repos.length) throw new HttpError(400, 'Add at least one repository.');
   if (repos.length > 50) throw new HttpError(400, 'A review set can include at most 50 repositories.');
   return { name, repos, branchRegex, targetBranch };
 }
 
-function saveRepos(reviewSetId: number, repos: string[]): void {
+function saveRepos(reviewSetId: number, repos: ReviewSetInput['repos']): void {
   const apply = db.transaction(() => {
     db.run('DELETE FROM review_set_repos WHERE review_set_id = ?', [reviewSetId]);
-    for (const repo of repos) db.run('INSERT INTO review_set_repos (review_set_id, repo) VALUES (?, ?)', [reviewSetId, repo]);
+    for (const repo of repos) {
+      db.run('INSERT INTO review_set_repos (review_set_id, connection_id, repo) VALUES (?, ?, ?)', [reviewSetId, repo.connectionId, repo.repo]);
+    }
   });
   apply();
 }
@@ -74,12 +107,12 @@ function isFresh(ctx: Ctx): boolean {
 
 export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const reviewSet = loadOwnedReviewSet(user, id);
-  const pr = await buildPrStatus(userToken(user), reviewSet, fresh);
+  const pr = await buildPrStatus(connectionsFor(user.id), reviewSet, fresh);
   return { reviewSet, pr };
 }
 
 export function listReviewSets(ctx: Ctx): Response {
-  const user = requireUser(ctx);
+  const user = ctx.user!;
   const rows = db
     .query<ReviewSetRow, [number]>('SELECT * FROM review_sets WHERE owner_id = ? ORDER BY name COLLATE NOCASE')
     .all(user.id);
@@ -87,8 +120,8 @@ export function listReviewSets(ctx: Ctx): Response {
 }
 
 export async function createReviewSet(ctx: Ctx): Promise<Response> {
-  const user = requireUser(ctx);
-  const input = parseInput(await readJson(ctx.req));
+  const user = ctx.user!;
+  const input = parseInput(user, await readJson(ctx.req));
   const inserted = db.run('INSERT INTO review_sets (owner_id, name, branch_regex, target_branch) VALUES (?, ?, ?, ?)', [
     user.id,
     input.name,
@@ -101,15 +134,15 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
 }
 
 export async function getReviewSet(ctx: Ctx): Promise<Response> {
-  const user = requireUser(ctx);
+  const user = ctx.user!;
   return json({ detail: await buildDetail(user, requireId(ctx), isFresh(ctx)) });
 }
 
 export async function updateReviewSet(ctx: Ctx): Promise<Response> {
-  const user = requireUser(ctx);
+  const user = ctx.user!;
   const id = requireId(ctx);
   loadOwnedReviewSet(user, id);
-  const input = parseInput(await readJson(ctx.req));
+  const input = parseInput(user, await readJson(ctx.req));
   db.run('UPDATE review_sets SET name = ?, branch_regex = ?, target_branch = ? WHERE id = ?', [
     input.name,
     input.branchRegex,
@@ -121,7 +154,7 @@ export async function updateReviewSet(ctx: Ctx): Promise<Response> {
 }
 
 export function deleteReviewSet(ctx: Ctx): Response {
-  const user = requireUser(ctx);
+  const user = ctx.user!;
   const result = db.run('DELETE FROM review_sets WHERE id = ? AND owner_id = ?', [requireId(ctx), user.id]);
   if (result.changes === 0) throw new HttpError(404, 'Review set not found');
   return json({ ok: true });

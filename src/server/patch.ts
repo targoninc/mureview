@@ -1,6 +1,7 @@
+import { structuredPatch } from 'diff';
 import type { FileDiff } from '../shared/types';
 
-export type PatchTarget = Pick<FileDiff, 'path' | 'prevPath' | 'type'>;
+export type PatchTarget = Pick<FileDiff, 'path' | 'prevPath' | 'type'> & { patch?: string | null };
 
 export function patchHeader(file: PatchTarget): string {
   const oldPath = (file.type === 'renamed' || file.type === 'copied') && file.prevPath ? file.prevPath : file.path;
@@ -15,7 +16,7 @@ export function patchHeader(file: PatchTarget): string {
   return `${lines.join('\n')}\n`;
 }
 
-export function withPatchHeader(file: FileDiff): string {
+export function withPatchHeader(file: PatchTarget): string {
   return patchHeader(file) + (file.patch ?? '');
 }
 
@@ -31,4 +32,23 @@ export function countLines(content: string): number {
   const lines = content.split('\n');
   if (lines.length && lines[lines.length - 1] === '') lines.pop();
   return lines.length;
+}
+
+function hunkText(oldContent: string, newContent: string): string {
+  const { hunks } = structuredPatch('a', 'b', oldContent, newContent, '', '', { context: 3 });
+  return hunks
+    .map((hunk) => `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@\n${hunk.lines.join('\n')}`)
+    .join('\n')
+    .concat(hunks.length ? '\n' : '');
+}
+
+export function modifiedFilePatch(file: PatchTarget, oldContent: string, newContent: string): string {
+  return patchHeader(file) + hunkText(oldContent, newContent);
+}
+
+export function deletedFilePatch(path: string, content: string): string {
+  const lines = content.split('\n');
+  if (lines.length && lines[lines.length - 1] === '') lines.pop();
+  const body = lines.map((line) => `-${line}`).join('\n');
+  return `${patchHeader({ path, type: 'deleted' })}@@ -1,${lines.length} +0,0 @@\n${body}\n`;
 }

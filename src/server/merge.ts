@@ -1,19 +1,21 @@
 import type { MergeResult } from '../shared/types';
-import { requireUser, userToken } from './auth';
+import { connectionsFor } from './auth/identities';
+import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
-import { createRef, getBranchCached, invalidateBranchCaches, mergeBranch } from './github';
+import { invalidateForgeCaches } from './forges';
 import { HttpError, json } from './http';
-import { buildPrStatus } from './pr';
+import { buildPrStatus, clientsFor } from './pr';
 import { buildDetail, loadOwnedReviewSet, requireId } from './reviewSets';
 import type { Ctx } from './router';
-import { githubErrorMessage } from './validate';
+import { forgeErrorMessage } from './validate';
 
 export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
   const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
-  const token = userToken(user);
+  const connections = connectionsFor(user.id);
+  const clients = clientsFor(connections);
 
-  const current = await buildPrStatus(token, reviewSet, true);
+  const current = await buildPrStatus(connections, reviewSet, true);
   const openRepos = current.repos.filter((repo) => repo.state === 'open' && repo.branch);
   if (!openRepos.length) {
     throw new HttpError(400, 'Nothing to merge: no matched branch has changes against the target branch.');
@@ -21,21 +23,24 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
 
   const target = reviewSet.targetBranch;
   const results = await mapLimit(openRepos, 3, async (repo): Promise<MergeResult> => {
+    const label = `${repo.host}/${repo.repo}`;
+    const client = clients.get(repo.connectionId);
+    if (!client) return { connectionId: repo.connectionId, label, ok: false, message: 'the forge connection was removed' };
     try {
       if (repo.targetExists) {
-        const message = await mergeBranch(token, repo.repo, target, repo.branch!, `mureview: merge ${repo.branch} into ${target}`);
-        return { repo: repo.repo, ok: true, message };
+        const message = await client.mergeBranch(repo.repo, target, repo.branch!, `mureview: merge ${repo.branch} into ${target}`);
+        return { connectionId: repo.connectionId, label, ok: true, message };
       }
-      const branchRef = await getBranchCached(token, repo.repo, repo.branch!, true);
+      const branchRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
       if (!branchRef) throw new Error('the matched branch no longer exists');
-      await createRef(token, repo.repo, target, branchRef.commit.sha);
-      return { repo: repo.repo, ok: true, message: `created ${target} from ${repo.branch}` };
+      await client.createBranch(repo.repo, target, { sha: branchRef.sha, branch: repo.branch! });
+      return { connectionId: repo.connectionId, label, ok: true, message: `created ${target} from ${repo.branch}` };
     } catch (error) {
-      return { repo: repo.repo, ok: false, message: githubErrorMessage(error) };
+      return { connectionId: repo.connectionId, label, ok: false, message: forgeErrorMessage(error) };
     }
   });
 
-  invalidateBranchCaches();
+  invalidateForgeCaches();
   const detail = await buildDetail(user, reviewSet.id, true);
   return json({ results, detail });
 }

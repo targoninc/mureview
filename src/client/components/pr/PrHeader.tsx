@@ -2,7 +2,7 @@ import { Button, Heading, Label } from '@primer/react';
 import { GitMergeIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, RepoStatus, ReviewSetDetail } from '../../../shared/types';
-import { repoLabel } from '../../lib/format';
+import { repoStatusText } from '../../lib/format';
 
 type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done' | 'secondary';
 
@@ -25,6 +25,16 @@ function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: 
     default:
       return { variant: 'secondary', text: 'Draft' };
   }
+}
+
+function RepoChip({ repo }: { repo: RepoStatus }) {
+  return (
+    <Label variant={repoVariant(repo)}>
+      {repo.kind === 'forgejo' ? 'forgejo · ' : ''}
+      {repo.host}/{repo.repo}
+      {repo.branch ? ` · ${repo.branch}` : ''} — {repoStatusText(repo)}
+    </Label>
+  );
 }
 
 interface PrHeaderProps {
@@ -84,10 +94,7 @@ export function PrHeader({ detail, onReload, onMerge, merging, reviewedCount }: 
       </div>
       <div className="row">
         {pr.repos.map((repo) => (
-          <Label key={repo.repo} variant={repoVariant(repo)}>
-            {repo.repo}
-            {repo.branch ? ` · ${repo.branch}` : ''} — {repoLabel(repo)}
-          </Label>
+          <RepoChip key={`${repo.connectionId}:${repo.repo}`} repo={repo} />
         ))}
       </div>
     </div>

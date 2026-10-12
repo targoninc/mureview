@@ -13,14 +13,25 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
 
 ## How it works
 
-- Sign in with GitHub (OAuth, `repo read:user`).
-- Create a **review set**: a name, a list of repositories you have access to, a
-  branch pattern (regular expression) and a target branch.
+- Sign in with GitHub, [Forgejo](https://forgejo.org/) (OAuth2), atproto, or
+  email + password. All four end up in one account: sign-in methods and forge
+  connections are separate, and connecting a forge identity that already
+  belongs to another account merges that account's data into yours.
+- Forgejo is connected per user: register an OAuth2 application on your
+  instance (Settings → Applications) with the callback URL
+  `${BASE_URL}/api/auth/callback/forgejo` and paste its client id/secret into
+  mureview. GitHub uses a server-wide OAuth app (see below); atproto needs no
+  configuration, but `${BASE_URL}/oauth-client-metadata.json` must be publicly
+  reachable.
+- Create a **review set**: a name, repositories picked with a search across all
+  your connected forges, a branch pattern (regular expression) and a target
+  branch. Review sets can mix repositories from different forges.
 - The pattern must match **at most one branch per repository** (0 or 1). If it
   matches more, the UI shows an **invalid configuration** banner explaining
   which repository and branches are the problem. Repositories you cannot access
   are reported the same way.
-- Matched branches are compared against the target branch for each repository.
+- Matched branches are compared against the target branch for each repository
+  (GitHub's compare API; for Forgejo, patches are generated from the two trees).
   If the target branch does not exist, it is treated as empty, so every file on
   the matched branch shows up as an addition (the fake PR "creates" it).
 - Comment on specific code lines (hover the line gutter) or in the general
@@ -34,9 +45,9 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   GitHub (the target is created when missing) behind a confirmation dialog.
   When every branch is merged the PR closes automatically.
 
-Data is stored in a single SQLite database. Everything is scoped to the signed-in
-owner: users only ever see their own review sets, and every GitHub request uses
-their own token.
+Data is stored in a single SQLite database (migrated automatically on start).
+Everything is scoped to the signed-in owner: users only ever see their own
+review sets, and every forge request uses their own connection tokens.
 
 ## Configuration
 
@@ -50,7 +61,8 @@ their own token.
 | `DATABASE_PATH` | `data/mureview.db` | SQLite file location. |
 
 Create an OAuth app at <https://github.com/settings/developers> with the callback
-URL set to `${BASE_URL}/api/auth/callback`.
+URL set to `${BASE_URL}/api/auth/callback/github`. GitHub sign-in and
+connections are optional: without credentials the other providers still work.
 
 ## Development
 

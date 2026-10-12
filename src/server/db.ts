@@ -9,25 +9,88 @@ export const db = new Database(config.dbPath, { create: true });
 
 db.exec('PRAGMA journal_mode = WAL;');
 db.exec('PRAGMA foreign_keys = ON;');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
+
+export interface UserRow {
+  id: number;
+  name: string;
+  avatar_url: string;
+  created_at: string;
+}
+
+export interface IdentityRow {
+  id: number;
+  user_id: number;
+  provider: string;
+  subject: string;
+  display_name: string;
+  avatar_url: string;
+  password_hash: string | null;
+}
+
+export interface ForgeConnectionRow {
+  id: number;
+  user_id: number;
+  kind: 'github' | 'forgejo';
+  base_url: string;
+  client_id: string;
+  client_secret: string;
+  access_token: string;
+  login: string;
+  avatar_url: string;
+}
+
+const SCHEMA_V2 = `
+  CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    github_id INTEGER NOT NULL UNIQUE,
-    login TEXT NOT NULL,
     name TEXT NOT NULL DEFAULT '',
     avatar_url TEXT NOT NULL DEFAULT '',
-    token TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS sessions (
+  CREATE TABLE identities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    display_name TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT NOT NULL DEFAULT '',
+    password_hash TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (provider, subject)
+  );
+
+  CREATE TABLE forge_connections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    client_id TEXT NOT NULL DEFAULT '',
+    client_secret TEXT NOT NULL DEFAULT '',
+    access_token TEXT NOT NULL,
+    login TEXT NOT NULL,
+    avatar_url TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, kind, base_url)
+  );
+
+  CREATE TABLE sessions (
     token TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS review_sets (
+  CREATE TABLE oauth_states (
+    state TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'login',
+    user_id INTEGER,
+    payload TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
+
+  CREATE TABLE review_sets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
@@ -36,23 +99,25 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS review_set_repos (
+  CREATE TABLE review_set_repos (
     review_set_id INTEGER NOT NULL REFERENCES review_sets(id) ON DELETE CASCADE,
+    connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
     repo TEXT NOT NULL,
-    PRIMARY KEY (review_set_id, repo)
+    PRIMARY KEY (review_set_id, connection_id, repo)
   );
 
-  CREATE TABLE IF NOT EXISTS pull_requests (
+  CREATE TABLE pull_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     review_set_id INTEGER NOT NULL REFERENCES review_sets(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     closed_at TEXT
   );
 
-  CREATE TABLE IF NOT EXISTS comments (
+  CREATE TABLE comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
     author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    connection_id INTEGER,
     repo TEXT,
     path TEXT,
     line INTEGER,
@@ -61,24 +126,142 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
-  CREATE TABLE IF NOT EXISTS reviewed_files (
+  CREATE TABLE reviewed_files (
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    connection_id INTEGER NOT NULL,
     repo TEXT NOT NULL,
     path TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (pr_id, repo, path)
+    PRIMARY KEY (pr_id, connection_id, repo, path)
   );
 
-  CREATE TABLE IF NOT EXISTS settings (
+  CREATE TABLE settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_identities_user ON identities(user_id);
+  CREATE INDEX IF NOT EXISTS idx_connections_user ON forge_connections(user_id);
   CREATE INDEX IF NOT EXISTS idx_review_sets_owner ON review_sets(owner_id);
   CREATE INDEX IF NOT EXISTS idx_pull_requests_set ON pull_requests(review_set_id);
   CREATE INDEX IF NOT EXISTS idx_comments_pr ON comments(pr_id);
-`);
+`;
+
+function hasTable(name: string): boolean {
+  return Boolean(db.query<{ name: string }, [string]>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(name));
+}
+
+function userVersion(): number {
+  return db.query<{ user_version: number }, []>('PRAGMA user_version').get()?.user_version ?? 0;
+}
+
+function createFresh(): void {
+  db.exec(SCHEMA_V2);
+}
+
+function migrateV1(): void {
+  db.exec(`
+    CREATE TABLE users_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO users_v2 (id, name, avatar_url, created_at)
+      SELECT id, CASE WHEN name <> '' THEN name ELSE login END, avatar_url, created_at FROM users;
+
+    CREATE TABLE identities (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users_v2(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT NOT NULL DEFAULT '',
+      password_hash TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (provider, subject)
+    );
+    INSERT INTO identities (user_id, provider, subject, display_name, avatar_url, created_at)
+      SELECT id, 'github', CAST(github_id AS TEXT), login, avatar_url, created_at FROM users;
+
+    CREATE TABLE forge_connections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users_v2(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      base_url TEXT NOT NULL,
+      client_id TEXT NOT NULL DEFAULT '',
+      client_secret TEXT NOT NULL DEFAULT '',
+      access_token TEXT NOT NULL,
+      login TEXT NOT NULL,
+      avatar_url TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, kind, base_url)
+    );
+    INSERT INTO forge_connections (user_id, kind, base_url, client_id, client_secret, access_token, login, avatar_url, created_at)
+      SELECT id, 'github', 'https://github.com', '', '', token, login, avatar_url, created_at FROM users;
+
+    CREATE TABLE review_set_repos_v2 (
+      review_set_id INTEGER NOT NULL REFERENCES review_sets(id) ON DELETE CASCADE,
+      connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
+      repo TEXT NOT NULL,
+      PRIMARY KEY (review_set_id, connection_id, repo)
+    );
+    INSERT INTO review_set_repos_v2 (review_set_id, connection_id, repo)
+      SELECT rsr.review_set_id, fc.id, rsr.repo
+      FROM review_set_repos rsr
+      JOIN review_sets rs ON rs.id = rsr.review_set_id
+      JOIN forge_connections fc ON fc.user_id = rs.owner_id AND fc.kind = 'github';
+
+    ALTER TABLE comments ADD COLUMN connection_id INTEGER;
+    UPDATE comments SET connection_id = (
+      SELECT fc.id FROM pull_requests p
+      JOIN review_sets rs ON rs.id = p.review_set_id
+      JOIN forge_connections fc ON fc.user_id = rs.owner_id AND fc.kind = 'github'
+      WHERE p.id = comments.pr_id
+    );
+
+    ALTER TABLE reviewed_files ADD COLUMN connection_id INTEGER;
+    UPDATE reviewed_files SET connection_id = (
+      SELECT fc.id FROM pull_requests p
+      JOIN review_sets rs ON rs.id = p.review_set_id
+      JOIN forge_connections fc ON fc.user_id = rs.owner_id AND fc.kind = 'github'
+      WHERE p.id = reviewed_files.pr_id
+    );
+
+    CREATE TABLE oauth_states (
+      state TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'login',
+      user_id INTEGER,
+      payload TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_identities_user ON identities(user_id);
+    CREATE INDEX IF NOT EXISTS idx_connections_user ON forge_connections(user_id);
+    CREATE INDEX IF NOT EXISTS idx_review_sets_owner ON review_sets(owner_id);
+    CREATE INDEX IF NOT EXISTS idx_pull_requests_set ON pull_requests(review_set_id);
+    CREATE INDEX IF NOT EXISTS idx_comments_pr ON comments(pr_id);
+
+    DROP TABLE users;
+    ALTER TABLE users_v2 RENAME TO users;
+    DROP TABLE review_set_repos;
+    ALTER TABLE review_set_repos_v2 RENAME TO review_set_repos;
+  `);
+}
+
+if (!hasTable('users')) {
+  createFresh();
+} else if (userVersion() < 2) {
+  db.exec('PRAGMA foreign_keys = OFF;');
+  const run = db.transaction(() => migrateV1());
+  run();
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+db.exec('PRAGMA user_version = 2;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);
