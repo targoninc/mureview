@@ -44,17 +44,18 @@ export function Dashboard() {
                     {reviewSet.name}
                   </Heading>
                   <div className="repo-list-meta">
-                    <span className="row">
-                      <RepoIcon size={14} /> {reviewSet.repos.length} {reviewSet.repos.length === 1 ? 'repository' : 'repositories'}
-                    </span>
                     <Label variant="secondary">/{reviewSet.branchRegex}/</Label>
                     <span className="row">
                       <GitBranchIcon size={14} /> target: <span className="mono">{reviewSet.targetBranch}</span>
                     </span>
                   </div>
                 </div>
-                <span className="mono" style={{ color: 'var(--fgColor-muted)' }}>
-                  {reviewSet.repos.map((repo) => `${repo.host}/${repo.repo}`).join(', ')}
+                <span
+                  className="repo-list-count"
+                  title={reviewSet.repos.map((repo) => `${repo.host}/${repo.repo}`).join('\n')}
+                >
+                  <RepoIcon size={14} />
+                  {reviewSet.repos.length} {reviewSet.repos.length === 1 ? 'repo' : 'repos'} included
                 </span>
               </Link>
             ))}

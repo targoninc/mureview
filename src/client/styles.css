@@ -347,6 +347,17 @@ svg.checks-pending {
   min-width: 0;
 }
 
+.repo-list-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+  cursor: help;
+  border-bottom: 1px dashed var(--borderColor-muted);
+}
+
 .repo-list-meta {
   display: flex;
   align-items: center;
@@ -701,10 +712,6 @@ svg.checks-pending {
 
   .repo-list-item {
     flex-wrap: wrap;
-  }
-
-  .repo-list-item > .mono {
-    display: none;
   }
 
   .pr-header {
