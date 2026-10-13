@@ -2,9 +2,18 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
-import type { CheckInfo, MergePreview, MergePreviewRepo, MergeResult, ReviewSetDetail } from '../../shared/types';
+import type {
+  CheckInfo,
+  ForgeKind,
+  MergePreviewRepo,
+  MergeResult,
+  RepoStatus,
+  ReviewSetDetail,
+  ReviewSetRepo,
+} from '../../shared/types';
 import { post } from '../lib/api';
 import { streamJson } from '../lib/ndjson';
+import { repoStatusText } from '../lib/format';
 import { MergeResultsFlash } from '../components/pr/merge';
 import { ReviewSetLoading } from '../components/pr/ReviewSetLoading';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
@@ -12,11 +21,26 @@ import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 type ConflictTone = 'success' | 'danger' | 'attention' | 'secondary';
 
 type MergeEvent =
-  | { target: string }
-  | { total: number }
+  | { target: string; repos: ReviewSetRepo[] }
+  | { status: RepoStatus }
+  | { checking: number }
   | { repo: MergePreviewRepo }
   | { done: { canMerge: boolean } }
   | { error: string };
+
+interface RepoCardInfo {
+  connectionId: number;
+  kind: ForgeKind;
+  host: string;
+  org: string | null;
+  repo: string;
+  status?: RepoStatus;
+  preview?: MergePreviewRepo;
+}
+
+function cardKey(connectionId: number, repo: string): string {
+  return `${connectionId}:${repo}`;
+}
 
 function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone } {
   if (repo.error) return { text: repo.error, tone: 'danger' };
@@ -94,43 +118,105 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
   );
 }
 
+function MergeCard({ card }: { card: RepoCardInfo }) {
+  if (card.preview) return <RepoCard repo={card.preview} />;
+  const status = card.status;
+  return (
+    <div className="merge-card">
+      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <span className="row" style={{ gap: 6 }}>
+            <ServiceIcon kind={card.kind} detail={serviceDetail(card.kind, card)} />
+            <span className="mono">
+              {card.host}/{card.repo}
+            </span>
+          </span>
+          {status?.branch ? (
+            <span className="mono" style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
+              {status.branch}
+            </span>
+          ) : null}
+        </div>
+        {status && status.state !== 'open' ? (
+          <Label variant={status.state === 'error' ? 'danger' : 'secondary'}>{repoStatusText(status)}</Label>
+        ) : null}
+      </div>
+      {status && status.state !== 'open' ? (
+        status.error ? (
+          <span className="load-meta" title={status.error}>
+            {status.error}
+          </span>
+        ) : null
+      ) : (
+        <span className="load-meta row" style={{ gap: 6, marginTop: 8 }}>
+          <Spinner size="small" aria-label="Checking repository" />
+          {status ? 'checking conflicts and checks…' : 'checking branches…'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function MergePage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [preview, setPreview] = useState<MergePreview | null>(null);
-  const [checking, setChecking] = useState<{ loaded: number; total: number } | null>(null);
+  const [target, setTarget] = useState('');
+  const [cards, setCards] = useState<RepoCardInfo[]>([]);
+  const [statusLoaded, setStatusLoaded] = useState(0);
+  const [mergesLoaded, setMergesLoaded] = useState(0);
+  const [openTotal, setOpenTotal] = useState(0);
+  const [canMerge, setCanMerge] = useState(false);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
   const [results, setResults] = useState<MergeResult[] | null>(null);
   const [checksOpen, setChecksOpen] = useState(false);
 
-  // The preview streams in: the target branch first, one card per repository
-  // as it is checked, then whether everything can be merged.
+  // The stream sends the target branch and every repository first, then each
+  // repository's status as its branch is inspected, then the preview cards
+  // (conflicts, checks, diffs) one by one.
   useEffect(() => {
     if (!id) return;
     const controller = new AbortController();
-    let target = '';
-    let total = 0;
-    const cards: MergePreviewRepo[] = [];
-    setPreview(null);
-    setChecking(null);
+    setTarget('');
+    setCards([]);
+    setStatusLoaded(0);
+    setMergesLoaded(0);
+    setOpenTotal(0);
+    setCanMerge(false);
+    setReady(false);
     setError(null);
 
+    const patch = (key: string, update: (card: RepoCardInfo) => RepoCardInfo) =>
+      setCards((current) => current.map((card) => (cardKey(card.connectionId, card.repo) === key ? update(card) : card)));
+
     const handle = (event: MergeEvent) => {
-      if ('target' in event) target = event.target;
-      else if ('total' in event) {
-        total = event.total;
-        setChecking({ loaded: 0, total });
+      if ('target' in event) {
+        setTarget(event.target);
+        setCards(
+          event.repos.map((repo) => ({
+            connectionId: repo.connectionId,
+            kind: repo.kind,
+            host: repo.host,
+            org: repo.org,
+            repo: repo.repo,
+          })),
+        );
+      } else if ('status' in event) {
+        const key = cardKey(event.status.connectionId, event.status.repo);
+        patch(key, (card) => ({ ...card, status: event.status }));
+        setStatusLoaded((current) => current + 1);
+      } else if ('checking' in event) {
+        setOpenTotal(event.checking);
       } else if ('repo' in event) {
-        cards.push(event.repo);
-        setChecking({ loaded: cards.length, total });
-        setPreview({ target, repos: [...cards], canMerge: false });
+        const key = cardKey(event.repo.connectionId, event.repo.repo);
+        patch(key, (card) => ({ ...card, preview: event.repo }));
+        setMergesLoaded((current) => current + 1);
       } else if ('done' in event) {
-        setPreview({ target, repos: [...cards], canMerge: event.done.canMerge });
-        setChecking(null);
+        setCanMerge(event.done.canMerge);
+        setReady(true);
       } else if ('error' in event) {
         setError(event.error);
-        setChecking(null);
       }
     };
 
@@ -153,7 +239,9 @@ export function MergePage() {
     }
   };
 
-  if (error && !preview) {
+  const started = cards.length > 0 || ready;
+
+  if (error && !started) {
     return (
       <div className="page-scroll">
         <div className="page-inner">
@@ -163,16 +251,17 @@ export function MergePage() {
     );
   }
 
-  if (!preview) {
+  if (!started) {
     return <ReviewSetLoading id={id} title="Checking what would be merged…" />;
   }
 
-  const runs = preview.repos.flatMap((repo) => repo.checks.runs);
+  const previews = cards.map((card) => card.preview).filter((entry): entry is MergePreviewRepo => Boolean(entry));
+  const runs = previews.flatMap((repo) => repo.checks.runs);
   const failing = runs.filter((run) => run.state === 'failure').length;
   const pending = runs.filter((run) => run.state === 'pending' || run.state === 'unknown').length;
   const passing = runs.length - failing - pending;
   const checksState = failing > 0 ? 'failure' : pending > 0 ? 'pending' : runs.length > 0 ? 'success' : 'none';
-  const conflictCount = preview.repos.filter((repo) => repo.conflicts === 'detected').length;
+  const conflictCount = previews.filter((repo) => repo.conflicts === 'detected').length;
   const checksLabel =
     checksState === 'failure'
       ? `${failing} ${failing === 1 ? 'check' : 'checks'} failing`
@@ -181,30 +270,44 @@ export function MergePage() {
         : `${passing}/${runs.length} checks passed`;
   const ChecksIcon = checksState === 'failure' ? XCircleFillIcon : checksState === 'pending' ? ClockIcon : CheckCircleFillIcon;
 
+  const progress =
+    statusLoaded < cards.length
+      ? { text: `Checking repositories ${statusLoaded}/${cards.length}`, done: statusLoaded, total: cards.length }
+      : !ready && mergesLoaded < openTotal
+        ? { text: `Checking merges ${mergesLoaded}/${openTotal}`, done: mergesLoaded, total: openTotal }
+        : null;
+
   return (
     <div className="page-scroll">
       <div className="page-inner" style={{ maxWidth: 760 }}>
         <Heading as="h1" variant="medium">
-          Merge into <span className="mono">{preview.target}</span>
+          Merge into <span className="mono">{target}</span>
         </Heading>
-        <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>
-          {results
-            ? 'The merge finished. Review the per-repository results below.'
-            : `${preview.repos.length} ${preview.repos.length === 1 ? 'branch' : 'branches'} will be merged through one pull request per repository. Conflicts and checks are evaluated before merging.`}
-        </p>
+        {ready ? (
+          <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>
+            {results
+              ? 'The merge finished. Review the per-repository results below.'
+              : openTotal === 0
+                ? 'Nothing to merge: no matched branch has changes against the target branch.'
+                : `${openTotal} ${openTotal === 1 ? 'branch' : 'branches'} will be merged through one pull request per repository. Conflicts and checks are evaluated before merging.`}
+          </p>
+        ) : null}
 
-        {checking && checking.loaded < checking.total ? (
+        {progress ? (
           <p className="row" style={{ gap: 6, margin: 0, color: 'var(--fgColor-muted)', fontSize: 12 }}>
-            <Spinner size="small" aria-label="Checking repositories" />
-            Checking repository {checking.loaded + 1}/{checking.total}
+            <Spinner size="small" aria-label={progress.text} />
+            {progress.text}
             <span
               className="mini-progress"
               role="progressbar"
               aria-valuemin={0}
-              aria-valuemax={checking.total}
-              aria-valuenow={checking.loaded}
+              aria-valuemax={progress.total}
+              aria-valuenow={progress.done}
             >
-              <span className="mini-progress-fill" style={{ width: `${Math.round((checking.loaded / checking.total) * 100)}%` }} />
+              <span
+                className="mini-progress-fill"
+                style={{ width: `${progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0}%` }}
+              />
             </span>
           </p>
         ) : null}
@@ -225,8 +328,8 @@ export function MergePage() {
           </Flash>
         ) : null}
 
-        {preview.repos.map((repo) => (
-          <RepoCard key={`${repo.connectionId}:${repo.repo}`} repo={repo} />
+        {cards.map((card) => (
+          <MergeCard key={cardKey(card.connectionId, card.repo)} card={card} />
         ))}
 
         <div className="form-actions">
@@ -242,8 +345,8 @@ export function MergePage() {
               </Button>
             ) : null}
             {results ? null : (
-              <Button variant="primary" leadingVisual={GitMergeIcon} disabled={!preview.canMerge || merging} onClick={runMerge}>
-                {checking ? 'Checking…' : merging ? 'Merging…' : `Merge ${preview.repos.length} ${preview.repos.length === 1 ? 'branch' : 'branches'}`}
+              <Button variant="primary" leadingVisual={GitMergeIcon} disabled={!ready || !canMerge || merging} onClick={runMerge}>
+                {!ready ? 'Checking…' : merging ? 'Merging…' : `Merge ${openTotal} ${openTotal === 1 ? 'branch' : 'branches'}`}
               </Button>
             )}
           </div>
@@ -258,8 +361,8 @@ export function MergePage() {
           footerButtons={[{ content: 'Close', onClick: () => setChecksOpen(false), buttonType: 'default' }]}
         >
           <div className="stack" style={{ gap: 20 }}>
-            {preview.repos.map((repo) => (
-              <div className="stack" style={{ gap: 8 }} key={`${repo.connectionId}:${repo.repo}`}>
+            {previews.map((repo) => (
+              <div className="stack" style={{ gap: 8 }} key={cardKey(repo.connectionId, repo.repo)}>
                 <strong className="mono" style={{ fontSize: 12 }}>
                   {repo.host}/{repo.repo} · {repo.branch}
                 </strong>

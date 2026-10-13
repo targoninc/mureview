@@ -102,6 +102,8 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
 export interface MergePreviewOptions {
   /** Report the loading status of the review set itself while it loads. */
   progressUserId?: number;
+  /** Called with every repository's status as the review set is inspected. */
+  onStatus?: (repo: RepoStatus) => void;
   /** The number of repositories that will be checked for conflicts. */
   onStart?: (total: number) => void;
   /** Called as soon as a repository's preview card is ready. */
@@ -117,6 +119,7 @@ export async function buildMergePreview(
     commits: false,
     progress: options.progressUserId !== undefined,
     progressUserId: options.progressUserId,
+    onRepo: options.onStatus,
   });
   const clients = clientsFor(connections);
 

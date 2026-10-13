@@ -13,8 +13,10 @@ import type { Ctx } from './router';
 import { forgeErrorMessage } from './validate';
 
 /**
- * Streams the merge preview as newline JSON: `{target}` first, then one
- * `{repo}` card per repository as it is checked, then `{done: {canMerge}}`.
+ * Streams the merge preview as newline JSON: `{target}` and the full
+ * repository list first, then `{status}` as each repository's branch is
+ * inspected, then `{repo}` cards as their conflicts and checks are checked,
+ * then `{done: {canMerge}}`.
  */
 export async function streamMergePreview(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
@@ -31,10 +33,11 @@ export async function streamMergePreview(ctx: Ctx): Promise<Response> {
         }
       };
       try {
-        send({ target: reviewSet.targetBranch });
+        send({ target: reviewSet.targetBranch, repos: reviewSet.repos });
         const preview = await buildMergePreview(connectionsFor(user.id), reviewSet, {
           progressUserId: user.id,
-          onStart: (total) => send({ total }),
+          onStatus: (repo) => send({ status: repo }),
+          onStart: (total) => send({ checking: total }),
           onRepo: (repo) => send({ repo }),
         });
         send({ done: { canMerge: preview.canMerge } });
