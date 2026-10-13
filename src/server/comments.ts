@@ -1,9 +1,10 @@
 import type { Comment, CommentInput } from '../shared/types';
+import { loadReadableReviewSetRow } from './access';
 import { connectionById, connectionsFor } from './auth/identities';
 import { publicUser, requireUser } from './auth/session';
-import { db } from './db';
+import { type ForgeConnectionRow, db } from './db';
 import { clientFor } from './forges';
-import { hostOf } from './forges/types';
+import { hostOf, organizationOf } from './forges/types';
 import { HttpError, json, readJson } from './http';
 import { markCommentSynced, repoPullRequest } from './pullRequests';
 import type { Ctx } from './router';
@@ -12,6 +13,7 @@ interface CommentRow {
   id: number;
   pr_id: number;
   connection_id: number | null;
+  author_id: number | null;
   author_name: string;
   author_avatar: string;
   repo: string | null;
@@ -67,6 +69,7 @@ function toComment(row: CommentRow): Comment {
       name: row.author_name,
       avatarUrl: row.source === 'forge' ? proxiedAvatar(row.connection_id, row.author_avatar) : row.author_avatar,
     },
+    authorId: row.author_id,
     connectionId: row.connection_id,
     repo: row.repo,
     path: row.path,
@@ -105,27 +108,44 @@ export function loadOwnedPr(userId: number, id: number): PrRow {
   return pr;
 }
 
-function normalizeAnchor(userId: number, input: CommentInput) {
+/** Loads a pull request the user may read: their own or a shared review set's. */
+async function loadReadablePr(userId: number, id: number): Promise<PrRow> {
+  const pr = db.query<PrRow, [number]>('SELECT id, review_set_id, closed_at FROM pull_requests WHERE id = ?').get(id);
+  if (!pr) throw new HttpError(404, 'Pull request not found');
+  const access = await loadReadableReviewSetRow(userId, pr.review_set_id);
+  return { ...pr, owner_id: access.row.owner_id };
+}
+
+/**
+ * Comments always carry the commenting user as their author, also on review
+ * sets owned by someone else. Line comments must point at one of the review
+ * set's repositories, which reference the owner's connections.
+ */
+function normalizeAnchor(reviewSetId: number, input: CommentInput) {
   if (!input.path) return { connectionId: null, repo: null, path: null, line: null, side: null };
   const connectionId = Number(input.connectionId);
-  if (!Number.isInteger(connectionId) || !connectionsFor(userId).some((connection) => connection.id === connectionId)) {
-    throw new HttpError(400, 'A valid connection is required for line comments.');
-  }
+  if (!Number.isInteger(connectionId)) throw new HttpError(400, 'A valid connection is required for line comments.');
   if (typeof input.repo !== 'string' || !input.repo) throw new HttpError(400, 'A repository is required for line comments.');
+  const known = db
+    .query<{ repo: string }, [number, number, string]>(
+      'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ?',
+    )
+    .get(reviewSetId, connectionId, input.repo);
+  if (!known) throw new HttpError(400, 'That file does not belong to this review set.');
   if (!Number.isInteger(input.line) || (input.line as number) < 1) throw new HttpError(400, 'A line number is required for line comments.');
   if (input.side !== 'additions' && input.side !== 'deletions') throw new HttpError(400, 'A valid diff side is required for line comments.');
   return { connectionId, repo: input.repo, path: input.path, line: input.line, side: input.side };
 }
 
-export function listCommentsRoute(ctx: Ctx): Response {
+export async function listCommentsRoute(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
-  const pr = loadOwnedPr(user.id, Number(ctx.params.id));
+  const pr = await loadReadablePr(user.id, Number(ctx.params.id));
   return json({ comments: listComments(pr.id) });
 }
 
 export async function createCommentRoute(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
-  const pr = loadOwnedPr(user.id, Number(ctx.params.id));
+  const pr = await loadReadablePr(user.id, Number(ctx.params.id));
   if (pr.closed_at) throw new HttpError(400, 'This pull request is closed. Comments are only kept while it is open.');
 
   const input = await readJson<CommentInput>(ctx.req);
@@ -143,7 +163,7 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
     parentId = parent.id;
   }
 
-  const anchor = normalizeAnchor(user.id, input);
+  const anchor = normalizeAnchor(pr.review_set_id, input);
   const inserted = db.run(
     'INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, parent_id, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [pr.id, user.id, publicUser(user).name, user.avatar_url, anchor.connectionId, anchor.repo, anchor.path, anchor.line, anchor.side, body, parentId, 'mureview'],
@@ -158,13 +178,19 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
 /**
  * Line comments are mirrored onto the repository's forge pull request right
  * away; general comments stay in mureview. Replies continue the forge thread
- * when the comment being answered already exists there.
+ * when the comment being answered already exists there. Comments on someone
+ * else's review set are posted with the commenting user's own connection, so
+ * the forge shows them as the real author.
  */
 async function syncCommentToPullRequest(userId: number, prId: number, row: CommentRow): Promise<void> {
   if (!row.path || row.connection_id === null || !row.repo || row.line === null || !row.side) return;
   const pull = repoPullRequest(prId, row.connection_id, row.repo);
   if (!pull) return;
-  const connection = connectionById(userId, row.connection_id);
+  const ownerConnection = db
+    .query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?')
+    .get(row.connection_id);
+  if (!ownerConnection) return;
+  const connection = connectionById(userId, ownerConnection.id) ?? matchingConnection(userId, ownerConnection);
   if (!connection) return;
   const parent = row.parent_id
     ? db.query<{ forge_comment_id: string | null }, [number]>('SELECT forge_comment_id FROM comments WHERE id = ?').get(row.parent_id)
@@ -182,6 +208,20 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
   } catch (error) {
     console.error(`Could not sync comment ${row.id} to the forge:`, error);
   }
+}
+
+/** The user's own connection to the same forge and organization. */
+function matchingConnection(userId: number, ownerConnection: ForgeConnectionRow): ForgeConnectionRow | null {
+  const host = hostOf(ownerConnection.base_url);
+  const org = organizationOf(ownerConnection.base_url);
+  return (
+    connectionsFor(userId).find(
+      (candidate) =>
+        candidate.kind === ownerConnection.kind &&
+        hostOf(candidate.base_url) === host &&
+        (org === null || organizationOf(candidate.base_url) === org),
+    ) ?? null
+  );
 }
 
 export function deleteCommentRoute(ctx: Ctx): Response {

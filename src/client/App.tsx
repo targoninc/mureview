@@ -41,7 +41,7 @@ export function App() {
   if (!me?.user) return <Login providers={me?.providers ?? ['email']} onSignedIn={refresh} />;
 
   return (
-    <AppContext.Provider value={{ githubOAuthAppUrl: me.githubOAuthAppUrl }}>
+    <AppContext.Provider value={{ githubOAuthAppUrl: me.githubOAuthAppUrl, user: me.user }}>
       <BrowserRouter basename={basename}>
         <Shell user={me.user} onSignOut={signOut}>
           <Routes>

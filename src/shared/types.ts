@@ -128,6 +128,8 @@ export interface Comment {
   id: number;
   prId: number;
   author: { name: string; avatarUrl: string };
+  /** The mureview user who wrote the comment; null for imported forge comments. */
+  authorId: number | null;
   connectionId: number | null;
   repo: string | null;
   path: string | null;

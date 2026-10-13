@@ -6,6 +6,7 @@ const comment = (overrides: Partial<Comment>): Comment => ({
   id: 1,
   prId: 1,
   author: { name: 'someone', avatarUrl: '' },
+  authorId: null,
   connectionId: 1,
   repo: 'acme/app',
   path: null,

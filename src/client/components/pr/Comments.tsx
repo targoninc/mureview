@@ -3,6 +3,7 @@ import { Avatar, Button, Flash, IconButton, Textarea, useConfirm } from '@primer
 import { LinkExternalIcon, ReplyIcon, TrashIcon } from '@primer/octicons-react';
 import type { Comment, RepoStatus } from '../../../shared/types';
 import { del, post } from '../../lib/api';
+import { useAppContext } from '../../lib/appContext';
 import { forgeCommentLink, timeAgo } from '../../lib/format';
 import { serviceNames } from '../ServiceIcon';
 import type { Side } from './annotations';
@@ -21,18 +22,20 @@ export function CommentThread({
   prId,
   comments,
   repos,
-  readOnly,
+  canModerate,
   onAdded,
   onDeleted,
 }: {
   prId: number | null;
   comments: Comment[];
   repos?: RepoStatus[];
-  readOnly?: boolean;
+  /** True for the owner of the review set, who may delete any comment. */
+  canModerate?: boolean;
   onAdded?: (comment: Comment) => void;
   onDeleted: (id: number) => void;
 }) {
   const confirm = useConfirm();
+  const { user } = useAppContext();
   const [replyingTo, setReplyingTo] = useState<number | null>(null);
 
   const remove = async (id: number, hasReplies: boolean) => {
@@ -64,7 +67,8 @@ export function CommentThread({
   const renderComment = (comment: Comment, depth: number): ReactNode => {
     const link = repos ? forgeCommentLink(repos, comment) : null;
     const children = replies.get(comment.id) ?? [];
-    const canReply = !readOnly && prId !== null && onAdded !== undefined;
+    const canReply = prId !== null && onAdded !== undefined;
+    const canDelete = canModerate === true || (comment.authorId !== null && comment.authorId === user?.id);
     return (
       <div className={`comment${depth > 0 ? ' comment-nested' : ''}`} key={comment.id}>
         <div className="comment-header">
@@ -98,7 +102,7 @@ export function CommentThread({
               onClick={() => setReplyingTo((current) => (current === comment.id ? null : comment.id))}
             />
           ) : null}
-          {readOnly ? null : (
+          {canDelete ? (
             <IconButton
               icon={TrashIcon}
               aria-label="Delete comment"
@@ -106,7 +110,7 @@ export function CommentThread({
               size="small"
               onClick={() => remove(comment.id, children.length > 0)}
             />
-          )}
+          ) : null}
         </div>
         <div className="comment-body">{comment.body}</div>
         {replyingTo === comment.id && canReply ? (
