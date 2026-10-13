@@ -55,17 +55,27 @@ export interface ReviewSetInput {
   targetBranch: string;
 }
 
+export interface RepoSource {
+  connectionId: number;
+  kind: ForgeKind;
+  host: string;
+  login: string;
+  label: string;
+}
+
 export interface AvailableRepo {
   connectionId: number;
   repo: string;
   kind: ForgeKind;
   host: string;
   login: string;
+  sourceLabel: string;
   private: boolean;
 }
 
 export interface RepoSearchResponse {
   repos: AvailableRepo[];
+  sources: RepoSource[];
   errors: { connectionId: number; message: string }[];
 }
 

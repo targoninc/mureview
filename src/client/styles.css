@@ -231,6 +231,12 @@ svg.checks-pending {
   background-color: var(--control-transparent-bgColor-hover);
 }
 
+.repo-source {
+  color: var(--fgColor-muted);
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 11px;
+}
+
 .repo-picker-selected {
   margin-top: 8px;
   border: 1px solid var(--borderColor-default);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnchoredOverlay, Button, Checkbox, Flash, FormControl, Heading, IconButton, Label, Spinner, TextInput } from '@primer/react';
 import { FilterIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
-import type { AvailableRepo, ReviewSetDetail, ReviewSetRepo } from '../../shared/types';
+import type { AvailableRepo, RepoSource, ReviewSetDetail, ReviewSetRepo } from '../../shared/types';
 import { del, post, put, api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
 
@@ -24,15 +24,17 @@ export function ReviewSetFormPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [available, setAvailable] = useState<AvailableRepo[] | null>(null);
+  const [sources, setSources] = useState<RepoSource[]>([]);
   const [repoErrors, setRepoErrors] = useState<{ connectionId: number; message: string }[]>([]);
   const [search, setSearch] = useState('');
-  const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
+  const [hiddenSources, setHiddenSources] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
 
   useEffect(() => {
-    api<{ repos: AvailableRepo[]; errors: { connectionId: number; message: string }[] }>('/repos')
+    api<{ repos: AvailableRepo[]; sources: RepoSource[]; errors: { connectionId: number; message: string }[] }>('/repos')
       .then((result) => {
         setAvailable(result.repos);
+        setSources(result.sources);
         setRepoErrors(result.errors);
       })
       .catch((err: Error) => setRepoErrors([{ connectionId: 0, message: err.message }]));
@@ -50,24 +52,19 @@ export function ReviewSetFormPage() {
 
   const update = (patch: Partial<FormState>) => setForm((current) => ({ ...current, ...patch }));
 
-  const sources = useMemo(() => {
-    if (!available) return [];
-    const unique = new Map<string, { key: string; label: string }>();
-    for (const repo of available) {
-      const key = `${repo.kind}:${repo.host}`;
-      if (!unique.has(key)) {
-        const kindLabel = repo.kind === 'github' ? '' : repo.kind === 'ado' ? 'azure devops · ' : `${repo.kind} · `;
-        unique.set(key, { key, label: `${kindLabel}${repo.host}` });
-      }
-    }
-    return [...unique.values()].sort((a, b) => a.label.localeCompare(b.label));
-  }, [available]);
+  // Show the account/org on repositories whose host is served by more than one
+  // connection (e.g. several Azure DevOps organizations).
+  const ambiguousHosts = useMemo(() => {
+    const hosts = new Map<string, number>();
+    for (const source of sources) hosts.set(source.host, (hosts.get(source.host) ?? 0) + 1);
+    return new Set([...hosts.entries()].filter(([, count]) => count > 1).map(([host]) => host));
+  }, [sources]);
 
   const results = useMemo(() => {
     if (!available) return [];
     const needle = search.trim().toLowerCase();
     return available
-      .filter((repo) => !hiddenSources.has(`${repo.kind}:${repo.host}`))
+      .filter((repo) => !hiddenSources.has(repo.connectionId))
       .filter((repo) => !form.selected.some((item) => item.connectionId === repo.connectionId && item.repo === repo.repo))
       .filter((repo) => !needle || `${repo.host}/${repo.repo}`.toLowerCase().includes(needle))
       .slice(0, 100);
@@ -84,11 +81,11 @@ export function ReviewSetFormPage() {
     setSearch('');
   };
 
-  const toggleSource = (key: string) => {
+  const toggleSource = (connectionId: number) => {
     setHiddenSources((current) => {
       const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(connectionId)) next.delete(connectionId);
+      else next.add(connectionId);
       return next;
     });
   };
@@ -148,8 +145,7 @@ export function ReviewSetFormPage() {
         {error ? <Flash variant="danger">{error}</Flash> : null}
         {repoErrors.map((repoError) => (
           <Flash variant="warning" key={`${repoError.connectionId}:${repoError.message}`}>
-            Could not list repositories for {repoError.message}. Check the connection under Settings, or refresh in a few minutes if the
-            forge is rate limiting.
+            Could not list repositories — {repoError.message}
           </Flash>
         ))}
         {invalidErrors.length > 0 ? (
@@ -195,9 +191,9 @@ export function ReviewSetFormPage() {
               <div className="stack" style={{ padding: 12, gap: 8 }}>
                 <strong style={{ fontSize: 12 }}>Sources</strong>
                 {sources.map((source) => (
-                  <label key={source.key} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
-                    <Checkbox checked={!hiddenSources.has(source.key)} onChange={() => toggleSource(source.key)} />
-                    {source.label}
+                  <label key={source.connectionId} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                    <Checkbox checked={!hiddenSources.has(source.connectionId)} onChange={() => toggleSource(source.connectionId)} />
+                    {source.kind === 'ado' ? `azure devops · ${source.label}` : source.label}
                   </label>
                 ))}
                 {sources.length === 0 ? <span style={{ fontSize: 12 }}>No forges connected.</span> : null}
@@ -223,7 +219,10 @@ export function ReviewSetFormPage() {
                     <span className="mono">
                       {repo.host}/{repo.repo}
                     </span>
-                    {repo.private ? <Label variant="secondary">private</Label> : null}
+                    <span className="row" style={{ gap: 8 }}>
+                      {ambiguousHosts.has(repo.host) ? <span className="repo-source">{repo.sourceLabel}</span> : null}
+                      {repo.private ? <Label variant="secondary">private</Label> : null}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -243,7 +242,10 @@ export function ReviewSetFormPage() {
                 <span className="mono">
                   {item.host}/{item.repo}
                 </span>
-                <span className="row">
+                <span className="row" style={{ gap: 8 }}>
+                  {ambiguousHosts.has(item.host) ? (
+                    <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
+                  ) : null}
                   <Label variant="secondary">{item.kind}</Label>
                   <Button
                     size="small"
