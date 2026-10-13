@@ -10,7 +10,7 @@ import type { Ctx } from './router';
 
 const warnWithinDays = 7;
 const expiryCache = new Cache<{ displayName: string; validTo: string } | null>(200, 60 * 60_000);
-const forgeNames: Record<ForgeKind, string> = { github: 'GitHub', forgejo: 'Forgejo', ado: 'Azure DevOps' };
+const forgeNames: Record<ForgeKind, string> = { github: 'GitHub', forgejo: 'Forgejo', ado: 'Azure DevOps', tangled: 'Tangled' };
 
 function expiryText(daysLeft: number): string {
   if (daysLeft < 0) return 'has expired';

@@ -6,11 +6,13 @@ export interface ParsedRepoList {
 export function normalizeRepo(input: string): string | null {
   let value = input.trim();
   if (!value) return null;
-  value = value
-    .replace(/^(https?:\/\/)?(www\.)?github\.com\//i, '')
-    .replace(/\.git$/i, '')
-    .replace(/^\/+|\/+$/g, '');
-  if (!/^[\w.-]+\/[\w.-]+$/.test(value)) return null;
+  // Strip a leading host only when something remains after it: handles look
+  // like hosts too (alice.bsky.social/repo).
+  const withoutHost = value.replace(/^(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+\//i, '');
+  if (withoutHost !== value && withoutHost.includes('/')) value = withoutHost;
+  value = value.replace(/\.git$/i, '').replace(/^\/+|\/+$/g, '');
+  if (value.startsWith('@')) value = value.slice(1);
+  if (!/^[\w.:-]+\/[\w.-]+$/.test(value)) return null;
   return value;
 }
 

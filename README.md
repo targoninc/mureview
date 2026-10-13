@@ -2,10 +2,11 @@
 
 # mureview
 
-Multi-forge code review. A **review set** groups repositories (GitHub, Forgejo
-or Azure DevOps, mixed freely) with a branch pattern; mureview finds the
-matching branch in each repository and renders one fake pull request that diffs
-every matched branch against a shared target branch.
+Multi-forge code review. A **review set** groups repositories (GitHub, Forgejo,
+Azure DevOps or [Tangled](https://tangled.org), mixed freely) with a branch
+pattern; mureview finds the matching branch in each repository and renders one
+fake pull request that diffs every matched branch against a shared target
+branch.
 
 Built with [Bun](https://bun.sh), [React](https://react.dev),
 [Primer](https://primer.style) (the GitHub design system) and
@@ -24,7 +25,10 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   configuration, but `${BASE_URL}/oauth-client-metadata.json` must be publicly
   reachable. Azure DevOps is connected with a personal access token (Code:
   read & write, Project and Team: read) — it is a forge connection, so sign in
-  with one of the other providers and add it under Settings.
+  with one of the other providers and add it under Settings. Tangled is
+  connected with the atproto handle that owns the repositories; mureview reads
+  them from the knot hosting each one, so no token is needed (pull requests,
+  comments and merging on Tangled are not supported yet).
 - Create a **review set**: a name, repositories picked with a search across all
   your connected forges, one or more branch patterns (regular expressions,
   separated by commas) and a target branch. Review sets can mix repositories
@@ -35,7 +39,8 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   **invalid configuration** banner explaining which repository and branches are
   the problem. Repositories you cannot access are reported the same way.
 - Matched branches are compared against the target branch for each repository
-  (GitHub's compare API; for Forgejo, patches are generated from the two trees).
+  (GitHub's compare API; the knot's own compare for Tangled; for Forgejo,
+  patches are generated from the two trees).
   If the target branch does not exist, it is treated as empty, so every file on
   the matched branch shows up as an addition (the fake PR "creates" it).
 - Comment on specific code lines (hover the line gutter) or in the general

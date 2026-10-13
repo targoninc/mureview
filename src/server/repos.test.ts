@@ -12,6 +12,13 @@ describe('normalizeRepo', () => {
     expect(normalizeRepo('  github.com/targoninc/mureview/  ')).toBe('targoninc/mureview');
   });
 
+  test('accepts Tangled URLs, handles and DIDs', () => {
+    expect(normalizeRepo('https://tangled.org/@tangled.org/core')).toBe('tangled.org/core');
+    expect(normalizeRepo('tangled.org/core')).toBe('tangled.org/core');
+    expect(normalizeRepo('alice.bsky.social/mureview')).toBe('alice.bsky.social/mureview');
+    expect(normalizeRepo('did:plc:abc123/core')).toBe('did:plc:abc123/core');
+  });
+
   test('rejects invalid values', () => {
     expect(normalizeRepo('not a repo')).toBeNull();
     expect(normalizeRepo('')).toBeNull();

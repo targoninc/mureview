@@ -113,6 +113,8 @@ export interface ForgeClient {
   readonly kind: ForgeKind;
   readonly baseUrl: string;
   readonly host: string;
+  /** Forges mureview can only read from so far. */
+  readonly readOnly?: boolean;
   listRepos(): Promise<ForgeRepo[]>;
   ensureRepo(repo: string, options?: ForgeCallOptions): Promise<void>;
   listBranches(repo: string, options?: ForgeCallOptions): Promise<BranchInfo[]>;

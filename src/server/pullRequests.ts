@@ -53,7 +53,7 @@ export async function ensureRepoPullRequests(
   );
   await mapLimit(pending, 3, async (repo) => {
     const client = clients.get(repo.connectionId);
-    if (!client) return;
+    if (!client || client.readOnly) return;
     try {
       const pull = await client.ensurePullRequest(
         repo.repo,

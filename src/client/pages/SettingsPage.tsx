@@ -4,7 +4,7 @@ import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
 import { connectionAvatarUrl } from '../lib/format';
-import { AdoForm, AtprotoForm, ForgejoForm, providerVisual } from '../components/Login';
+import { AdoForm, AtprotoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
 
@@ -19,7 +19,7 @@ const authProviderNames: Record<AuthProvider, string> = {
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState<AuthProvider | 'ado' | null>(null);
+  const [adding, setAdding] = useState<AuthProvider | 'ado' | 'tangled' | null>(null);
   const confirm = useConfirm();
 
   const load = useCallback(() => {
@@ -174,6 +174,9 @@ export function SettingsPage() {
             <Button leadingVisual={<ServiceGlyph kind="ado" />} onClick={() => setAdding(adding === 'ado' ? null : 'ado')}>
               Connect Azure DevOps
             </Button>
+            <Button leadingVisual={<ServiceGlyph kind="tangled" />} onClick={() => setAdding(adding === 'tangled' ? null : 'tangled')}>
+              Connect Tangled
+            </Button>
           </div>
           {adding === 'forgejo' ? (
             <div className="settings-panel">
@@ -188,6 +191,16 @@ export function SettingsPage() {
           {adding === 'ado' ? (
             <div className="settings-panel">
               <AdoForm
+                onDone={() => {
+                  setAdding(null);
+                  load();
+                }}
+              />
+            </div>
+          ) : null}
+          {adding === 'tangled' ? (
+            <div className="settings-panel">
+              <TangledForm
                 onDone={() => {
                   setAdding(null);
                   load();

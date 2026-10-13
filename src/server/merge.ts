@@ -83,6 +83,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
     const target = repo.target || reviewSet.targetBranch;
     const client = clients.get(repo.connectionId);
     if (!client) return { connectionId: repo.connectionId, label, ok: false, message: 'the forge connection was removed' };
+    if (client.readOnly) return { connectionId: repo.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet' };
     try {
       const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
       if (!headRef) throw new Error('the matched branch no longer exists');

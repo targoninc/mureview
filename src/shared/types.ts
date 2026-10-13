@@ -1,4 +1,4 @@
-export type ForgeKind = 'github' | 'forgejo' | 'ado';
+export type ForgeKind = 'github' | 'forgejo' | 'ado' | 'tangled';
 
 export type AuthProvider = 'github' | 'forgejo' | 'atproto' | 'email' | 'entra';
 

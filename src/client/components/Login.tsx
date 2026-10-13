@@ -253,6 +253,46 @@ export function AdoForm({ onDone, onBack }: { onDone: () => void; onBack?: () =>
   );
 }
 
+export function TangledForm({ onDone, onBack }: { onDone: () => void; onBack?: () => void }) {
+  const [handle, setHandle] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await post('/connections/tangled', { handle });
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="stack">
+      <h2 style={{ margin: 0, textAlign: 'center', fontSize: 16 }}>Connect Tangled</h2>
+      <p style={{ margin: 0, fontSize: 12, color: 'var(--fgColor-muted)' }}>
+        Tangled repositories are read through the knot hosting them, so no token is needed — just the atproto handle that owns the
+        repositories.
+      </p>
+      {error ? <Flash variant="danger">{error}</Flash> : null}
+      <FormControl>
+        <FormControl.Label>atproto handle</FormControl.Label>
+        <TextInput block placeholder="alice.bsky.social" value={handle} onChange={(event) => setHandle(event.target.value)} />
+      </FormControl>
+      <div className="form-actions">
+        {onBack ? <Button onClick={onBack}>Back</Button> : null}
+        <Button variant="primary" onClick={submit} disabled={busy || !handle}>
+          {busy ? 'Connecting…' : 'Connect'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AtprotoForm({ mode, onBack }: { mode: 'login' | 'connect'; onBack?: () => void }) {
   const [handle, setHandle] = useState('');
   return (
