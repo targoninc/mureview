@@ -335,6 +335,15 @@ svg.checks-pending {
   overflow: hidden;
 }
 
+.repo-picker-selected-title {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+
 .repo-picker-selected-item {
   display: flex;
   flex-direction: column;

@@ -334,6 +334,7 @@ export function ReviewSetFormPage() {
 
         {form.selected.length > 0 ? (
           <div className="repo-picker-selected">
+            <h3 className="repo-picker-selected-title">Included repositories</h3>
             {form.selected.map((item) => (
               <div className="repo-picker-selected-item" key={`${item.connectionId}:${item.repo}`}>
                 <div className="repo-picker-selected-head">
