@@ -28,6 +28,7 @@ import { endSession, publicUser, requireUser, startSession } from './session';
 export function enabledProviders(): AuthProvider[] {
   const providers: AuthProvider[] = ['email', 'forgejo', 'atproto'];
   if (config.githubClientId && config.githubClientSecret) providers.unshift('github');
+  if (config.entraClientId && config.entraClientSecret) providers.unshift('entra');
   return providers;
 }
 
@@ -183,6 +184,114 @@ async function githubCallbackInner(ctx: Ctx): Promise<Response> {
     avatarUrl: ghUser.avatar_url,
   };
   return completeAuth(profile, connection, pending);
+}
+
+// --- Entra ID ----------------------------------------------------------------
+
+function entraRedirectUri(): string {
+  return `${config.baseUrl}/api/auth/callback/entra`;
+}
+
+function entraAuthority(): string {
+  return `https://login.microsoftonline.com/${encodeURIComponent(config.entraTenant)}`;
+}
+
+const entraScopes = 'openid profile email User.Read';
+
+export function entraLoginStart(ctx: Ctx): Response {
+  if (!config.entraClientId || !config.entraClientSecret) {
+    return redirectWithError('Entra ID sign-in is not configured on this server.');
+  }
+  const mode: OAuthMode = ctx.url.searchParams.get('mode') === 'connect' ? 'connect' : 'login';
+  const user = mode === 'connect' ? requireUser(ctx) : null;
+  const state = createState({ provider: 'entra', mode, userId: user?.id });
+
+  const url = new URL(`${entraAuthority()}/oauth2/v2.0/authorize`);
+  url.searchParams.set('client_id', config.entraClientId);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('redirect_uri', entraRedirectUri());
+  url.searchParams.set('response_mode', 'query');
+  url.searchParams.set('scope', entraScopes);
+  url.searchParams.set('state', state);
+  return redirect(url.toString());
+}
+
+export async function entraCallback(ctx: Ctx): Promise<Response> {
+  try {
+    return await entraCallbackInner(ctx);
+  } catch (error) {
+    return handleAuthError(error);
+  }
+}
+
+interface EntraIdToken {
+  sub?: string;
+  name?: string;
+  preferred_username?: string;
+  email?: string;
+}
+
+async function entraCallbackInner(ctx: Ctx): Promise<Response> {
+  const code = ctx.url.searchParams.get('code');
+  const state = ctx.url.searchParams.get('state');
+  if (!code || !state) throw new HttpError(400, 'Entra ID did not return a code.');
+  let pending: PendingAuth;
+  try {
+    pending = takeState(state, 'entra');
+  } catch (error) {
+    throw new HttpError(400, (error as Error).message);
+  }
+
+  const response = await fetch(`${entraAuthority()}/oauth2/v2.0/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: config.entraClientId,
+      client_secret: config.entraClientSecret,
+      code,
+      redirect_uri: entraRedirectUri(),
+      scope: entraScopes,
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as { id_token?: string; access_token?: string; error_description?: string };
+  if (!body.id_token) throw new HttpError(400, body.error_description ?? 'Entra ID did not return an id token.');
+
+  // The token came straight from the token endpoint over TLS, so the payload
+  // can be read without verifying the signature again.
+  let claims: EntraIdToken;
+  try {
+    claims = JSON.parse(Buffer.from(body.id_token.split('.')[1] ?? '', 'base64url').toString('utf8')) as EntraIdToken;
+  } catch {
+    throw new HttpError(400, 'Entra ID returned an unreadable id token.');
+  }
+  if (!claims.sub) throw new HttpError(400, 'Entra ID did not return an account identifier.');
+
+  const profile: IdentityProfile = {
+    provider: 'entra',
+    subject: claims.sub,
+    displayName: claims.name || claims.preferred_username || claims.email || 'Microsoft account',
+    avatarUrl: await entraAvatar(body.access_token),
+  };
+  return completeAuth(profile, null, pending);
+}
+
+/** The account photo from Microsoft Graph, as a data URI (best effort). */
+async function entraAvatar(accessToken?: string): Promise<string> {
+  if (!accessToken) return '';
+  try {
+    const response = await fetch('https://graph.microsoft.com/v1.0/me/photo/$value', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) return '';
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.startsWith('image/')) return '';
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > 200_000) return '';
+    return `data:${contentType};base64,${buffer.toString('base64')}`;
+  } catch {
+    return '';
+  }
 }
 
 // --- Forgejo ----------------------------------------------------------------

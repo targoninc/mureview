@@ -8,7 +8,13 @@ import { AdoForm, AtprotoForm, ForgejoForm, providerVisual } from '../components
 import { ServiceGlyph, ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
 
-const authProviderNames: Record<AuthProvider, string> = { github: 'GitHub', forgejo: 'Forgejo', atproto: 'atproto', email: 'Email' };
+const authProviderNames: Record<AuthProvider, string> = {
+  github: 'GitHub',
+  forgejo: 'Forgejo',
+  atproto: 'atproto',
+  email: 'Email',
+  entra: 'Entra ID',
+};
 
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);

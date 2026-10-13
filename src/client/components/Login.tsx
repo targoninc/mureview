@@ -15,6 +15,7 @@ const providerLabel: Record<AuthProvider, string> = {
   forgejo: 'Forgejo',
   atproto: 'atproto',
   email: 'Email',
+  entra: 'Entra ID',
 };
 
 const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
@@ -22,10 +23,24 @@ const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
   forgejo: ServerIcon,
   atproto: GlobeIcon,
   email: MailIcon,
+  entra: GlobeIcon,
 };
+
+/** The four-square Microsoft mark, in the surrounding text colour. */
+function MicrosoftGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true">
+      <rect x="1" y="1" width="10" height="10" />
+      <rect x="13" y="1" width="10" height="10" opacity="0.75" />
+      <rect x="1" y="13" width="10" height="10" opacity="0.75" />
+      <rect x="13" y="13" width="10" height="10" />
+    </svg>
+  );
+}
 
 export function providerVisual(provider: AuthProvider) {
   if (provider === 'github' || provider === 'forgejo') return <ServiceGlyph kind={provider} size={16} />;
+  if (provider === 'entra') return <MicrosoftGlyph size={16} />;
   const Icon = providerIcon[provider];
   return <Icon size={16} />;
 }
@@ -69,7 +84,7 @@ export function Login({ providers, onSignedIn }: LoginProps) {
                   variant={provider === 'github' ? 'primary' : 'default'}
                   leadingVisual={providerVisual(provider)}
                   onClick={() => {
-                    if (provider === 'github') window.location.href = `${basePath}/api/auth/login/github`;
+                    if (provider === 'github' || provider === 'entra') window.location.href = `${basePath}/api/auth/login/${provider}`;
                     else setChoice(provider);
                   }}
                 >

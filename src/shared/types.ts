@@ -1,6 +1,6 @@
 export type ForgeKind = 'github' | 'forgejo' | 'ado';
 
-export type AuthProvider = 'github' | 'forgejo' | 'atproto' | 'email';
+export type AuthProvider = 'github' | 'forgejo' | 'atproto' | 'email' | 'entra';
 
 export interface User {
   id: number;

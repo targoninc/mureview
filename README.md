@@ -71,13 +71,19 @@ cannot drift apart.
 | `GITHUB_CLIENT_ID` | | GitHub OAuth app client id. |
 | `GITHUB_CLIENT_SECRET` | | GitHub OAuth app client secret. |
 | `GITHUB_REDIRECT_URI` | `${BASE_URL}/api/auth/callback/github` | Override when the OAuth app has a different callback URL registered. |
+| `ENTRA_CLIENT_ID` | | Microsoft Entra ID app client id (optional sign-in method). |
+| `ENTRA_CLIENT_SECRET` | | Microsoft Entra ID app client secret. |
+| `ENTRA_TENANT` | `common` | Entra tenant: `common`, `organizations`, `consumers` or a tenant id. |
 | `SESSION_SECRET` | generated & stored in DB | Optional override for session/token encryption. |
 | `PORT` | `8081` | HTTP port. |
 | `DATABASE_PATH` | `data/mureview.db` | SQLite file location. |
 
 Create an OAuth app at <https://github.com/settings/developers> with the callback
-URL set to `${BASE_URL}/api/auth/callback/github`. GitHub sign-in and
-connections are optional: without credentials the other providers still work.
+URL set to `${BASE_URL}/api/auth/callback/github`. For Entra ID sign-in,
+register an app at <https://entra.microsoft.com> with the redirect URI
+`${BASE_URL}/api/auth/callback/entra` and set `ENTRA_CLIENT_ID` /
+`ENTRA_CLIENT_SECRET`. GitHub sign-in and connections are optional: without
+credentials the other providers still work.
 If your app still has the legacy `${BASE_URL}/api/auth/callback` registered
 (that route is still served), set `GITHUB_REDIRECT_URI` to it so the authorize
 request uses the URL GitHub knows.

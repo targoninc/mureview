@@ -3,6 +3,8 @@ import {
   connectAdo,
   deleteAccountData,
   deleteConnection,
+  entraCallback,
+  entraLoginStart,
   forgejoCallback,
   forgejoLoginStart,
   githubCallback,
@@ -52,6 +54,8 @@ api.post('/api/auth/login/forgejo', forgejoLoginStart, true);
 api.get('/api/auth/callback/forgejo', forgejoCallback, true);
 api.get('/api/auth/login/atproto', atprotoLoginStart, true);
 api.get('/api/auth/callback/atproto', atprotoCallback, true);
+api.get('/api/auth/login/entra', entraLoginStart, true);
+api.get('/api/auth/callback/entra', entraCallback, true);
 
 api.get('/api/connections', listConnections);
 api.post('/api/connections/ado', connectAdo);

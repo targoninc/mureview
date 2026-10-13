@@ -14,6 +14,10 @@ export const config = {
   // Optional full callback URL override, e.g. when the OAuth app has a legacy
   // URL registered. Defaults to ${BASE_URL}/api/auth/callback/github.
   githubRedirectUri: (process.env.GITHUB_REDIRECT_URI ?? '').replace(/\/+$/, ''),
+  entraClientId: process.env.ENTRA_CLIENT_ID ?? '',
+  entraClientSecret: process.env.ENTRA_CLIENT_SECRET ?? '',
+  // 'common' allows work, school and personal Microsoft accounts.
+  entraTenant: process.env.ENTRA_TENANT ?? 'common',
   sessionSecret: process.env.SESSION_SECRET ?? '',
   distDir,
 };
