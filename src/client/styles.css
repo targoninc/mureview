@@ -116,7 +116,8 @@ body {
   text-decoration: underline;
 }
 
-.check-row {
+.check-row,
+.dialog-row {
   display: flex;
   align-items: center;
   gap: 12px;

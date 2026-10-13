@@ -1,18 +1,9 @@
 import { Button, IconButton, Label } from '@primer/react';
-import { CommentDiscussionIcon, FileDiffIcon, GitMergeIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
+import { CommentDiscussionIcon, FileDiffIcon, GitMergeIcon, GitPullRequestIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
-import type { PrStatus, RepoStatus, ReviewSetDetail } from '../../../shared/types';
-import { repoStatusText } from '../../lib/format';
+import type { PrStatus, ReviewSetDetail } from '../../../shared/types';
 
 type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done' | 'secondary';
-
-function repoVariant(repo: RepoStatus): LabelVariant {
-  if (repo.state === 'open') return 'success';
-  if (repo.state === 'error') return 'danger';
-  if (repo.state === 'merged') return 'done';
-  if (repo.matches.length > 1) return 'danger';
-  return 'secondary';
-}
 
 function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: string } {
   switch (state) {
@@ -27,17 +18,6 @@ function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: 
   }
 }
 
-function RepoChip({ repo }: { repo: RepoStatus }) {
-  const kindLabel = repo.kind === 'github' ? '' : repo.kind === 'ado' ? 'azure devops · ' : `${repo.kind} · `;
-  return (
-    <Label variant={repoVariant(repo)}>
-      {kindLabel}
-      {repo.host}/{repo.repo}
-      {repo.branch ? ` · ${repo.branch}` : ''} — {repoStatusText(repo)}
-    </Label>
-  );
-}
-
 interface PrHeaderProps {
   detail: ReviewSetDetail;
   onReload: (fresh?: boolean) => void;
@@ -47,6 +27,7 @@ interface PrHeaderProps {
   commentCount: number;
   onOpenFiles: () => void;
   onOpenConversation: () => void;
+  onShowPullRequests: () => void;
 }
 
 export function PrHeader({
@@ -58,11 +39,13 @@ export function PrHeader({
   commentCount,
   onOpenFiles,
   onOpenConversation,
+  onShowPullRequests,
 }: PrHeaderProps) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const state = stateVariant(pr.state);
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
+  const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
   const skipped = pr.repos.reduce((count, repo) => count + (repo.files?.filter((file) => !file.patch).length ?? 0), 0);
 
   return (
@@ -119,9 +102,9 @@ export function PrHeader({
         </div>
       </div>
       <div className="row pr-header-chips">
-        {pr.repos.map((repo) => (
-          <RepoChip key={`${repo.connectionId}:${repo.repo}`} repo={repo} />
-        ))}
+        <Button size="small" leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
+          {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open pull requests'}
+        </Button>
       </div>
     </div>
   );

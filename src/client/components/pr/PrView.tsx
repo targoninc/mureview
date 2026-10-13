@@ -5,11 +5,11 @@ import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
 import { Button, Checkbox, Dialog } from '@primer/react';
-import { CommentDiscussionIcon, FileDiffIcon } from '@primer/octicons-react';
+import { CommentDiscussionIcon, FileDiffIcon, GitPullRequestIcon } from '@primer/octicons-react';
 import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
-import { fileItemId, treePathFor } from '../../lib/format';
+import { fileItemId, repoStatusText, treePathFor } from '../../lib/format';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
@@ -62,6 +62,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<'files' | 'conversation'>('files');
   const [panel, setPanel] = useState<'files' | 'conversation' | null>(null);
+  const [pullsOpen, setPullsOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
   const [reviewed, setReviewedItems] = useState<Set<string>>(
@@ -278,6 +279,8 @@ export function PrView({ detail, onReload }: PrViewProps) {
 
   const hasFiles = parsed.length > 0;
   const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
+  const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
+  const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest);
 
   const openPanel = (next: 'files' | 'conversation') => {
     setTab(next);
@@ -320,6 +323,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         commentCount={comments.length}
         onOpenFiles={() => openPanel('files')}
         onOpenConversation={() => openPanel('conversation')}
+        onShowPullRequests={() => setPullsOpen(true)}
       />
       <div className="pr-banners">
         <PrStatusBanner pr={pr} reviewSet={reviewSet} />
@@ -384,6 +388,60 @@ export function PrView({ detail, onReload }: PrViewProps) {
           footerButtons={[{ content: 'Close', onClick: () => setPanel(null), buttonType: 'default' }]}
         >
           <div className="mobile-panel">{panelContent}</div>
+        </Dialog>
+      ) : null}
+
+      {pullsOpen ? (
+        <Dialog
+          title="Pull requests"
+          width="large"
+          onClose={() => setPullsOpen(false)}
+          footerButtons={[{ content: 'Close', onClick: () => setPullsOpen(false), buttonType: 'default' }]}
+        >
+          <div className="stack" style={{ gap: 20 }}>
+            <div className="stack" style={{ gap: 8 }}>
+              <strong style={{ fontSize: 12 }}>Open pull requests</strong>
+              {pullRequests.length === 0 ? (
+                <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No pull requests yet.</span>
+              ) : null}
+              {pullRequests.map((repo) => (
+                <div className="dialog-row" key={`${repo.connectionId}:${repo.repo}`}>
+                  <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
+                    <span className="mono" style={{ fontSize: 12 }}>
+                      {repo.host}/{repo.repo}
+                    </span>
+                    <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
+                      {repo.branch} → {reviewSet.targetBranch}
+                    </span>
+                  </div>
+                  <Button
+                    as="a"
+                    href={repo.pullRequest!.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    size="small"
+                    leadingVisual={GitPullRequestIcon}
+                  >
+                    PR #{repo.pullRequest!.number}
+                  </Button>
+                </div>
+              ))}
+            </div>
+            {reposWithoutPulls.length > 0 ? (
+              <div className="stack" style={{ gap: 6 }}>
+                <strong style={{ fontSize: 12 }}>Repositories without a pull request</strong>
+                {reposWithoutPulls.map((repo) => (
+                  <div className="dialog-row" key={`${repo.connectionId}:${repo.repo}`}>
+                    <span className="mono" style={{ fontSize: 12 }}>
+                      {repo.host}/{repo.repo}
+                      {repo.branch ? ` · ${repo.branch}` : ''}
+                    </span>
+                    <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>{repoStatusText(repo)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </Dialog>
       ) : null}
     </div>
