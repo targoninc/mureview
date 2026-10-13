@@ -75,7 +75,8 @@ export function completeAuth(profile: IdentityProfile, connection: ConnectionInp
       addIdentity(current.id, profile);
     }
     if (connection) upsertConnection(current.id, connection);
-    return redirect(appUrl('/settings'), startSession(current.id));
+    // Land on the settings page with a confirmation of what was connected.
+    return redirect(appUrl(`/settings?connected=${connection?.kind ?? profile.provider}`), startSession(current.id));
   }
 
   const { user } = loginOrCreate(profile);

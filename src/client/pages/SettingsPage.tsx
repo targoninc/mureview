@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, Flash, Heading, Spinner, useConfirm } from '@primer/react';
 import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
-import type { AuthProvider, MeResponse } from '../../shared/types';
+import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
 import { connectionAvatarUrl } from '../lib/format';
 import { AdoForm, AtprotoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
-import { ServiceGlyph, ServiceIcon, serviceDetail } from '../components/ServiceIcon';
+import { ServiceGlyph, ServiceIcon, serviceDetail, serviceNames } from '../components/ServiceIcon';
 
 
 const authProviderNames: Record<AuthProvider, string> = {
@@ -16,10 +16,27 @@ const authProviderNames: Record<AuthProvider, string> = {
   entra: 'Entra ID',
 };
 
+/** What a "connected" query parameter (from the auth callbacks) refers to. */
+function connectedName(key: string): string {
+  if (key in serviceNames) return serviceNames[key as ForgeKind];
+  if (key in authProviderNames) return authProviderNames[key as AuthProvider];
+  return key;
+}
+
+type ConnectTarget = 'github' | 'forgejo' | 'entra' | 'atproto' | 'ado' | 'tangled';
+
+interface ConnectOption {
+  key: ConnectTarget;
+  name: string;
+  detail: string;
+  icon: ReactNode;
+}
+
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState<AuthProvider | 'ado' | 'tangled' | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [adding, setAdding] = useState<ConnectTarget | null>(null);
   const confirm = useConfirm();
 
   const load = useCallback(() => {
@@ -33,14 +50,37 @@ export function SettingsPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const authError = params.get('authError');
-    if (!authError) return;
-    setError(authError);
+    const connected = params.get('connected');
+    if (!authError && !connected) return;
+    if (authError) setError(authError);
+    if (connected) setNotice(`${connectedName(connected)} connected.`);
     params.delete('authError');
+    params.delete('connected');
     const query = params.toString();
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
   }, []);
 
   if (!me) return <div className="centered">{error ? <Flash variant="danger">{error}</Flash> : <Spinner aria-label="Loading" />}</div>;
+
+  const hasGithub = me.connections.some((connection) => connection.kind === 'github');
+  const connectOptions: ConnectOption[] = [
+    ...(me.providers.includes('github')
+      ? [{ key: 'github' as const, name: 'GitHub', detail: 'Sign-in and forge connection', icon: <ServiceGlyph kind="github" /> }]
+      : []),
+    { key: 'forgejo', name: 'Forgejo', detail: 'Sign-in and forge connection', icon: <ServiceGlyph kind="forgejo" /> },
+    { key: 'ado', name: 'Azure DevOps', detail: 'Forge connection only (personal access token)', icon: <ServiceGlyph kind="ado" /> },
+    { key: 'tangled', name: 'Tangled', detail: 'Forge connection only — read-only for now', icon: <ServiceGlyph kind="tangled" /> },
+    ...(me.providers.includes('entra')
+      ? [{ key: 'entra' as const, name: 'Entra ID', detail: 'Sign-in only', icon: providerVisual('entra') }]
+      : []),
+    { key: 'atproto', name: 'atproto', detail: 'Sign-in only', icon: providerVisual('atproto') },
+  ];
+
+  const finishConnect = (name: string) => {
+    setAdding(null);
+    setNotice(`${name} connected.`);
+    load();
+  };
 
   const removeAllData = async () => {
     const approved = await confirm({
@@ -81,6 +121,7 @@ export function SettingsPage() {
           Account
         </Heading>
         {error ? <Flash variant="danger">{error}</Flash> : null}
+        {notice ? <Flash variant="success">{notice}</Flash> : null}
 
         <div className="stack">
           <Heading as="h2" variant="small">
@@ -153,61 +194,44 @@ export function SettingsPage() {
           <Heading as="h2" variant="small">
             Add a connection
           </Heading>
-          <div className="row">
-            {me.providers.includes('github') ? (
-              <Button
-                leadingVisual={<ServiceGlyph kind="github" />}
-                onClick={() => (window.location.href = `${basePath}/api/auth/login/github?mode=connect`)}
-              >
-                {me.connections.some((connection) => connection.kind === 'github') ? 'Reconnect GitHub' : 'Connect GitHub'}
-              </Button>
-            ) : null}
-            <Button leadingVisual={<ServiceGlyph kind="forgejo" />} onClick={() => setAdding(adding === 'forgejo' ? null : 'forgejo')}>
-              Connect Forgejo
-            </Button>
-            <Button
-              leadingVisual={providerVisual('atproto')}
-              onClick={() => setAdding(adding === 'atproto' ? null : 'atproto')}
-            >
-              Connect atproto
-            </Button>
-            <Button leadingVisual={<ServiceGlyph kind="ado" />} onClick={() => setAdding(adding === 'ado' ? null : 'ado')}>
-              Connect Azure DevOps
-            </Button>
-            <Button leadingVisual={<ServiceGlyph kind="tangled" />} onClick={() => setAdding(adding === 'tangled' ? null : 'tangled')}>
-              Connect Tangled
-            </Button>
+          <div className="repo-list">
+            {connectOptions.map((option) => (
+              <Fragment key={option.key}>
+                <div className="repo-list-item" style={{ cursor: 'default' }}>
+                  <div className="row">
+                    <span className="service-icon" role="img" aria-label={option.name} title={option.name}>
+                      {option.icon}
+                    </span>
+                    <div className="stack" style={{ gap: 2 }}>
+                      <span>{option.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>{option.detail}</span>
+                    </div>
+                  </div>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setNotice(null);
+                      if (option.key === 'github' || option.key === 'entra') {
+                        window.location.href = `${basePath}/api/auth/login/${option.key}?mode=connect`;
+                        return;
+                      }
+                      setAdding(adding === option.key ? null : option.key);
+                    }}
+                  >
+                    {option.key === 'github' && hasGithub ? 'Reconnect GitHub' : `Connect ${option.name}`}
+                  </Button>
+                </div>
+                {adding === option.key ? (
+                  <div className="settings-panel" style={{ marginBottom: 8 }}>
+                    {option.key === 'forgejo' ? <ForgejoForm mode="connect" /> : null}
+                    {option.key === 'atproto' ? <AtprotoForm mode="connect" /> : null}
+                    {option.key === 'ado' ? <AdoForm onDone={() => finishConnect('Azure DevOps')} /> : null}
+                    {option.key === 'tangled' ? <TangledForm onDone={() => finishConnect('Tangled')} /> : null}
+                  </div>
+                ) : null}
+              </Fragment>
+            ))}
           </div>
-          {adding === 'forgejo' ? (
-            <div className="settings-panel">
-              <ForgejoForm mode="connect" />
-            </div>
-          ) : null}
-          {adding === 'atproto' ? (
-            <div className="settings-panel">
-              <AtprotoForm mode="connect" />
-            </div>
-          ) : null}
-          {adding === 'ado' ? (
-            <div className="settings-panel">
-              <AdoForm
-                onDone={() => {
-                  setAdding(null);
-                  load();
-                }}
-              />
-            </div>
-          ) : null}
-          {adding === 'tangled' ? (
-            <div className="settings-panel">
-              <TangledForm
-                onDone={() => {
-                  setAdding(null);
-                  load();
-                }}
-              />
-            </div>
-          ) : null}
         </div>
 
         <div className="stack">
@@ -218,7 +242,7 @@ export function SettingsPage() {
             <div className="stack" style={{ gap: 4 }}>
               <strong style={{ fontSize: 13 }}>Delete all mureview data</strong>
               <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-                Removes every review set, comment and reviewed file stored here. Nothing on GitHub, Forgejo or Azure DevOps is touched,
+                Removes every review set, comment and reviewed file stored here. Nothing on your forges is touched,
                 and your sign-in methods and connections stay.
               </span>
             </div>
