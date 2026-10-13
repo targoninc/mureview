@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Avatar, IconButton } from '@primer/react';
+import { Avatar, IconButton, useConfirm } from '@primer/react';
 import { FileDiffIcon, GearIcon, SignOutIcon } from '@primer/octicons-react';
 import type { User } from '../../shared/types';
 import { basePath } from '../lib/api';
@@ -13,6 +13,17 @@ interface ShellProps {
 
 export function Shell({ user, onSignOut, children }: ShellProps) {
   const navigate = useNavigate();
+  const confirm = useConfirm();
+
+  const signOut = async () => {
+    const approved = await confirm({
+      title: 'Sign out of mureview?',
+      content: 'You can sign back in with any of your connected accounts. Nothing on the forges is touched.',
+      confirmButtonContent: 'Sign out',
+      cancelButtonContent: 'Cancel',
+    });
+    if (approved) onSignOut();
+  };
 
   return (
     <div className="app-shell">
@@ -27,7 +38,7 @@ export function Shell({ user, onSignOut, children }: ShellProps) {
             <span className="app-header-username">{user.name}</span>
           </span>
           <IconButton icon={GearIcon} aria-label="Settings" variant="invisible" onClick={() => navigate('/settings')} />
-          <IconButton icon={SignOutIcon} aria-label="Sign out" variant="invisible" onClick={onSignOut} />
+          <IconButton icon={SignOutIcon} aria-label="Sign out" variant="invisible" onClick={signOut} />
         </div>
       </header>
       <main className="app-main">{children}</main>
