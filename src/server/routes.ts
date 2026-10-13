@@ -1,6 +1,7 @@
 import { atprotoCallback, atprotoLoginStart } from './auth/atproto';
 import {
   connectAdo,
+  deleteAccountData,
   deleteConnection,
   forgejoCallback,
   forgejoLoginStart,
@@ -17,7 +18,15 @@ import { config } from './config';
 import { getMergePreview, mergeReviewSet } from './merge';
 import { listAvailableRepos } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
-import { createReviewSet, deleteReviewSet, getReviewSet, listReviewSets, updateReviewSet } from './reviewSets';
+import {
+  createReviewSet,
+  deleteReviewSet,
+  getReviewSet,
+  getReviewSetCommits,
+  getReviewSetDiscussion,
+  listReviewSets,
+  updateReviewSet,
+} from './reviewSets';
 import { Router } from './router';
 import { requireUser } from './auth/session';
 import type { Ctx } from './router';
@@ -41,12 +50,15 @@ api.get('/api/auth/callback/atproto', atprotoCallback, true);
 
 api.get('/api/connections', listConnections);
 api.post('/api/connections/ado', connectAdo);
+api.delete('/api/account/data', deleteAccountData);
 api.delete('/api/connections/:id', deleteConnection);
 api.get('/api/repos', (ctx: Ctx) => listAvailableRepos(requireUser(ctx), ctx.url.searchParams.get('fresh') === '1').then((result) => json(result)));
 
 api.get('/api/review-sets', listReviewSets);
 api.post('/api/review-sets', createReviewSet);
 api.get('/api/review-sets/:id', getReviewSet);
+api.get('/api/review-sets/:id/commits', getReviewSetCommits);
+api.get('/api/review-sets/:id/discussion', getReviewSetDiscussion);
 api.put('/api/review-sets/:id', updateReviewSet);
 api.delete('/api/review-sets/:id', deleteReviewSet);
 api.get('/api/review-sets/:id/merge', getMergePreview);

@@ -47,6 +47,7 @@ interface GithubCompare {
   status: 'ahead' | 'behind' | 'diverged' | 'identical';
   ahead_by: number;
   behind_by: number;
+  total_commits?: number;
   files?: GithubCompareFile[];
   commits?: GithubCommit[];
   merge_base_commit?: { sha: string };
@@ -337,8 +338,22 @@ export class GithubClient implements ForgeClient {
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
     const limit = options.limit ?? 100;
     if (options.baseSha) {
-      const comparison = await this.compare(repo, options.baseSha, options.headSha);
-      return comparison.commits.slice(0, limit);
+      // The compare endpoint paginates its commit list, so walk the pages to
+      // avoid silently truncated commit lists.
+      const loadPage = (page: number) =>
+        this.request<GithubCompare>(
+          `/repos/${repo}/compare/${options.baseSha}...${options.headSha}?per_page=100&page=${page}`,
+        );
+      const first = await loadPage(1);
+      if (!first.commits) return [];
+      const commits = [...first.commits];
+      const cap = Math.min(first.total_commits ?? commits.length, 300, limit);
+      for (let page = 2; commits.length < cap; page++) {
+        const next = await loadPage(page);
+        if (!next.commits?.length) break;
+        commits.push(...next.commits);
+      }
+      return commits.slice(0, limit).map(toCommitInfo);
     }
     const commits = await this.request<GithubCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&per_page=${Math.min(limit, 100)}`);
     return commits.map(toCommitInfo).reverse();

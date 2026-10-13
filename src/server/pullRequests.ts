@@ -54,6 +54,12 @@ export async function ensureRepoPullRequests(
     }
   });
 
+  attachKnownPullRequests(clients, repos, prId);
+}
+
+/** Attaches pull request links that are already tracked, without any forge call. */
+export function attachKnownPullRequests(clients: Map<number, ForgeClient>, repos: RepoStatus[], prId: number | null): void {
+  if (!prId) return;
   for (const repo of repos) {
     if (repo.state !== 'open' || !repo.targetExists || repo.pullRequest) continue;
     const row = repoPullRequest(prId, repo.connectionId, repo.repo);

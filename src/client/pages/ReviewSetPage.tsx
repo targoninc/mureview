@@ -1,11 +1,81 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Flash, Spinner } from '@primer/react';
+import type { RepoCommits, ReviewSetDiscussion } from '../../shared/types';
 import { PrView } from '../components/pr/PrView';
+import { api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
 
 export function ReviewSetPage() {
   const { id } = useParams();
   const { detail, error, reload } = useDetail(id);
+  const [discussion, setDiscussion] = useState<ReviewSetDiscussion | null>(null);
+  const [commits, setCommits] = useState<RepoCommits[] | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const prId = detail?.pr.prId ?? null;
+
+  // The discussion (pull requests, merged comments, reviewed files) and the
+  // commit lists load in parallel after the fast core detail response.
+  useEffect(() => {
+    if (!prId) {
+      setDiscussion(null);
+      return;
+    }
+    let cancelled = false;
+    const sync = reloadKey === 0 ? '1' : 'force';
+    api<ReviewSetDiscussion>(`/review-sets/${id}/discussion?sync=${sync}`)
+      .then((result) => {
+        if (!cancelled) setDiscussion(result);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, prId, reloadKey]);
+
+  useEffect(() => {
+    if (!id || !detail) return;
+    let cancelled = false;
+    api<{ repos: RepoCommits[] }>(`/review-sets/${id}/commits`)
+      .then((result) => {
+        if (!cancelled) setCommits(result.repos);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, detail, reloadKey]);
+
+  const merged = useMemo(() => {
+    if (!detail) return null;
+    const pullsByRepo = new Map((discussion?.pullRequests ?? []).map((pull) => [`${pull.connectionId}:${pull.repo}`, pull]));
+    const commitsByRepo = new Map((commits ?? []).map((bundle) => [`${bundle.connectionId}:${bundle.repo}`, bundle.commits]));
+    return {
+      reviewSet: detail.reviewSet,
+      pr: {
+        ...detail.pr,
+        comments: discussion?.comments ?? detail.pr.comments,
+        reviewed: discussion?.reviewed ?? detail.pr.reviewed,
+        repos: detail.pr.repos.map((repo) => {
+          const key = `${repo.connectionId}:${repo.repo}`;
+          const pull = pullsByRepo.get(key);
+          return {
+            ...repo,
+            pullRequest: repo.pullRequest ?? (pull ? { number: pull.number, url: pull.url } : undefined),
+            commits: commitsByRepo.get(key) ?? repo.commits,
+          };
+        }),
+      },
+    };
+  }, [detail, discussion, commits]);
+
+  const reloadAll = useCallback(
+    (fresh?: boolean) => {
+      setReloadKey((key) => key + 1);
+      reload(fresh);
+    },
+    [reload],
+  );
 
   if (error) {
     return (
@@ -17,7 +87,7 @@ export function ReviewSetPage() {
     );
   }
 
-  if (!detail) {
+  if (!merged) {
     return (
       <div className="centered">
         <Spinner size="large" aria-label="Loading review set" />
@@ -25,5 +95,5 @@ export function ReviewSetPage() {
     );
   }
 
-  return <PrView detail={detail} onReload={reload} />;
+  return <PrView detail={merged} onReload={reloadAll} />;
 }

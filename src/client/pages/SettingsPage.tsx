@@ -30,6 +30,22 @@ export function SettingsPage() {
 
   if (!me) return <div className="centered">{error ? <Flash variant="danger">{error}</Flash> : <Spinner aria-label="Loading" />}</div>;
 
+  const removeAllData = async () => {
+    const approved = await confirm({
+      title: 'Delete all mureview data?',
+      content: 'Every review set, its comments and reviewed files are removed. The repositories on the forges are not changed.',
+      confirmButtonContent: 'Delete everything',
+      confirmButtonType: 'danger',
+    });
+    if (!approved) return;
+    try {
+      await del('/account/data');
+      load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
   const removeConnection = async (id: number, label: string) => {
     const approved = await confirm({
       title: `Disconnect ${label}?`,
@@ -163,6 +179,24 @@ export function SettingsPage() {
               />
             </div>
           ) : null}
+        </div>
+
+        <div className="stack">
+          <Heading as="h2" variant="small">
+            Danger zone
+          </Heading>
+          <div className="settings-panel row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+            <div className="stack" style={{ gap: 4 }}>
+              <strong style={{ fontSize: 13 }}>Delete all mureview data</strong>
+              <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                Removes every review set, comment and reviewed file stored here. Nothing on GitHub, Forgejo or Azure DevOps is touched,
+                and your sign-in methods and connections stay.
+              </span>
+            </div>
+            <Button variant="danger" leadingVisual={TrashIcon} onClick={removeAllData}>
+              Delete data
+            </Button>
+          </div>
         </div>
       </div>
     </div>

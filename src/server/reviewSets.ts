@@ -2,7 +2,10 @@ import type { ForgeKind, ReviewSet, ReviewSetDetail, ReviewSetInput, ReviewSetRe
 import { type UserRow, db } from './db';
 import { hostOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
-import { buildPrStatus } from './pr';
+import { buildPrStatus, clientsFor } from './pr';
+import { listComments } from './comments';
+import { syncForgeComments } from './commentSync';
+import { listReviewed } from './reviewed';
 import { normalizeRepo } from './repos';
 import { connectionsFor } from './auth/identities';
 import type { Ctx } from './router';
@@ -105,10 +108,55 @@ function isFresh(ctx: Ctx): boolean {
   return ctx.url.searchParams.get('fresh') === '1';
 }
 
+/**
+ * The core detail response stays cheap: no forge pull request creation, no
+ * comment syncing and no commit lists. Comments and reviewed files come from
+ * the database so the diff renders immediately; the forge work happens in
+ * parallel afterwards via the comments and commits endpoints.
+ */
 export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const reviewSet = loadOwnedReviewSet(user, id);
-  const pr = await buildPrStatus(connectionsFor(user.id), reviewSet, fresh);
+  const pr = await buildPrStatus(connectionsFor(user.id), reviewSet, fresh, { commits: false, ensurePulls: false });
   return { reviewSet, pr };
+}
+
+export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
+  const user = ctx.user!;
+  const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
+  const status = await buildPrStatus(connectionsFor(user.id), reviewSet, false, { discussions: false, commits: true, ensurePulls: false });
+  return json({
+    repos: status.repos.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, commits: repo.commits ?? [] })),
+  });
+}
+
+/**
+ * The slower enrichment: ensures the forge pull requests exist, imports new
+ * forge comments (throttled) and reports the attached pull request links.
+ */
+export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
+  const user = ctx.user!;
+  const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
+  const connections = connectionsFor(user.id);
+  const status = await buildPrStatus(connections, reviewSet, false, { discussions: false, commits: false, ensurePulls: true });
+
+  if (status.prId && status.state === 'open') {
+    const clients = clientsFor(connections);
+    const targets = db
+      .query<{ connection_id: number; repo: string; forge_pr_number: number }, [number]>(
+        'SELECT connection_id, repo, forge_pr_number FROM pull_request_repos WHERE pr_id = ?',
+      )
+      .all(status.prId)
+      .map((row) => ({ connectionId: row.connection_id, repo: row.repo, pullRequestNumber: row.forge_pr_number }));
+    await syncForgeComments(status.prId, clients, targets, ctx.url.searchParams.get('sync') === 'force');
+  }
+
+  return json({
+    comments: status.prId ? listComments(status.prId) : [],
+    reviewed: status.prId ? listReviewed(status.prId) : [],
+    pullRequests: status.repos
+      .filter((repo) => repo.pullRequest)
+      .map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, ...repo.pullRequest! })),
+  });
 }
 
 export function listReviewSets(ctx: Ctx): Response {

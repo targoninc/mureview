@@ -403,6 +403,18 @@ export async function connectAdo(ctx: Ctx): Promise<Response> {
   return json({ connection: connectionInfo(connection) }, 201);
 }
 
+/**
+ * Removes everything mureview stored for the account: review sets and, via
+ * cascades, their repositories, pull request tracking, comments and reviewed
+ * files. Nothing on the forges themselves is touched, and the account keeps
+ * its sign-in methods and forge connections.
+ */
+export function deleteAccountData(ctx: Ctx): Response {
+  const user = requireUser(ctx);
+  const result = db.run('DELETE FROM review_sets WHERE owner_id = ?', [user.id]);
+  return json({ ok: true, reviewSets: result.changes });
+}
+
 export function listConnections(ctx: Ctx): Response {
   const user = requireUser(ctx);
   return json({ connections: connectionsFor(user.id).map(connectionInfo) });

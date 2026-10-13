@@ -5,8 +5,7 @@ import { constants } from './config';
 import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
-import { syncForgeComments } from './commentSync';
-import { ensureRepoPullRequests } from './pullRequests';
+import { attachKnownPullRequests, ensureRepoPullRequests } from './pullRequests';
 import { listReviewed } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
@@ -19,6 +18,7 @@ interface BranchDiff {
 }
 
 const targetlessCache = new Cache<BranchDiff>(60, 60 * 60_000);
+const commitsCache = new Cache<CommitInfo[]>(200, 60_000);
 
 export function clientsFor(connections: ForgeConnectionRow[]): Map<number, ForgeClient> {
   return new Map(connections.map((connection) => [connection.id, clientFor(connection)]));
@@ -63,9 +63,15 @@ function targetlessDiff(client: ForgeClient, repo: string, branchSha: string): P
   });
 }
 
-async function loadCommits(client: ForgeClient, repo: string, headSha: string, baseSha?: string): Promise<CommitInfo[] | undefined> {
+async function loadCommits(
+  client: ForgeClient,
+  connectionId: number,
+  repo: string,
+  headSha: string,
+  baseSha?: string,
+): Promise<CommitInfo[] | undefined> {
   try {
-    return await client.listCommits(repo, { headSha, baseSha });
+    return await cached(commitsCache, `${connectionId}:${repo}:${baseSha ?? ''}:${headSha}`, () => client.listCommits(repo, { headSha, baseSha }));
   } catch (error) {
     console.error(`Could not list commits for ${repo}:`, error);
     return undefined;
@@ -78,6 +84,7 @@ async function inspectBranch(
   branchSha: string,
   target: string,
   fresh: boolean,
+  includeCommits: boolean,
 ): Promise<RepoStatus> {
   const repo = status.repo;
   try {
@@ -93,7 +100,7 @@ async function inspectBranch(
         additions: diff.additions,
         deletions: 0,
         truncated: diff.truncated,
-        commits: await loadCommits(client, repo, branchSha),
+        commits: includeCommits ? await loadCommits(client, status.connectionId, repo, branchSha) : undefined,
         files: diff.files,
       };
     }
@@ -113,6 +120,7 @@ async function inspectBranch(
 
     const files = comparison.files.map(toFileDiff);
     const totals = summarize(files);
+    const commits = includeCommits ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha) : undefined;
     return {
       ...status,
       targetExists: true,
@@ -123,7 +131,8 @@ async function inspectBranch(
       additions: totals.additions,
       deletions: totals.deletions,
       truncated: comparison.truncated,
-      commits: await loadCommits(client, repo, branchSha, targetRef.sha),
+      commits,
+      commitsTruncated: commits !== undefined && comparison.aheadBy > commits.length,
       files,
     };
   } catch (error) {
@@ -156,7 +165,24 @@ function ensurePrLifecycle(reviewSetId: number, hasOpenRepos: boolean): PrLifecy
   return { prId: null, justClosed: false };
 }
 
-export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet: ReviewSet, fresh = false): Promise<PrStatus> {
+export interface BuildPrOptions {
+  /** Include comments and reviewed files (reads the database only). */
+  discussions?: boolean;
+  /** Include the per-repository commit list (extra forge calls on cold caches). */
+  commits?: boolean;
+  /** Create missing forge pull requests for open repositories. */
+  ensurePulls?: boolean;
+}
+
+export async function buildPrStatus(
+  connections: ForgeConnectionRow[],
+  reviewSet: ReviewSet,
+  fresh = false,
+  options: BuildPrOptions = {},
+): Promise<PrStatus> {
+  const includeDiscussions = options.discussions ?? true;
+  const includeCommits = options.commits ?? true;
+  const ensurePulls = options.ensurePulls ?? true;
   const errors: string[] = [];
   const clients = clientsFor(connections);
   const compiled = compilePatterns(reviewSet.branchRegex);
@@ -165,7 +191,7 @@ export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet
   const located = await inspectRepos(clients, reviewSet.repos, compiled.patterns, fresh);
   const repos = await mapLimit(located, 4, async ({ status, sha }) => {
     const client = clients.get(status.connectionId);
-    return status.branch && sha && client ? inspectBranch(client, status, sha, reviewSet.targetBranch, fresh) : status;
+    return status.branch && sha && client ? inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits) : status;
   });
 
   for (const repo of repos) {
@@ -192,17 +218,15 @@ export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet
 
   const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
   if (hasOpen && lifecycle) {
-    if (lifecycle.prId) {
-      await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
-      await syncForgeComments(lifecycle.prId, clients, repos);
-    }
+    if (lifecycle.prId && ensurePulls) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
+    else attachKnownPullRequests(clients, repos, lifecycle.prId);
     return {
       state: 'open',
       errors,
       repos,
       prId: lifecycle.prId,
-      comments: lifecycle.prId ? listComments(lifecycle.prId) : [],
-      reviewed: lifecycle.prId ? listReviewed(lifecycle.prId) : [],
+      comments: includeDiscussions && lifecycle.prId ? listComments(lifecycle.prId) : [],
+      reviewed: includeDiscussions && lifecycle.prId ? listReviewed(lifecycle.prId) : [],
       stats,
     };
   }

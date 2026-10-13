@@ -24,7 +24,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const connections = connectionsFor(user.id);
   const clients = clientsFor(connections);
 
-  const current = await buildPrStatus(connections, reviewSet, true);
+  const current = await buildPrStatus(connections, reviewSet, true, { commits: false });
   const openRepos = current.repos.filter((repo) => repo.state === 'open' && repo.branch);
   if (!openRepos.length) {
     throw new HttpError(400, 'Nothing to merge: no matched branch has changes against the target branch.');

@@ -1,4 +1,3 @@
-import type { RepoStatus } from '../shared/types';
 import { mapLimit } from './cache';
 import { db } from './db';
 import type { ForgeClient, ForgeComment } from './forges';
@@ -17,23 +16,37 @@ function normalizeDate(value: string): string {
   return iso.toISOString().slice(0, 19).replace('T', ' ');
 }
 
+export interface SyncTarget {
+  connectionId: number;
+  repo: string;
+  pullRequestNumber: number;
+}
+
+const lastSyncByPr = new Map<number, number>();
+const syncIntervalMs = 30_000;
+
 /**
  * Imports comments that exist on the forge pull requests (written by anyone,
  * including replies) into mureview. Comments mureview posted are recognised by
  * their stored forge comment id; for forges that do not report ids the body and
- * anchor are used as a fallback.
+ * anchor are used as a fallback. Syncing is throttled so loading a review set
+ * does not hit every forge on every request.
  */
-export async function syncForgeComments(prId: number, clients: Map<number, ForgeClient>, repos: RepoStatus[]): Promise<void> {
-  const open = repos.filter((repo) => repo.state === 'open' && repo.pullRequest);
-  await mapLimit(open, 3, async (repo) => {
-    const client = clients.get(repo.connectionId);
-    if (!client || !repo.pullRequest) return;
+export async function syncForgeComments(prId: number, clients: Map<number, ForgeClient>, targets: SyncTarget[], force = false): Promise<void> {
+  const last = lastSyncByPr.get(prId) ?? 0;
+  if (!force && Date.now() - last < syncIntervalMs) return;
+  lastSyncByPr.set(prId, Date.now());
+
+  await mapLimit(targets, 3, async (target) => {
+    const client = clients.get(target.connectionId);
+    if (!client) return;
+    const repo = { connectionId: target.connectionId, repo: target.repo };
 
     let forgeComments: ForgeComment[];
     try {
-      forgeComments = await client.listComments(repo.repo, repo.pullRequest.number);
+      forgeComments = await client.listComments(repo.repo, target.pullRequestNumber);
     } catch (error) {
-      console.error(`Could not read comments for ${repo.host}/${repo.repo}:`, error);
+      console.error(`Could not read comments for ${repo.repo}:`, error);
       return;
     }
 

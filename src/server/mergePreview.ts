@@ -64,7 +64,7 @@ async function checkRepo(client: ForgeClient, base: MergePreviewRepo, headSha: s
 }
 
 export async function buildMergePreview(connections: ForgeConnectionRow[], reviewSet: ReviewSet): Promise<MergePreview> {
-  const status = await buildPrStatus(connections, reviewSet, true);
+  const status = await buildPrStatus(connections, reviewSet, true, { commits: false });
   const clients = clientsFor(connections);
 
   const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);

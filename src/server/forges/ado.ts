@@ -458,7 +458,7 @@ export class AdoClient implements ForgeClient {
   }
 
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
-    const limit = Math.min(options.limit ?? 100, 200);
+    const limit = Math.min(options.limit ?? 100, 300);
     const compare = options.baseSha
       ? `&searchCriteria.compareVersion.version=${options.baseSha}&searchCriteria.compareVersion.versionType=commit`
       : '';

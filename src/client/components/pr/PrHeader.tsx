@@ -77,6 +77,9 @@ export function PrHeader({
           </span>
         </div>
         <div className="row pr-header-actions">
+          <Button size="small" leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
+            {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
+          </Button>
           {pr.state === 'open' ? (
             <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
               Merge
@@ -107,11 +110,6 @@ export function PrHeader({
             </>
           )}
         </div>
-      </div>
-      <div className="row pr-header-chips">
-        <Button size="small" leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
-          {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open pull requests'}
-        </Button>
       </div>
     </div>
   );

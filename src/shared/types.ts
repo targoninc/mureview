@@ -111,6 +111,7 @@ export interface RepoStatus {
   headSha?: string;
   pullRequest?: { number: number; url: string };
   commits?: CommitInfo[];
+  commitsTruncated?: boolean;
   files?: FileDiff[];
 }
 
@@ -211,6 +212,18 @@ export interface MergePreviewRepo {
   checks: ChecksSummary;
   pullRequest?: { number: number; url: string };
   error?: string;
+}
+
+export interface ReviewSetDiscussion {
+  comments: Comment[];
+  reviewed: ReviewMark[];
+  pullRequests: { connectionId: number; repo: string; number: number; url: string }[];
+}
+
+export interface RepoCommits {
+  connectionId: number;
+  repo: string;
+  commits: CommitInfo[];
 }
 
 export interface MergePreview {
