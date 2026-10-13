@@ -102,6 +102,8 @@ export interface ForgeClient {
   listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]>;
   checks(repo: string, sha: string, options?: { pullRequest?: number }): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
+  /** When the stored credentials expire, if the forge reports it. */
+  tokenExpiry?(): Promise<{ displayName: string; validTo: string } | null>;
 }
 
 export function hostOf(baseUrl: string): string {

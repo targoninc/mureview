@@ -23,6 +23,27 @@ const server = Bun.serve({
     const url = new URL(req.url);
     requests.push(url.pathname + url.search);
 
+    if (url.pathname.endsWith('/_apis/connectionData')) {
+      return Response.json({ instanceId: 'org-1' });
+    }
+
+    if (url.pathname.endsWith('/_apis/tokens/pats')) {
+      const credentials = req.headers.get('authorization') ?? '';
+      if (credentials === `Basic ${Buffer.from(':empty-token').toString('base64')}`) {
+        return Response.json({ patTokens: [] });
+      }
+      const inDays = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
+      return Response.json({
+        patTokens: [
+          { displayName: 'expired', scope: 'vso.code', validTo: inDays(-1), targetAccounts: null },
+          { displayName: 'other-org', scope: 'vso.code', validTo: inDays(1), targetAccounts: ['org-9'] },
+          { displayName: 'work-only', scope: 'vso.work', validTo: inDays(2), targetAccounts: ['org-1'] },
+          { displayName: 'mureview', scope: 'vso.code_write vso.project', validTo: inDays(5), targetAccounts: ['org-1'] },
+          { displayName: 'full', scope: 'app_token', validTo: inDays(30), targetAccounts: null },
+        ],
+      });
+    }
+
     if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/commits') {
       const skip = Number(url.searchParams.get('$skip') ?? 0);
       if (skip === 0) {
@@ -74,6 +95,19 @@ test('falls back to the branch comparison when the pull request is gone', async 
   expect(requests[0]).toContain('/pullrequests/8/commits');
   expect(requests[1]).toContain('searchCriteria.compareVersion.version=base');
   expect(requests).toHaveLength(3);
+});
+
+test('picks the soonest expiring code token for the organization', async () => {
+  const expiry = await client.tokenExpiry();
+
+  expect(expiry?.displayName).toBe('mureview');
+  const days = Math.round((new Date(expiry!.validTo).getTime() - Date.now()) / 86_400_000);
+  expect(days).toBe(5);
+});
+
+test('reports no expiry when no suitable token exists', async () => {
+  const empty = new AdoClient(`http://localhost:${server.port}`, 'empty-token');
+  expect(await empty.tokenExpiry()).toBeNull();
 });
 
 afterAll(() => {

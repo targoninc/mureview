@@ -33,6 +33,15 @@ export interface MeResponse {
   githubOAuthAppUrl: string | null;
 }
 
+export interface TokenWarning {
+  connectionId: number;
+  kind: ForgeKind;
+  message: string;
+  displayName: string;
+  validTo: string;
+  daysLeft: number;
+}
+
 export interface ReviewSetRepo {
   connectionId: number;
   repo: string;

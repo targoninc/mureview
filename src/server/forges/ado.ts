@@ -18,6 +18,7 @@ import {
   type TreeListing,
   decodeText,
   fetchImage,
+  organizationOf,
   statusMap,
   summarizeChecks,
 } from './types';
@@ -99,6 +100,14 @@ interface AdoCommit {
   comment: string;
   author?: { name?: string; date?: string };
   remoteUrl?: string;
+}
+
+interface AdoPatToken {
+  displayName?: string;
+  scope?: string;
+  validTo?: string;
+  targetAccounts?: string[] | null;
+  authorizationId?: string;
 }
 
 function toCommitInfo(commit: AdoCommit): CommitInfo {
@@ -218,6 +227,40 @@ export class AdoClient implements ForgeClient {
       throw new ForgeError(401, 'the personal access token is invalid, expired, or belongs to a different organization');
     }
     return { id: user.id, name: user.customDisplayName || user.providerDisplayName || 'azure devops' };
+  }
+
+  /**
+   * Azure DevOps cannot report the expiry of the very token that is calling,
+   * so list the user's personal access tokens and pick the most plausible
+   * candidate: still valid, grants code access, applies to this
+   * organization, and expires soonest. The token name is shown to the user
+   * so they can tell which one is meant.
+   */
+  async tokenExpiry(): Promise<{ displayName: string; validTo: string } | null> {
+    const connection = await this.request<{ instanceId?: string }>(
+      `${this.baseUrl}/_apis/connectionData?api-version=7.1-preview.1`,
+    );
+    const path = '/_apis/tokens/pats?api-version=7.1-preview.1';
+    let data: { patTokens?: AdoPatToken[] };
+    try {
+      data = await this.request<{ patTokens?: AdoPatToken[] }>(`${this.baseUrl}${path}`);
+    } catch (error) {
+      // Some organizations only answer this endpoint on the identity host.
+      const org = organizationOf(this.baseUrl);
+      if (!(error instanceof ForgeError) || !this.host.endsWith('dev.azure.com') || !org) throw error;
+      data = await this.request<{ patTokens?: AdoPatToken[] }>(`https://vssps.dev.azure.com/${org}${path}`);
+    }
+
+    const now = Date.now();
+    const candidates = (data.patTokens ?? [])
+      .filter((token) => token.validTo && Number.isFinite(new Date(token.validTo).getTime()))
+      .filter((token) => new Date(token.validTo!).getTime() > now)
+      .filter((token) => !token.targetAccounts?.length || !connection.instanceId || token.targetAccounts.includes(connection.instanceId))
+      .filter((token) => token.scope === 'app_token' || (token.scope ?? '').includes('vso.code'))
+      .sort((a, b) => new Date(a.validTo!).getTime() - new Date(b.validTo!).getTime());
+
+    const next = candidates[0];
+    return next ? { displayName: next.displayName ?? 'unnamed', validTo: new Date(next.validTo!).toISOString() } : null;
   }
 
   async listRepos(): Promise<ForgeRepo[]> {

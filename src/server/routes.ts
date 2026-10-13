@@ -32,10 +32,12 @@ import { Router } from './router';
 import { requireUser } from './auth/session';
 import type { Ctx } from './router';
 import { json } from './http';
+import { listWarnings } from './warnings';
 
 export const api = new Router();
 
 api.get('/api/me', me, true);
+api.get('/api/warnings', listWarnings);
 api.post('/api/auth/register', register, true);
 api.post('/api/auth/login', passwordLogin, true);
 api.post('/api/auth/logout', logout, true);

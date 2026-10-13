@@ -29,12 +29,40 @@ body {
 .app-header {
   height: 38px;
   flex: none;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 10px;
   background-color: var(--bgColor-emphasis);
   color: var(--fgColor-onEmphasis);
+}
+
+.app-header-warning {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 55%;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background-color: var(--bgColor-attention-muted);
+  color: var(--fgColor-attention);
+  font-size: 12px;
+}
+
+.app-header-warning-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-header-warning-link {
+  color: inherit;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .app-header-left {

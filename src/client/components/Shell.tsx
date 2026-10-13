@@ -1,9 +1,9 @@
-import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Avatar, IconButton, useConfirm } from '@primer/react';
-import { FileDiffIcon, GearIcon, SignOutIcon } from '@primer/octicons-react';
-import type { User } from '../../shared/types';
-import { basePath } from '../lib/api';
+import { AlertIcon, FileDiffIcon, GearIcon, SignOutIcon } from '@primer/octicons-react';
+import type { TokenWarning, User } from '../../shared/types';
+import { api, basePath } from '../lib/api';
 
 interface ShellProps {
   user: User;
@@ -14,7 +14,14 @@ interface ShellProps {
 export function Shell({ user, onSignOut, children }: ShellProps) {
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const [warning, setWarning] = useState<TokenWarning | null>(null);
   const builtAt = new Date(__BUILD_TIME__).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+  useEffect(() => {
+    api<{ warnings: TokenWarning[] }>('/warnings')
+      .then((result) => setWarning(result.warnings[0] ?? null))
+      .catch(() => undefined);
+  }, []);
 
   const signOut = async () => {
     const approved = await confirm({
@@ -38,6 +45,19 @@ export function Shell({ user, onSignOut, children }: ShellProps) {
             built {builtAt}
           </span>
         </div>
+        {warning ? (
+          <div
+            className="app-header-warning"
+            role="status"
+            title={`${warning.displayName} · valid until ${new Date(warning.validTo).toLocaleString()}`}
+          >
+            <AlertIcon size={14} />
+            <span className="app-header-warning-text">{warning.message}</span>
+            <Link className="app-header-warning-link" to="/settings">
+              Settings
+            </Link>
+          </div>
+        ) : null}
         <div className="app-header-actions">
           <span className="app-header-user">
             <Avatar src={user.avatarUrl} size={20} alt={user.name} />
