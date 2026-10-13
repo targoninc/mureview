@@ -26,6 +26,7 @@ import {
   createReviewSet,
   deleteReviewSet,
   getReviewSetCommits,
+  getReviewSetChecks,
   getReviewSetDiscussion,
   getReviewSetProgress,
   listReviewSets,
@@ -68,6 +69,7 @@ api.post('/api/review-sets', createReviewSet);
 api.get('/api/review-sets/:id/detail', streamReviewSetDetail);
 api.get('/api/review-sets/:id/progress', getReviewSetProgress);
 api.get('/api/review-sets/:id/commits', getReviewSetCommits);
+api.get('/api/review-sets/:id/checks', getReviewSetChecks);
 api.get('/api/review-sets/:id/discussion', getReviewSetDiscussion);
 api.put('/api/review-sets/:id', updateReviewSet);
 api.delete('/api/review-sets/:id', deleteReviewSet);

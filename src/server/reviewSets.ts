@@ -196,6 +196,31 @@ export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   });
 }
 
+/** The checks of every matched branch, for the pull request list. */
+export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
+  const user = ctx.user!;
+  const access = await loadReadableReviewSet(user, requireId(ctx));
+  const connections = connectionsFor(access.ownerId);
+  const clients = clientsFor(connections);
+  const status = await buildPrStatus(connections, access.reviewSet, false, { discussions: false, commits: false, ensurePulls: false });
+  const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);
+
+  const repos = await mapLimit(open, 3, async (repo) => {
+    const client = clients.get(repo.connectionId);
+    if (!client) return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'unknown' as const, runs: [] } };
+    try {
+      const head = await client.getBranch(repo.repo, repo.branch!, {});
+      if (!head) return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'none' as const, runs: [] } };
+      return { connectionId: repo.connectionId, repo: repo.repo, checks: await client.checks(repo.repo, head.sha, { pullRequest: repo.pullRequest?.number }) };
+    } catch (error) {
+      console.error(`Could not read the checks for ${repo.repo}:`, error);
+      return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'unknown' as const, runs: [] } };
+    }
+  });
+
+  return json({ repos });
+}
+
 /**
  * The slower enrichment: ensures the forge pull requests exist, imports new
  * forge comments (throttled) and reports the attached pull request links.

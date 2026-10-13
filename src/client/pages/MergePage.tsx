@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type {
-  CheckInfo,
   ForgeKind,
   MergePreviewRepo,
   MergeResult,
@@ -12,6 +11,7 @@ import type {
   ReviewSetRepo,
 } from '../../shared/types';
 import { post } from '../lib/api';
+import { checkTone } from '../lib/checks';
 import { streamJson } from '../lib/ndjson';
 import { repoStatusText } from '../lib/format';
 import { MergeResultsFlash } from '../components/pr/merge';
@@ -51,15 +51,6 @@ function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTo
   if (!repo.targetExists) return { text: `creates ${repo.target}`, tone: 'secondary' };
   return { text: 'no conflicts', tone: 'success' };
 }
-
-const checkTone: Record<CheckInfo['state'], 'success' | 'danger' | 'attention' | 'secondary'> = {
-  success: 'success',
-  failure: 'danger',
-  pending: 'attention',
-  neutral: 'secondary',
-  skipped: 'secondary',
-  unknown: 'attention',
-};
 
 function RepoCard({ repo }: { repo: MergePreviewRepo }) {
   const badge = conflictBadge(repo);

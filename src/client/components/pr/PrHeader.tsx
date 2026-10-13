@@ -1,5 +1,6 @@
 import { Button, IconButton, Label, Spinner } from '@primer/react';
 import {
+  AlertIcon,
   CommentDiscussionIcon,
   ColumnsIcon,
   FileDiffIcon,
@@ -41,6 +42,7 @@ interface PrHeaderProps {
   diffStyle: 'unified' | 'split';
   onToggleDiffStyle: () => void;
   progress: { loaded: number; total: number } | null;
+  checksFailing: boolean;
   onOpenFiles: () => void;
   onOpenCommits: () => void;
   onOpenConversation: () => void;
@@ -58,6 +60,7 @@ export function PrHeader({
   diffStyle,
   onToggleDiffStyle,
   progress,
+  checksFailing,
   onOpenFiles,
   onOpenCommits,
   onOpenConversation,
@@ -111,7 +114,11 @@ export function PrHeader({
         </div>
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
-            <Button leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
+            <Button
+              leadingVisual={checksFailing ? AlertIcon : GitPullRequestIcon}
+              onClick={onShowPullRequests}
+              title={checksFailing ? 'Some pull request checks are failing' : undefined}
+            >
               {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
             </Button>
             {pr.state === 'open' && owned ? (

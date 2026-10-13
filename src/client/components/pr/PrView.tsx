@@ -4,10 +4,11 @@ import { useNavigate } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
-import { Button, Checkbox, Dialog } from '@primer/react';
+import { Button, Checkbox, Dialog, Label } from '@primer/react';
 import { CommentDiscussionIcon, FileDiffIcon, GitCommitIcon, GitPullRequestIcon } from '@primer/octicons-react';
-import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
-import { put } from '../../lib/api';
+import type { Comment, PrStatus, RepoChecks, ReviewSetDetail } from '../../../shared/types';
+import { api, put } from '../../lib/api';
+import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, repoStatusText } from '../../lib/format';
 import { useIsMobile } from '../../lib/useIsMobile';
@@ -72,6 +73,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path))),
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const [checks, setChecks] = useState<RepoChecks[]>([]);
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>(
     () => (window.localStorage.getItem('mureview:diff-style') === 'split' ? 'split' : 'unified'),
   );
@@ -98,6 +100,11 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     () => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path)))),
     [pr.reviewed],
   );
+  useEffect(() => {
+    api<{ repos: RepoChecks[] }>(`/review-sets/${reviewSet.id}/checks`)
+      .then((result) => setChecks(result.repos))
+      .catch(() => undefined);
+  }, [reviewSet.id]);
   useEffect(() => {
     window.localStorage.setItem('mureview:sidebar-width', String(sidebarWidth));
   }, [sidebarWidth]);
@@ -330,6 +337,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const hasFiles = parsed.length > 0;
   const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
   const commitCount = pr.repos.reduce((count, repo) => count + (repo.commits?.length ?? 0), 0);
+  const checksByRepo = useMemo(() => new Map(checks.map((entry) => [`${entry.connectionId}:${entry.repo}`, entry.checks])), [checks]);
+  const checksFailing = checks.some((entry) => entry.checks.state === 'failure');
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
   const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest);
 
@@ -383,6 +392,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         onOpenCommits={() => openPanel('commits')}
         onOpenConversation={() => openPanel('conversation')}
         onShowPullRequests={() => setPullsOpen(true)}
+        checksFailing={checksFailing}
       />
       <div className="pr-banners">
         <PrStatusBanner pr={pr} reviewSet={reviewSet} />
@@ -480,31 +490,58 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
               {pullRequests.length === 0 ? (
                 <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No pull requests yet.</span>
               ) : null}
-              {pullRequests.map((repo) => (
-                <div className="dialog-row" key={`${repo.connectionId}:${repo.repo}`}>
-                  <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
-                    <span className="row" style={{ gap: 6 }}>
-                      <ServiceIcon kind={repo.kind} detail={serviceDetail(repo.kind, repo)} />
-                      <span className="mono" style={{ fontSize: 12 }}>
-                        {repo.host}/{repo.repo}
-                      </span>
-                    </span>
-                    <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
-                      {repo.branch} → {reviewSet.targetBranch}
-                    </span>
+              {pullRequests.map((repo) => {
+                const repoChecks = checksByRepo.get(`${repo.connectionId}:${repo.repo}`);
+                return (
+                  <div className="stack" key={`${repo.connectionId}:${repo.repo}`} style={{ gap: 6 }}>
+                    <div className="dialog-row">
+                      <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
+                        <span className="row" style={{ gap: 6 }}>
+                          <ServiceIcon kind={repo.kind} detail={serviceDetail(repo.kind, repo)} />
+                          <span className="mono" style={{ fontSize: 12 }}>
+                            {repo.host}/{repo.repo}
+                          </span>
+                        </span>
+                        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
+                          {repo.branch} → {reviewSet.targetBranch}
+                        </span>
+                      </div>
+                      <Button
+                        as="a"
+                        href={repo.pullRequest!.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        size="small"
+                        leadingVisual={GitPullRequestIcon}
+                      >
+                        PR #{repo.pullRequest!.number}
+                      </Button>
+                    </div>
+                    {repoChecks ? (
+                      repoChecks.runs.length === 0 ? (
+                        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12, paddingLeft: 8 }}>
+                          No checks reported for this branch.
+                        </span>
+                      ) : (
+                        <div className="stack" style={{ gap: 6, paddingLeft: 8 }}>
+                          {repoChecks.runs.map((run) => (
+                            <div className="check-row" key={run.name}>
+                              <span className={`check-dot checks-${run.state}`} />
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 12 }}>{run.name}</span>
+                              {run.url ? (
+                                <Button as="a" href={run.url} target="_blank" rel="noreferrer" size="small" variant="invisible">
+                                  Details
+                                </Button>
+                              ) : null}
+                              <Label variant={checkTone[run.state]}>{run.state}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    ) : null}
                   </div>
-                  <Button
-                    as="a"
-                    href={repo.pullRequest!.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    size="small"
-                    leadingVisual={GitPullRequestIcon}
-                  >
-                    PR #{repo.pullRequest!.number}
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
             {reposWithoutPulls.length > 0 ? (
               <div className="stack" style={{ gap: 6 }}>

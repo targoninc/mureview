@@ -274,6 +274,12 @@ export interface RepoCommits {
   commits: CommitInfo[];
 }
 
+export interface RepoChecks {
+  connectionId: number;
+  repo: string;
+  checks: ChecksSummary;
+}
+
 export interface MergePreview {
   target: string;
   repos: MergePreviewRepo[];
