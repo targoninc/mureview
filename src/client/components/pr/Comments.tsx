@@ -33,17 +33,23 @@ export function CommentThread({
 }) {
   const confirm = useConfirm();
   const { user } = useAppContext();
+  const [error, setError] = useState<string | null>(null);
 
   const remove = async (id: number) => {
     const approved = await confirm({
       title: 'Delete this comment?',
-      content: 'The comment will be permanently removed from this review.',
+      content: 'The comment will be permanently removed from this review and on the forge.',
       confirmButtonContent: 'Delete',
       confirmButtonType: 'danger',
     });
     if (!approved) return;
-    await del(`/comments/${id}`);
-    onDeleted(id);
+    setError(null);
+    try {
+      await del(`/comments/${id}`);
+      onDeleted(id);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   };
 
   const anchored = comments.find((comment) => comment.path);
@@ -62,6 +68,7 @@ export function CommentThread({
 
   return (
     <div className="comment-thread">
+      {error ? <Flash variant="danger">{error}</Flash> : null}
       {comments.map((comment) => {
         const link = repos ? forgeCommentLink(repos, comment) : null;
         const canDelete = comment.authorId !== null && comment.authorId === user?.id;

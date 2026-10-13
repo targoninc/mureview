@@ -92,6 +92,7 @@ interface AdoThread {
     commentType?: string;
     content?: string;
     publishedDate?: string;
+    isDeleted?: boolean;
     author?: AdoCommentAuthor;
   }[];
 }
@@ -199,7 +200,9 @@ export class AdoClient implements ForgeClient {
       body: json !== undefined ? JSON.stringify(json) : rest.body,
     });
     if (response.status === 204) return undefined as T;
-    return (await response.json()) as T;
+    const text = await response.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text) as T;
   }
 
   private repoUrl(repo: string): string {
@@ -539,6 +542,20 @@ export class AdoClient implements ForgeClient {
     return href || image;
   }
 
+  async deleteComment(repo: string, number: number, commentId: string): Promise<void> {
+    const match = commentId.match(/^(\d+):(\d+)$/);
+    if (!match) return;
+    try {
+      await this.request(
+        `${this.repoUrl(repo)}/pullrequests/${number}/threads/${match[1]}/comments/${match[2]}?api-version=7.1`,
+        { method: 'DELETE' },
+      );
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return;
+      throw error;
+    }
+  }
+
   async listComments(repo: string, number: number): Promise<ForgeComment[]> {
     const data = await this.request<{ value: AdoThread[] }>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`);
     const comments: ForgeComment[] = [];
@@ -549,6 +566,7 @@ export class AdoClient implements ForgeClient {
       const leftLine = context?.leftFileStart?.line;
       const anchored = Boolean(path) && (rightLine !== undefined || leftLine !== undefined);
       for (const comment of thread.comments ?? []) {
+        if (comment.isDeleted) continue;
         if (comment.commentType && comment.commentType !== 'text') continue;
         if (!comment.content) continue;
         comments.push({

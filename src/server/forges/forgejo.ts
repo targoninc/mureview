@@ -398,6 +398,16 @@ export class ForgejoClient implements ForgeClient {
     return user ? { name: user.login, avatarUrl: this.absoluteAvatar(user.avatar_url) } : undefined;
   }
 
+  async deleteComment(repo: string, _number: number, commentId: string): Promise<void> {
+    if (!/^\d+$/.test(commentId)) return;
+    try {
+      await this.request(`/repos/${repo}/issues/comments/${commentId}`, { method: 'DELETE' });
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return;
+      throw error;
+    }
+  }
+
   async listComments(repo: string, number: number): Promise<ForgeComment[]> {
     const issueComments = await this.paginate<GiteaIssueComment>(`/repos/${repo}/issues/${number}/comments`);
     const reviews = await this.paginate<GiteaReview>(`/repos/${repo}/pulls/${number}/reviews`);

@@ -104,6 +104,8 @@ export interface ForgeClient {
   mergePullRequest(repo: string, number: number, message: string): Promise<string>;
   pullRequestUrl(repo: string, number: number): string;
   postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment>;
+  /** Removes a comment that exists on the forge; a missing comment is fine. */
+  deleteComment(repo: string, number: number, commentId: string): Promise<void>;
   listComments(repo: string, number: number): Promise<ForgeComment[]>;
   fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null>;
   listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]>;

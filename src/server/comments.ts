@@ -233,16 +233,38 @@ function matchingConnection(userId: number, ownerConnection: ForgeConnectionRow)
 }
 
 /**
- * Only a comment's own author may delete it: removals are not synced to the
- * forge, so deleting someone else's comment (even as the review set owner)
- * would leave the two sides disagreeing.
+ * Only a comment's own author may delete it. The comment is removed on the
+ * forge first: when that fails nothing changes locally, otherwise a later
+ * sync would simply import the comment again (without its author).
  */
-export function deleteCommentRoute(ctx: Ctx): Response {
+export async function deleteCommentRoute(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
-  const comment = db.query<{ id: number; author_id: number | null }, [number]>('SELECT id, author_id FROM comments WHERE id = ?').get(Number(ctx.params.id));
+  const comment = db
+    .query<
+      { id: number; author_id: number | null; connection_id: number | null; repo: string | null; pr_id: number; forge_comment_id: string | null },
+      [number]
+    >('SELECT id, author_id, connection_id, repo, pr_id, forge_comment_id FROM comments WHERE id = ?')
+    .get(Number(ctx.params.id));
   if (!comment || comment.author_id === null || comment.author_id !== user.id) {
     throw new HttpError(404, 'Comment not found');
   }
+
+  if (comment.forge_comment_id && comment.connection_id !== null && comment.repo) {
+    const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo);
+    const ownerConnection = pull
+      ? db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(comment.connection_id)
+      : null;
+    const connection = ownerConnection ? (connectionById(user.id, ownerConnection.id) ?? matchingConnection(user.id, ownerConnection)) : null;
+    if (pull && connection) {
+      try {
+        await clientFor(connection).deleteComment(comment.repo, pull.forge_pr_number, comment.forge_comment_id);
+      } catch (error) {
+        console.error(`Could not delete comment ${comment.id} on the forge:`, error);
+        throw new HttpError(502, 'The comment could not be deleted on the forge, so it was kept here. Try again later.');
+      }
+    }
+  }
+
   db.run('DELETE FROM comments WHERE id = ?', [comment.id]);
   return json({ ok: true });
 }

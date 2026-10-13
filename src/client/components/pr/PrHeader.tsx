@@ -130,11 +130,6 @@ export function PrHeader({
               <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
                 Conversation ({commentCount})
               </Button>
-              <IconButton
-                icon={diffStyle === 'unified' ? ColumnsIcon : RowsIcon}
-                aria-label={diffStyle === 'unified' ? 'Switch to split view' : 'Switch to unified view'}
-                onClick={onToggleDiffStyle}
-              />
               {owned ? (
                 <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
               ) : null}
@@ -142,13 +137,6 @@ export function PrHeader({
             </>
           ) : (
             <>
-              <Button
-                leadingVisual={diffStyle === 'unified' ? ColumnsIcon : RowsIcon}
-                onClick={onToggleDiffStyle}
-                title={diffStyle === 'unified' ? 'Show the diff in two columns' : 'Show the diff in one column'}
-              >
-                {diffStyle === 'unified' ? 'Split view' : 'Unified view'}
-              </Button>
               {owned ? (
                 <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
                   Settings
@@ -160,13 +148,24 @@ export function PrHeader({
             </>
           )}
         </div>
-          {pr.state === 'loading' ? (
-            <span className="skeleton skeleton-diff" role="status" aria-label="Calculating the total diff" />
-          ) : pr.stats.files > 0 ? (
-            <span className="pr-header-diff">
-              <span className="additions">+{pr.stats.additions}</span>{' '}
-              <span className="deletions">−{pr.stats.deletions}</span>
-            </span>
+          {pr.state === 'loading' || pr.stats.files > 0 ? (
+            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+              {pr.state === 'loading' ? (
+                <span className="skeleton skeleton-diff" role="status" aria-label="Calculating the total diff" />
+              ) : (
+                <span className="pr-header-diff">
+                  <span className="additions">+{pr.stats.additions}</span>{' '}
+                  <span className="deletions">−{pr.stats.deletions}</span>
+                </span>
+              )}
+              <IconButton
+                icon={diffStyle === 'unified' ? ColumnsIcon : RowsIcon}
+                aria-label={diffStyle === 'unified' ? 'Switch to split view' : 'Switch to unified view'}
+                variant="invisible"
+                size="small"
+                onClick={onToggleDiffStyle}
+              />
+            </div>
           ) : null}
         </div>
       </div>

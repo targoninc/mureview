@@ -328,6 +328,21 @@ export class GithubClient implements ForgeClient {
     }
   }
 
+  async deleteComment(repo: string, _number: number, commentId: string): Promise<void> {
+    try {
+      await this.request(`/repos/${repo}/pulls/comments/${commentId}`, { method: 'DELETE' });
+      return;
+    } catch (error) {
+      if (!(error instanceof ForgeError) || error.status !== 404) throw error;
+    }
+    try {
+      await this.request(`/repos/${repo}/issues/comments/${commentId}`, { method: 'DELETE' });
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return;
+      throw error;
+    }
+  }
+
   async listComments(repo: string, number: number): Promise<ForgeComment[]> {
     const reviewComments = await this.paginate<GithubReviewComment>(`/repos/${repo}/pulls/${number}/comments`);
     const issueComments = await this.paginate<GithubIssueComment>(`/repos/${repo}/issues/${number}/comments`);

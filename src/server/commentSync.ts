@@ -57,8 +57,20 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
         'SELECT id, forge_comment_id, body, path, line, author_name, author_avatar FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ?',
       )
       .all(prId, repo.connectionId, repo.repo);
-    const knownIds = new Set(existing.map((row) => row.forge_comment_id).filter((id): id is string => Boolean(id)));
-    const byForgeId = new Map(existing.filter((row) => row.forge_comment_id).map((row) => [row.forge_comment_id!, row]));
+
+    // Comments imported from the forge that are no longer listed there were
+    // deleted on the forge; drop them here as well. mureview-only comments
+    // (without a forge id) are never touched.
+    const forgeIds = new Set(forgeComments.map((comment) => comment.id));
+    for (const row of existing) {
+      if (row.forge_comment_id && !forgeIds.has(row.forge_comment_id)) {
+        db.run('DELETE FROM comments WHERE id = ?', [row.id]);
+      }
+    }
+    const live = existing.filter((row) => !row.forge_comment_id || forgeIds.has(row.forge_comment_id));
+
+    const knownIds = new Set(live.map((row) => row.forge_comment_id).filter((id): id is string => Boolean(id)));
+    const byForgeId = new Map(live.filter((row) => row.forge_comment_id).map((row) => [row.forge_comment_id!, row]));
     const anchors = new Map<string, { path: string; line: number; side: 'additions' | 'deletions' }>();
     for (const comment of forgeComments) {
       if (comment.path && comment.line) anchors.set(comment.id, { path: comment.path, line: comment.line, side: comment.side ?? 'additions' });
@@ -96,7 +108,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
         if (known) applyForgeAuthor(known, comment);
         continue;
       }
-      const duplicate = existing.find(
+      const duplicate = live.find(
         (row) => row.path === (comment.path ?? null) && row.line === (comment.line ?? null) && row.body.trim() === comment.body.trim(),
       );
       if (duplicate) {

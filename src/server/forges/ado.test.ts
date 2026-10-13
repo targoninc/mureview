@@ -66,6 +66,10 @@ const server = Bun.serve({
       });
     }
 
+    if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/threads/12/comments/35' && req.method === 'DELETE') {
+      return new Response(null, { status: 204 });
+    }
+
     if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/commits') {
       const skip = Number(url.searchParams.get('$skip') ?? 0);
       if (skip === 0) {
@@ -132,6 +136,13 @@ test('reports the account a comment was posted under', async () => {
     replyTo: '12:34',
   });
   expect(reply).toEqual({ kind: 'line', id: '12:35', author: { name: 'Lena Muster', avatarUrl: avatar } });
+});
+
+test('deletes a thread comment on the forge', async () => {
+  requests.length = 0;
+  await client.deleteComment('Proj/Repo', 7, '12:35');
+  expect(requests[0]).toContain('/pullrequests/7/threads/12/comments/35');
+  expect(requests[0]).toContain('api-version=7.1');
 });
 
 test('picks the soonest expiring code token for the organization', async () => {
