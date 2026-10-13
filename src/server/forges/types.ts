@@ -1,6 +1,17 @@
-import type { CheckInfo, ChecksSummary, FileStatus, ForgeKind } from '../../shared/types';
+import type { CheckInfo, ChecksSummary, CommitInfo, FileStatus, ForgeKind } from '../../shared/types';
 
-export type { CheckInfo, ChecksSummary };
+export type { CheckInfo, ChecksSummary, CommitInfo };
+
+export interface ForgeComment {
+  id: string;
+  author: { name: string; avatarUrl: string };
+  body: string;
+  createdAt: string;
+  path?: string;
+  line?: number;
+  side?: 'additions' | 'deletions';
+  replyToId?: string;
+}
 
 export class ForgeError extends Error {
   status: number;
@@ -36,6 +47,7 @@ export interface CompareResult {
   aheadBy: number;
   behindBy: number;
   files: CompareFile[];
+  commits: CommitInfo[];
   truncated: boolean;
 }
 
@@ -82,7 +94,9 @@ export interface ForgeClient {
   ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef>;
   mergePullRequest(repo: string, number: number, message: string): Promise<string>;
   pullRequestUrl(repo: string, number: number): string;
-  postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'>;
+  postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }>;
+  listComments(repo: string, number: number): Promise<ForgeComment[]>;
+  listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]>;
   checks(repo: string, sha: string, options?: { pullRequest?: number }): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
 }

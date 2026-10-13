@@ -5,10 +5,12 @@ import {
   type BranchInfo,
   type CheckInfo,
   type ChecksSummary,
+  type CommitInfo,
   type CompareFile,
   type CompareResult,
   type ForgeCallOptions,
   type ForgeClient,
+  type ForgeComment,
   type ForgeRepo,
   ForgeError,
   type PullRequestRef,
@@ -41,6 +43,40 @@ interface GiteaCompareFile {
 interface GiteaCompare {
   total_commits: number;
   files?: GiteaCompareFile[];
+  commits?: GiteaCommit[];
+}
+
+interface GiteaCommit {
+  sha: string;
+  commit: { message: string; author: { name: string; date: string } | null };
+  author?: { login: string } | null;
+  html_url?: string;
+}
+
+interface GiteaIssueComment {
+  id: number;
+  body: string;
+  created_at?: string;
+  user?: { login: string; avatar_url: string } | null;
+}
+
+interface GiteaReviewComment {
+  id: number;
+  body: string;
+  path?: string;
+  line?: number;
+  side?: string;
+  created_at?: string;
+  updated_at?: string;
+  user?: { login: string; avatar_url: string } | null;
+  poster?: { login: string; avatar_url: string } | null;
+}
+
+interface GiteaReview {
+  id: number;
+  submitted_at?: string;
+  user?: { login: string; avatar_url: string } | null;
+  comments?: GiteaReviewComment[];
 }
 
 interface GiteaTree {
@@ -246,6 +282,13 @@ export class ForgejoClient implements ForgeClient {
         aheadBy: comparison.total_commits,
         behindBy: 0,
         files,
+        commits: (comparison.commits ?? []).map((commit) => ({
+          sha: commit.sha,
+          message: commit.commit.message.split('\n')[0],
+          author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
+          date: commit.commit.author?.date ?? '',
+          url: commit.html_url,
+        })),
         truncated: changed.length > capped.length,
       };
     });
@@ -281,9 +324,9 @@ export class ForgejoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'> {
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
     try {
-      await this.request(`/repos/${repo}/pulls/${number}/reviews`, {
+      const review = await this.request<{ comments?: { id: number }[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -299,16 +342,66 @@ export class ForgejoClient implements ForgeClient {
           ],
         }),
       });
-      return 'line';
+      const id = review.comments?.[0]?.id;
+      return { kind: 'line', id: id !== undefined ? String(id) : undefined };
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
-      await this.request(`/repos/${repo}/issues/${number}/comments`, {
+      const created = await this.request<{ id: number }>(`/repos/${repo}/issues/${number}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
       });
-      return 'pull-request';
+      return { kind: 'pull-request', id: String(created.id) };
     }
+  }
+
+  async listComments(repo: string, number: number): Promise<ForgeComment[]> {
+    const issueComments = await this.paginate<GiteaIssueComment>(`/repos/${repo}/issues/${number}/comments`);
+    const reviews = await this.paginate<GiteaReview>(`/repos/${repo}/pulls/${number}/reviews`);
+    const comments: ForgeComment[] = [];
+
+    for (const comment of issueComments) {
+      comments.push({
+        id: String(comment.id),
+        author: { name: comment.user?.login ?? 'unknown', avatarUrl: comment.user?.avatar_url ?? '' },
+        body: comment.body,
+        createdAt: comment.created_at ?? '',
+      });
+    }
+    for (const review of reviews) {
+      for (const comment of review.comments ?? []) {
+        const author = comment.user ?? comment.poster ?? review.user;
+        const anchored = Boolean(comment.path) && typeof comment.line === 'number' && comment.line > 0;
+        comments.push({
+          id: String(comment.id),
+          author: { name: author?.login ?? 'unknown', avatarUrl: author?.avatar_url ?? '' },
+          body: anchored ? comment.body : `**${comment.path ?? 'review'}** (outdated)\n\n${comment.body}`,
+          createdAt: comment.created_at ?? comment.updated_at ?? review.submitted_at ?? '',
+          path: anchored ? comment.path : undefined,
+          line: anchored ? (comment.line as number) : undefined,
+          side: anchored ? (comment.side === 'LEFT' ? 'deletions' : 'additions') : undefined,
+        });
+      }
+    }
+    return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
+    const limit = options.limit ?? 100;
+    if (options.baseSha) {
+      const comparison = await this.compare(repo, options.baseSha, options.headSha);
+      return comparison.commits.slice(0, limit);
+    }
+    const commits = await this.request<GiteaCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&limit=${Math.min(limit, 50)}&page=1`);
+    return commits
+      .map((commit) => ({
+        sha: commit.sha,
+        message: commit.commit.message.split('\n')[0],
+        author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
+        date: commit.commit.author?.date ?? '',
+        url: commit.html_url,
+      }))
+      .reverse();
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {

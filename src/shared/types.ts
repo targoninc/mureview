@@ -110,6 +110,7 @@ export interface RepoStatus {
   truncated?: boolean;
   headSha?: string;
   pullRequest?: { number: number; url: string };
+  commits?: CommitInfo[];
   files?: FileDiff[];
 }
 
@@ -126,7 +127,16 @@ export interface Comment {
   side: 'additions' | 'deletions' | null;
   body: string;
   synced: boolean;
+  source: 'mureview' | 'forge';
   createdAt: string;
+}
+
+export interface CommitInfo {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  url?: string;
 }
 
 export interface CommentInput {

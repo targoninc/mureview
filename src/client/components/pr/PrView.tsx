@@ -5,7 +5,7 @@ import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
 import { Button, Checkbox, Dialog } from '@primer/react';
-import { CommentDiscussionIcon, FileDiffIcon, GitPullRequestIcon } from '@primer/octicons-react';
+import { CommentDiscussionIcon, FileDiffIcon, GitCommitIcon, GitPullRequestIcon } from '@primer/octicons-react';
 import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
@@ -13,6 +13,7 @@ import { fileItemId, repoStatusText, treePathFor } from '../../lib/format';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
+import { CommitList } from './CommitList';
 import { FileTreePanel } from './FileTreePanel';
 import { ConversationPanel } from './ConversationPanel';
 import { CommentComposer, CommentThread } from './Comments';
@@ -60,8 +61,8 @@ export function PrView({ detail, onReload }: PrViewProps) {
   const { reviewSet, pr } = detail;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const [tab, setTab] = useState<'files' | 'conversation'>('files');
-  const [panel, setPanel] = useState<'files' | 'conversation' | null>(null);
+  const [tab, setTab] = useState<'files' | 'commits' | 'conversation'>('files');
+  const [panel, setPanel] = useState<'files' | 'commits' | 'conversation' | null>(null);
   const [pullsOpen, setPullsOpen] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
@@ -279,16 +280,19 @@ export function PrView({ detail, onReload }: PrViewProps) {
 
   const hasFiles = parsed.length > 0;
   const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
+  const commitCount = pr.repos.reduce((count, repo) => count + (repo.commits?.length ?? 0), 0);
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
   const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest);
 
-  const openPanel = (next: 'files' | 'conversation') => {
+  const openPanel = (next: 'files' | 'commits' | 'conversation') => {
     setTab(next);
     setPanel(next);
   };
 
   const panelContent =
-    tab === 'files' ? (
+    tab === 'commits' ? (
+      <CommitList repos={pr.repos} target={reviewSet.targetBranch} />
+    ) : tab === 'files' ? (
       hasFiles ? (
         <FileTreePanel
           pr={pr}
@@ -321,7 +325,9 @@ export function PrView({ detail, onReload }: PrViewProps) {
         reviewedCount={reviewedCount}
         compact={isMobile}
         commentCount={comments.length}
+        commitCount={commitCount}
         onOpenFiles={() => openPanel('files')}
+        onOpenCommits={() => openPanel('commits')}
         onOpenConversation={() => openPanel('conversation')}
         onShowPullRequests={() => setPullsOpen(true)}
       />
@@ -339,6 +345,14 @@ export function PrView({ detail, onReload }: PrViewProps) {
                 onClick={() => setTab('files')}
               >
                 Files
+              </Button>
+              <Button
+                size="small"
+                variant={tab === 'commits' ? 'primary' : 'invisible'}
+                leadingVisual={GitCommitIcon}
+                onClick={() => setTab('commits')}
+              >
+                Commits ({commitCount})
               </Button>
               <Button
                 size="small"
@@ -381,7 +395,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
 
       {isMobile && panel ? (
         <Dialog
-          title={panel === 'files' ? 'Files' : 'Conversation'}
+          title={panel === 'files' ? 'Files' : panel === 'commits' ? 'Commits' : 'Conversation'}
           width="calc(100vw - 24px)"
           height="auto"
           onClose={() => setPanel(null)}

@@ -1,10 +1,11 @@
-import type { FileDiff, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import type { CommitInfo, FileDiff, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
 import { Cache, cached, mapLimit } from './cache';
 import { listComments } from './comments';
 import { constants } from './config';
 import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
+import { syncForgeComments } from './commentSync';
 import { ensureRepoPullRequests } from './pullRequests';
 import { listReviewed } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
@@ -62,6 +63,15 @@ function targetlessDiff(client: ForgeClient, repo: string, branchSha: string): P
   });
 }
 
+async function loadCommits(client: ForgeClient, repo: string, headSha: string, baseSha?: string): Promise<CommitInfo[] | undefined> {
+  try {
+    return await client.listCommits(repo, { headSha, baseSha });
+  } catch (error) {
+    console.error(`Could not list commits for ${repo}:`, error);
+    return undefined;
+  }
+}
+
 async function inspectBranch(
   client: ForgeClient,
   status: RepoStatus,
@@ -83,13 +93,22 @@ async function inspectBranch(
         additions: diff.additions,
         deletions: 0,
         truncated: diff.truncated,
+        commits: await loadCommits(client, repo, branchSha),
         files: diff.files,
       };
     }
 
     const comparison = await client.compare(repo, targetRef.sha, branchSha);
     if (comparison.merged) {
-      return { ...status, targetExists: true, state: 'merged', headSha: branchSha, aheadBy: comparison.aheadBy, behindBy: comparison.behindBy };
+      return {
+        ...status,
+        targetExists: true,
+        state: 'merged',
+        headSha: branchSha,
+        aheadBy: comparison.aheadBy,
+        behindBy: comparison.behindBy,
+        commits: [],
+      };
     }
 
     const files = comparison.files.map(toFileDiff);
@@ -104,6 +123,7 @@ async function inspectBranch(
       additions: totals.additions,
       deletions: totals.deletions,
       truncated: comparison.truncated,
+      commits: await loadCommits(client, repo, branchSha, targetRef.sha),
       files,
     };
   } catch (error) {
@@ -172,7 +192,10 @@ export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet
 
   const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
   if (hasOpen && lifecycle) {
-    if (lifecycle.prId) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
+    if (lifecycle.prId) {
+      await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
+      await syncForgeComments(lifecycle.prId, clients, repos);
+    }
     return {
       state: 'open',
       errors,

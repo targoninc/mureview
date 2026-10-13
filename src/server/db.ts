@@ -117,7 +117,9 @@ const SCHEMA_V2 = `
   CREATE TABLE comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
-    author_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    author_name TEXT NOT NULL DEFAULT '',
+    author_avatar TEXT NOT NULL DEFAULT '',
     connection_id INTEGER,
     repo TEXT,
     path TEXT,
@@ -125,8 +127,12 @@ const SCHEMA_V2 = `
     side TEXT,
     body TEXT NOT NULL,
     synced_at TEXT,
+    forge_comment_id TEXT,
+    source TEXT NOT NULL DEFAULT 'mureview',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_comments_forge ON comments(pr_id, forge_comment_id);
 
   CREATE TABLE pull_request_repos (
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
@@ -290,7 +296,42 @@ if (userVersion() < 3) {
     db.exec('ALTER TABLE comments ADD COLUMN synced_at TEXT');
   }
 }
-db.exec('PRAGMA user_version = 3;');
+if (userVersion() < 4) {
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(comments)').all();
+  if (!columns.some((column) => column.name === 'author_name')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE comments_v4 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          author_name TEXT NOT NULL DEFAULT '',
+          author_avatar TEXT NOT NULL DEFAULT '',
+          connection_id INTEGER,
+          repo TEXT,
+          path TEXT,
+          line INTEGER,
+          side TEXT,
+          body TEXT NOT NULL,
+          synced_at TEXT,
+          forge_comment_id TEXT,
+          source TEXT NOT NULL DEFAULT 'mureview',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO comments_v4 (id, pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, source, created_at)
+          SELECT c.id, c.pr_id, c.author_id, COALESCE(u.name, ''), COALESCE(u.avatar_url, ''), c.connection_id, c.repo, c.path, c.line, c.side, c.body, c.synced_at, 'mureview', c.created_at
+          FROM comments c LEFT JOIN users u ON u.id = c.author_id;
+        DROP TABLE comments;
+        ALTER TABLE comments_v4 RENAME TO comments;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_comments_forge ON comments(pr_id, forge_comment_id);
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+db.exec('PRAGMA user_version = 4;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

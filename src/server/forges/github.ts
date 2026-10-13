@@ -5,9 +5,11 @@ import {
   type BranchInfo,
   type CheckInfo,
   type ChecksSummary,
+  type CommitInfo,
   type CompareResult,
   type ForgeCallOptions,
   type ForgeClient,
+  type ForgeComment,
   type ForgeRepo,
   ForgeError,
   type PullRequestRef,
@@ -46,7 +48,44 @@ interface GithubCompare {
   ahead_by: number;
   behind_by: number;
   files?: GithubCompareFile[];
+  commits?: GithubCommit[];
   merge_base_commit?: { sha: string };
+}
+
+interface GithubCommit {
+  sha: string;
+  commit: { message: string; author: { name: string; date: string } | null };
+  author: { login: string } | null;
+  html_url: string;
+}
+
+interface GithubReviewComment {
+  id: number;
+  user: { login: string; avatar_url: string } | null;
+  body: string;
+  path: string;
+  line: number | null;
+  original_line?: number | null;
+  side: 'RIGHT' | 'LEFT' | null;
+  created_at: string;
+  in_reply_to_id?: number;
+}
+
+interface GithubIssueComment {
+  id: number;
+  user: { login: string; avatar_url: string } | null;
+  body: string;
+  created_at: string;
+}
+
+function toCommitInfo(commit: GithubCommit): CommitInfo {
+  return {
+    sha: commit.sha,
+    message: commit.commit.message.split('\n')[0],
+    author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
+    date: commit.commit.author?.date ?? '',
+    url: commit.html_url,
+  };
 }
 
 interface GithubTreeEntry {
@@ -175,6 +214,7 @@ export class GithubClient implements ForgeClient {
         aheadBy: comparison.ahead_by,
         behindBy: comparison.behind_by,
         files,
+        commits: (comparison.commits ?? []).map(toCommitInfo),
         truncated: files.length >= 300,
       };
     });
@@ -238,9 +278,9 @@ export class GithubClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'> {
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
     try {
-      await this.request(`/repos/${repo}/pulls/${number}/comments`, {
+      const created = await this.request<{ id: number }>(`/repos/${repo}/pulls/${number}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -251,17 +291,57 @@ export class GithubClient implements ForgeClient {
           commit_id: comment.commitId,
         }),
       });
-      return 'line';
+      return { kind: 'line', id: String(created.id) };
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
       // The line may not be part of the pull request diff; keep the comment.
-      await this.request(`/repos/${repo}/issues/${number}/comments`, {
+      const created = await this.request<{ id: number }>(`/repos/${repo}/issues/${number}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
       });
-      return 'pull-request';
+      return { kind: 'pull-request', id: String(created.id) };
     }
+  }
+
+  async listComments(repo: string, number: number): Promise<ForgeComment[]> {
+    const reviewComments = await this.paginate<GithubReviewComment>(`/repos/${repo}/pulls/${number}/comments`);
+    const issueComments = await this.paginate<GithubIssueComment>(`/repos/${repo}/issues/${number}/comments`);
+    const comments: ForgeComment[] = [];
+
+    for (const comment of reviewComments) {
+      const line = comment.line ?? comment.original_line ?? null;
+      const anchored = Boolean(comment.path) && line !== null;
+      comments.push({
+        id: String(comment.id),
+        author: { name: comment.user?.login ?? 'unknown', avatarUrl: comment.user?.avatar_url ?? '' },
+        body: anchored ? comment.body : `**${comment.path}** (outdated)\n\n${comment.body}`,
+        createdAt: comment.created_at,
+        path: anchored ? comment.path : undefined,
+        line: anchored ? (line as number) : undefined,
+        side: anchored ? (comment.side === 'LEFT' ? 'deletions' : 'additions') : undefined,
+        replyToId: comment.in_reply_to_id ? String(comment.in_reply_to_id) : undefined,
+      });
+    }
+    for (const comment of issueComments) {
+      comments.push({
+        id: String(comment.id),
+        author: { name: comment.user?.login ?? 'unknown', avatarUrl: comment.user?.avatar_url ?? '' },
+        body: comment.body,
+        createdAt: comment.created_at,
+      });
+    }
+    return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
+    const limit = options.limit ?? 100;
+    if (options.baseSha) {
+      const comparison = await this.compare(repo, options.baseSha, options.headSha);
+      return comparison.commits.slice(0, limit);
+    }
+    const commits = await this.request<GithubCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&per_page=${Math.min(limit, 100)}`);
+    return commits.map(toCommitInfo).reverse();
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {

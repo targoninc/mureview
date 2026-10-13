@@ -37,7 +37,9 @@ export function CommentThread({ comments, onDeleted }: { comments: Comment[]; on
             <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
             <strong>{comment.author.name}</strong>
             <span>commented {timeAgo(comment.createdAt)}</span>
-            {comment.synced && comment.path ? (
+            {comment.source === 'forge' ? (
+              <span title="Written on the forge pull request and imported here">· from forge</span>
+            ) : comment.synced && comment.path ? (
               <span title="Mirrored to the forge pull request for this repository">· synced to forge</span>
             ) : null}
             <span style={{ flex: 1 }} />

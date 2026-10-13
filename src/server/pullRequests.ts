@@ -62,6 +62,9 @@ export async function ensureRepoPullRequests(
   }
 }
 
-export function markCommentSynced(commentId: number): void {
-  db.run(`UPDATE comments SET synced_at = datetime('now') WHERE id = ?`, [commentId]);
+export function markCommentSynced(commentId: number, forgeCommentId?: string): void {
+  db.run(`UPDATE comments SET synced_at = datetime('now'), forge_comment_id = COALESCE(?, forge_comment_id) WHERE id = ?`, [
+    forgeCommentId ?? null,
+    commentId,
+  ]);
 }

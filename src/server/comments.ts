@@ -1,6 +1,6 @@
 import type { Comment, CommentInput } from '../shared/types';
 import { connectionById, connectionsFor } from './auth/identities';
-import { requireUser } from './auth/session';
+import { publicUser, requireUser } from './auth/session';
 import { db } from './db';
 import { clientFor } from './forges';
 import { HttpError, json, readJson } from './http';
@@ -11,14 +11,16 @@ interface CommentRow {
   id: number;
   pr_id: number;
   connection_id: number | null;
-  name: string;
-  avatar_url: string;
+  author_name: string;
+  author_avatar: string;
   repo: string | null;
   path: string | null;
   line: number | null;
   side: string | null;
   body: string;
   synced_at: string | null;
+  forge_comment_id: string | null;
+  source: string;
   created_at: string;
 }
 
@@ -29,13 +31,13 @@ interface PrRow {
   owner_id: number;
 }
 
-const SELECT_COMMENT = `SELECT c.*, u.name, u.avatar_url FROM comments c JOIN users u ON u.id = c.author_id`;
+const SELECT_COMMENT = `SELECT c.* FROM comments c`;
 
 function toComment(row: CommentRow): Comment {
   return {
     id: row.id,
     prId: row.pr_id,
-    author: { name: row.name, avatarUrl: row.avatar_url },
+    author: { name: row.author_name, avatarUrl: row.author_avatar },
     connectionId: row.connection_id,
     repo: row.repo,
     path: row.path,
@@ -43,6 +45,7 @@ function toComment(row: CommentRow): Comment {
     side: row.side === 'additions' || row.side === 'deletions' ? row.side : null,
     body: row.body,
     synced: row.synced_at !== null,
+    source: row.source === 'forge' ? 'forge' : 'mureview',
     createdAt: row.created_at,
   };
 }
@@ -100,16 +103,10 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
   if (body.length > 10_000) throw new HttpError(400, 'Comments are limited to 10000 characters.');
 
   const anchor = normalizeAnchor(user.id, input);
-  const inserted = db.run('INSERT INTO comments (pr_id, author_id, connection_id, repo, path, line, side, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-    pr.id,
-    user.id,
-    anchor.connectionId,
-    anchor.repo,
-    anchor.path,
-    anchor.line,
-    anchor.side,
-    body,
-  ]);
+  const inserted = db.run(
+    'INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [pr.id, user.id, publicUser(user).name, user.avatar_url, anchor.connectionId, anchor.repo, anchor.path, anchor.line, anchor.side, body, 'mureview'],
+  );
   const commentId = Number(inserted.lastInsertRowid);
   const row = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
   await syncCommentToPullRequest(user.id, pr.id, row);
@@ -128,14 +125,14 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
   const connection = connectionById(userId, row.connection_id);
   if (!connection) return;
   try {
-    await clientFor(connection).postReviewComment(row.repo, pull.forge_pr_number, {
+    const posted = await clientFor(connection).postReviewComment(row.repo, pull.forge_pr_number, {
       body: row.body,
       path: row.path,
       line: row.line,
       side: row.side as 'additions' | 'deletions',
       commitId: pull.head_sha || undefined,
     });
-    markCommentSynced(row.id);
+    markCommentSynced(row.id, posted.id);
   } catch (error) {
     console.error(`Could not sync comment ${row.id} to the forge:`, error);
   }

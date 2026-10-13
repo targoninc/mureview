@@ -1,5 +1,5 @@
 import { Button, IconButton, Label } from '@primer/react';
-import { CommentDiscussionIcon, FileDiffIcon, GitMergeIcon, GitPullRequestIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
+import { CommentDiscussionIcon, FileDiffIcon, GitCommitIcon, GitMergeIcon, GitPullRequestIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, ReviewSetDetail } from '../../../shared/types';
 
@@ -25,7 +25,9 @@ interface PrHeaderProps {
   reviewedCount: number;
   compact: boolean;
   commentCount: number;
+  commitCount: number;
   onOpenFiles: () => void;
+  onOpenCommits: () => void;
   onOpenConversation: () => void;
   onShowPullRequests: () => void;
 }
@@ -37,7 +39,9 @@ export function PrHeader({
   reviewedCount,
   compact,
   commentCount,
+  commitCount,
   onOpenFiles,
+  onOpenCommits,
   onOpenConversation,
   onShowPullRequests,
 }: PrHeaderProps) {
@@ -82,6 +86,9 @@ export function PrHeader({
             <>
               <Button leadingVisual={FileDiffIcon} onClick={onOpenFiles}>
                 Files
+              </Button>
+              <Button leadingVisual={GitCommitIcon} onClick={onOpenCommits}>
+                Commits ({commitCount})
               </Button>
               <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
                 Conversation ({commentCount})

@@ -5,10 +5,12 @@ import {
   type BranchInfo,
   type CheckInfo,
   type ChecksSummary,
+  type CommitInfo,
   type CompareFile,
   type CompareResult,
   type ForgeCallOptions,
   type ForgeClient,
+  type ForgeComment,
   type ForgeRepo,
   ForgeError,
   type PullRequestRef,
@@ -65,6 +67,30 @@ interface AdoPull {
   pullRequestId: number;
   status: string;
   lastMergeSourceCommit?: { commitId: string };
+}
+
+interface AdoThread {
+  id: number;
+  threadContext?: {
+    filePath?: string;
+    rightFileStart?: { line: number };
+    leftFileStart?: { line: number };
+  };
+  comments?: {
+    id: number;
+    parentCommentId?: number;
+    commentType?: string;
+    content?: string;
+    publishedDate?: string;
+    author?: { displayName?: string; imageUrl?: string };
+  }[];
+}
+
+interface AdoCommit {
+  commitId: string;
+  comment: string;
+  author?: { name?: string; date?: string };
+  remoteUrl?: string;
 }
 
 interface AdoEvaluation {
@@ -288,6 +314,7 @@ export class AdoClient implements ForgeClient {
         aheadBy: diffs.aheadCount,
         behindBy: diffs.behindCount,
         files,
+        commits: [],
         truncated: changed.length > capped.length,
       };
     });
@@ -373,14 +400,15 @@ export class AdoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'> {
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
     const line = { line: comment.line, offset: 1 };
     const context =
       comment.side === 'additions'
         ? { filePath: `/${comment.path}`, rightFileStart: line, rightFileEnd: line }
         : { filePath: `/${comment.path}`, leftFileStart: line, leftFileEnd: line };
+    const threadId = (thread: AdoThread) => (thread.comments?.[0]?.id !== undefined ? `${thread.id}:${thread.comments[0].id}` : String(thread.id));
     try {
-      await this.request(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
+      const thread = await this.request<AdoThread>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
         method: 'POST',
         json: {
           comments: [{ parentCommentId: 0, content: comment.body, commentType: 'text' }],
@@ -388,18 +416,65 @@ export class AdoClient implements ForgeClient {
           threadContext: context,
         },
       });
-      return 'line';
+      return { kind: 'line', id: threadId(thread) };
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
-      await this.request(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
+      const thread = await this.request<AdoThread>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
         method: 'POST',
         json: {
           comments: [{ parentCommentId: 0, content: `${comment.path}:${comment.line}\n\n${comment.body}`, commentType: 'text' }],
           status: 'active',
         },
       });
-      return 'pull-request';
+      return { kind: 'pull-request', id: threadId(thread) };
     }
+  }
+
+  async listComments(repo: string, number: number): Promise<ForgeComment[]> {
+    const data = await this.request<{ value: AdoThread[] }>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`);
+    const comments: ForgeComment[] = [];
+    for (const thread of data.value ?? []) {
+      const context = thread.threadContext;
+      const path = context?.filePath?.replace(/^\//, '');
+      const rightLine = context?.rightFileStart?.line;
+      const leftLine = context?.leftFileStart?.line;
+      const anchored = Boolean(path) && (rightLine !== undefined || leftLine !== undefined);
+      for (const comment of thread.comments ?? []) {
+        if (comment.commentType && comment.commentType !== 'text') continue;
+        if (!comment.content) continue;
+        comments.push({
+          id: `${thread.id}:${comment.id}`,
+          author: { name: comment.author?.displayName ?? 'unknown', avatarUrl: comment.author?.imageUrl ?? '' },
+          body: anchored ? comment.content : `**${path ?? 'pull request'}**\n\n${comment.content}`,
+          createdAt: comment.publishedDate ?? '',
+          path: anchored ? path : undefined,
+          line: anchored ? (rightLine ?? leftLine) : undefined,
+          side: anchored && rightLine === undefined ? 'deletions' : anchored ? 'additions' : undefined,
+          replyToId: comment.parentCommentId ? `${thread.id}:${comment.parentCommentId}` : undefined,
+        });
+      }
+    }
+    return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
+    const limit = Math.min(options.limit ?? 100, 200);
+    const compare = options.baseSha
+      ? `&searchCriteria.compareVersion.version=${options.baseSha}&searchCriteria.compareVersion.versionType=commit`
+      : '';
+    const data = await this.request<{ value: AdoCommit[] }>(
+      `${this.repoUrl(repo)}/commits?searchCriteria.itemVersion.version=${options.headSha}` +
+        `&searchCriteria.itemVersion.versionType=commit${compare}&$top=${limit}&api-version=7.1`,
+    );
+    return (data.value ?? [])
+      .map((commit) => ({
+        sha: commit.commitId,
+        message: commit.comment.split('\n')[0],
+        author: commit.author?.name ?? 'unknown',
+        date: commit.author?.date ?? '',
+        url: commit.remoteUrl,
+      }))
+      .reverse();
   }
 
   /**
