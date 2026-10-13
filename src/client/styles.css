@@ -337,12 +337,29 @@ svg.checks-pending {
 
 .repo-picker-selected-item {
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--borderColor-muted);
+  font-size: 12px;
+}
+
+.repo-picker-selected-head {
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--borderColor-muted);
-  font-size: 12px;
+}
+
+.repo-picker-branches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repo-picker-branches > * {
+  flex: 1;
+  min-width: 0;
 }
 
 .repo-picker-selected-item:last-child {

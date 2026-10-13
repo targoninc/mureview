@@ -315,52 +315,54 @@ export function ReviewSetFormPage() {
           <div className="repo-picker-selected">
             {form.selected.map((item) => (
               <div className="repo-picker-selected-item" key={`${item.connectionId}:${item.repo}`}>
-                <span className="mono">
-                  {item.host}/{item.repo}
-                </span>
-                <span className="row" style={{ gap: 8 }}>
-                  {form.mode === 'per-repo' ? (
-                    <>
-                      <Select
-                        size="small"
-                        aria-label={`Source branch for ${item.repo}`}
-                        value={item.branch ?? ''}
-                        onChange={(event) => setRepoBranches(item.connectionId, item.repo, { branch: event.target.value })}
-                      >
-                        <Select.Option value="">Source branch…</Select.Option>
-                        {branchOptions(item, item.branch).map((branch) => (
-                          <Select.Option key={branch} value={branch}>
-                            {branch}
-                          </Select.Option>
-                        ))}
-                      </Select>
-                      <Select
-                        size="small"
-                        aria-label={`Target branch for ${item.repo}`}
-                        value={item.target ?? ''}
-                        onChange={(event) => setRepoBranches(item.connectionId, item.repo, { target: event.target.value })}
-                      >
-                        <Select.Option value="">Target branch…</Select.Option>
-                        {branchOptions(item, item.target).map((branch) => (
-                          <Select.Option key={branch} value={branch}>
-                            {branch}
-                          </Select.Option>
-                        ))}
-                      </Select>
-                    </>
-                  ) : null}
-                  {ambiguousHosts.has(item.host) ? (
-                    <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
-                  ) : null}
-                  <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
-                  <Button
-                    size="small"
-                    variant="danger"
-                    leadingVisual={XIcon}
-                    aria-label={`Remove ${item.repo}`}
-                    onClick={() => removeRepo(item.connectionId, item.repo)}
-                  />
-                </span>
+                <div className="repo-picker-selected-head">
+                  <span className="mono">
+                    {item.host}/{item.repo}
+                  </span>
+                  <span className="row" style={{ gap: 8 }}>
+                    {ambiguousHosts.has(item.host) ? (
+                      <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
+                    ) : null}
+                    <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
+                    <Button
+                      size="small"
+                      variant="danger"
+                      leadingVisual={XIcon}
+                      aria-label={`Remove ${item.repo}`}
+                      onClick={() => removeRepo(item.connectionId, item.repo)}
+                    />
+                  </span>
+                </div>
+                {form.mode === 'per-repo' ? (
+                  <div className="repo-picker-branches">
+                    <Select
+                      size="small"
+                      aria-label={`Source branch for ${item.repo}`}
+                      value={item.branch ?? ''}
+                      onChange={(event) => setRepoBranches(item.connectionId, item.repo, { branch: event.target.value })}
+                    >
+                      <Select.Option value="">Source branch…</Select.Option>
+                      {branchOptions(item, item.branch).map((branch) => (
+                        <Select.Option key={branch} value={branch}>
+                          {branch}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                    <Select
+                      size="small"
+                      aria-label={`Target branch for ${item.repo}`}
+                      value={item.target ?? ''}
+                      onChange={(event) => setRepoBranches(item.connectionId, item.repo, { target: event.target.value })}
+                    >
+                      <Select.Option value="">Target branch…</Select.Option>
+                      {branchOptions(item, item.target).map((branch) => (
+                        <Select.Option key={branch} value={branch}>
+                          {branch}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
