@@ -18,6 +18,14 @@ describe('Cache', () => {
     expect(cache.get('a')).toBeUndefined();
   });
 
+  test('getStale serves expired entries within the max age', () => {
+    const cache = new Cache<number>(10, -1);
+    cache.set('a', 1);
+    expect(cache.get('a')).toBeUndefined();
+    expect(cache.getStale('a', 10_000)).toBe(1);
+    expect(cache.getStale('a', -1)).toBeUndefined();
+  });
+
   test('cached() only loads once', async () => {
     const cache = new Cache<number>(10, 1000);
     let loads = 0;

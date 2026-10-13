@@ -148,7 +148,8 @@ export function ReviewSetFormPage() {
         {error ? <Flash variant="danger">{error}</Flash> : null}
         {repoErrors.map((repoError) => (
           <Flash variant="warning" key={`${repoError.connectionId}:${repoError.message}`}>
-            Could not list repositories ({repoError.message}). Connect the forge under Settings to see its repositories.
+            Could not list repositories for {repoError.message}. Check the connection under Settings, or refresh in a few minutes if the
+            forge is rate limiting.
           </Flash>
         ))}
         {invalidErrors.length > 0 ? (

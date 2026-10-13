@@ -76,9 +76,15 @@ export function matchingBranches(branches: string[], patterns: RegExp[]): string
 
 export function forgeErrorMessage(error: unknown): string {
   if (error instanceof ForgeError) {
+    const detail = error.message?.trim();
+    const rateLimited = /rate limit|too many requests|secondary rate/i.test(detail ?? '');
+    if (error.status === 401) return 'authentication failed — reconnect this forge under Settings';
+    if (error.status === 403) {
+      if (rateLimited) return `rate limit reached (${detail})`;
+      return detail ? `access forbidden (${detail})` : 'access forbidden';
+    }
     if (error.status === 404) return 'not found or no access';
-    if (error.status === 403 || error.status === 401) return 'access forbidden (or rate limit reached)';
-    return error.message;
+    return detail || `request failed with status ${error.status}`;
   }
   return error instanceof Error ? error.message : 'unknown error';
 }

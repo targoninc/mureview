@@ -1,6 +1,7 @@
 interface Entry<T> {
   value: T;
   expires: number;
+  storedAt: number;
 }
 
 export class Cache<T> {
@@ -11,11 +12,15 @@ export class Cache<T> {
     private ttlMs = 60_000,
   ) {}
 
+  clear(): void {
+    this.entries.clear();
+  }
+
   get(key: string): T | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;
     if (entry.expires < Date.now()) {
-      this.entries.delete(key);
+      // Keep expired entries around so getStale() can still serve them.
       return undefined;
     }
     this.entries.delete(key);
@@ -23,8 +28,15 @@ export class Cache<T> {
     return entry.value;
   }
 
-  clear(): void {
-    this.entries.clear();
+  /** Returns the value even after it expired, as long as it is not too old. */
+  getStale(key: string, maxAgeMs: number): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.storedAt > maxAgeMs) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.value;
   }
 
   set(key: string, value: T, ttlMs = this.ttlMs): void {
@@ -32,7 +44,8 @@ export class Cache<T> {
       const oldest = this.entries.keys().next().value;
       if (oldest !== undefined) this.entries.delete(oldest);
     }
-    this.entries.set(key, { value, expires: Date.now() + ttlMs });
+    const now = Date.now();
+    this.entries.set(key, { value, expires: now + ttlMs, storedAt: now });
   }
 }
 
