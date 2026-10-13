@@ -65,9 +65,7 @@ export function PrHeader({
             {openRepos.length > 0 ? (
               <>
                 Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'} into{' '}
-                <span className="mono">{reviewSet.targetBranch}</span> · {pr.stats.files} files{' '}
-                <span className="additions">+{pr.stats.additions}</span> <span className="deletions">−{pr.stats.deletions}</span> ·{' '}
-                {reviewedCount}/{pr.stats.files} viewed
+                <span className="mono">{reviewSet.targetBranch}</span> · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
               </>
             ) : (
               <>
@@ -78,7 +76,8 @@ export function PrHeader({
             {!owned && detail.owner ? ` · shared by ${detail.owner.name}` : ''}
           </span>
         </div>
-        <div className="row pr-header-actions">
+        <div className="stack pr-header-right" style={{ gap: 6 }}>
+          <div className="row pr-header-actions">
           <Button leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
             {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
           </Button>
@@ -115,6 +114,13 @@ export function PrHeader({
               </Button>
             </>
           )}
+        </div>
+          {pr.stats.files > 0 ? (
+            <span className="pr-header-diff">
+              total <span className="additions">+{pr.stats.additions}</span>{' '}
+              <span className="deletions">−{pr.stats.deletions}</span>
+            </span>
+          ) : null}
         </div>
       </div>
     </div>

@@ -445,6 +445,15 @@ svg.checks-pending {
   justify-content: flex-end;
 }
 
+.pr-header-right {
+  align-items: flex-end;
+}
+
+.pr-header-diff {
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
 .mobile-panel {
   max-height: 65vh;
   overflow: auto;
