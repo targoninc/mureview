@@ -36,6 +36,7 @@ export function CommentThread({
   const { user } = useAppContext();
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [discussionCollapsed, setDiscussionCollapsed] = useState(false);
 
   const toggleCollapsed = (id: number) =>
     setCollapsed((current) => {
@@ -78,8 +79,22 @@ export function CommentThread({
 
   return (
     <div className="comment-thread">
-      {error ? <Flash variant="danger">{error}</Flash> : null}
-      {comments.map((comment) => {
+      {comments.length > 1 ? (
+        <button
+          type="button"
+          className="comment-thread-toggle"
+          aria-expanded={!discussionCollapsed}
+          aria-label={discussionCollapsed ? 'Expand discussion' : 'Collapse discussion'}
+          onClick={() => setDiscussionCollapsed((current) => !current)}
+        >
+          {discussionCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}
+          {comments.length} comments
+        </button>
+      ) : null}
+      {discussionCollapsed ? null : (
+        <>
+          {error ? <Flash variant="danger">{error}</Flash> : null}
+          {comments.map((comment) => {
         const link = repos ? forgeCommentLink(repos, comment) : null;
         const canDelete = comment.authorId !== null && comment.authorId === user?.id;
         const isCollapsed = collapsed.has(comment.id);
@@ -131,12 +146,14 @@ export function CommentThread({
             )}
           </div>
         );
-      })}
-      {prId !== null && onAdded ? (
-        <div className="comment-reply-composer">
-          <CommentComposer prId={prId} anchor={anchor} parentId={parent?.id} placeholder="Reply" onDone={onAdded} />
-        </div>
-      ) : null}
+          })}
+          {prId !== null && onAdded ? (
+            <div className="comment-reply-composer">
+              <CommentComposer prId={prId} anchor={anchor} parentId={parent?.id} placeholder="Reply" onDone={onAdded} />
+            </div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
