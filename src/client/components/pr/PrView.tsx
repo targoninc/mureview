@@ -60,6 +60,7 @@ interface PrViewProps {
 
 export function PrView({ detail, onReload }: PrViewProps) {
   const { reviewSet, pr } = detail;
+  const readOnly = detail.owned === false;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<'files' | 'commits' | 'conversation'>('files');
@@ -175,7 +176,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
       themeType: 'dark',
       diffStyle: 'unified',
-      enableGutterUtility: true,
+      enableGutterUtility: !readOnly,
       stickyHeaders: true,
       hunkSeparators: 'line-info',
       itemMetrics: { lineHeight: 22 },
@@ -195,6 +196,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
       onLineNumberClick: (props, context) => {
         // Touch devices have no hover gutter; tapping a line number opens the
         // comment composer instead.
+        if (readOnly) return;
         if (!window.matchMedia('(pointer: coarse)').matches) return;
         if (!('annotationSide' in props)) return;
         const entry = parsedRef.current.get(context.item.id);
@@ -209,7 +211,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         });
       },
     }),
-    [],
+    [readOnly],
   );
 
   const renderAnnotation = useCallback(
@@ -230,9 +232,18 @@ export function PrView({ detail, onReload }: PrViewProps) {
           />
         );
       }
-      return <CommentThread comments={meta.comments} repos={pr.repos} onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))} />;
+      return (
+        <CommentThread
+          prId={pr.prId}
+          comments={meta.comments}
+          repos={pr.repos}
+          readOnly={readOnly}
+          onAdded={(comment) => setComments((current) => [...current, comment])}
+          onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
+        />
+      );
     },
-    [pr.prId, pr.repos],
+    [pr.prId, pr.repos, readOnly],
   );
 
   const applyReviewed = useCallback(
@@ -268,7 +279,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
   const renderHeaderMetadata = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
       const entry = parsedRef.current.get(item.id);
-      if (!entry || !pr.prId) return null;
+      if (!entry || !pr.prId || readOnly) return null;
       return (
         <label className="viewed-toggle" title="Mark this file as reviewed">
           <Checkbox checked={reviewed.has(entry.id)} onChange={() => applyReviewed([entry.id], !reviewed.has(entry.id))} />
@@ -276,7 +287,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         </label>
       );
     },
-    [reviewed, applyReviewed, pr.prId],
+    [readOnly, reviewed, applyReviewed, pr.prId],
   );
 
   const hasFiles = parsed.length > 0;
@@ -303,7 +314,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
             codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });
             if (isMobile) setPanel(null);
           }}
-          onSetReviewed={applyReviewed}
+          onSetReviewed={readOnly ? undefined : applyReviewed}
         />
       ) : (
         <div className="empty-state">No text diffs to show.</div>
@@ -313,6 +324,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         prId={pr.prId}
         comments={comments}
         repos={pr.repos}
+        readOnly={readOnly}
         onAdded={(comment) => setComments((current) => [...current, comment])}
         onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
       />

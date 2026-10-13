@@ -15,6 +15,7 @@ const comment = (overrides: Partial<Comment>): Comment => ({
   synced: true,
   source: 'forge',
   forgeCommentId: '42',
+  parentId: null,
   createdAt: '2026-01-01 00:00:00',
   ...overrides,
 });

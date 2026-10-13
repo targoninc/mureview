@@ -281,6 +281,20 @@ export class GithubClient implements ForgeClient {
   }
 
   async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
+    if (comment.replyTo) {
+      try {
+        const reply = await this.request<{ id: number }>(`/repos/${repo}/pulls/${number}/comments/${comment.replyTo}/replies`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: comment.body }),
+        });
+        return { kind: 'line', id: String(reply.id) };
+      } catch (error) {
+        if (!(error instanceof ForgeError)) throw error;
+        // The parent is not a review comment (an issue comment, say); fall
+        // back to posting a regular comment below.
+      }
+    }
     try {
       const created = await this.request<{ id: number }>(`/repos/${repo}/pulls/${number}/comments`, {
         method: 'POST',

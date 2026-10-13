@@ -77,6 +77,8 @@ export interface ReviewComment {
   line: number;
   side: 'additions' | 'deletions';
   commitId?: string;
+  /** Forge id of the comment being answered, to continue its thread. */
+  replyTo?: string;
 }
 
 export interface ForgeClient {

@@ -33,7 +33,8 @@ interface FileTreePanelProps {
   reviewedItems: Set<string>;
   visibleItems: Set<string>;
   onSelectItem: (itemId: string) => void;
-  onSetReviewed: (itemIds: string[], reviewed: boolean) => void;
+  /** Omitted for review sets owned by other users, which are read-only. */
+  onSetReviewed?: (itemIds: string[], reviewed: boolean) => void;
 }
 
 export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
@@ -74,14 +75,16 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
         const someReviewed = !allReviewed && node.fileIds.some((id) => reviewedItems.has(id));
         return [
           <div key={node.key} className="tree-row tree-dir" style={indent} onClick={() => toggleDir(node.key)}>
-            <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
-              <Checkbox
-                checked={allReviewed}
-                indeterminate={someReviewed}
-                onChange={() => onSetReviewed(node.fileIds, !allReviewed)}
-                aria-label={`Mark ${node.name} as reviewed`}
-              />
-            </span>
+            {onSetReviewed ? (
+              <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
+                <Checkbox
+                  checked={allReviewed}
+                  indeterminate={someReviewed}
+                  onChange={() => onSetReviewed(node.fileIds, !allReviewed)}
+                  aria-label={`Mark ${node.name} as reviewed`}
+                />
+              </span>
+            ) : null}
             <span className="tree-chevron">{isCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}</span>
             <span className="tree-icon tree-icon-dir">
               <FileDirectoryIcon size={14} />
@@ -105,11 +108,13 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
           }}
         >
           <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
-            <Checkbox
-              checked={isReviewed}
-              onChange={() => onSetReviewed([node.entry.itemId], !isReviewed)}
-              aria-label={`Mark ${node.name} as reviewed`}
-            />
+            {onSetReviewed ? (
+              <Checkbox
+                checked={isReviewed}
+                onChange={() => onSetReviewed([node.entry.itemId], !isReviewed)}
+                aria-label={`Mark ${node.name} as reviewed`}
+              />
+            ) : null}
           </span>
           <span className="tree-chevron" />
           <span className="tree-icon">

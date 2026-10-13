@@ -47,6 +47,7 @@ export function PrHeader({
 }: PrHeaderProps) {
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
+  const owned = detail.owned !== false;
   const state = stateVariant(pr.state);
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
@@ -74,13 +75,14 @@ export function PrHeader({
               </>
             )}
             {skipped > 0 ? ` · ${skipped} non-text files skipped` : ''}
+            {!owned && detail.owner ? ` · shared by ${detail.owner.name}` : ''}
           </span>
         </div>
         <div className="row pr-header-actions">
           <Button leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
             {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
           </Button>
-          {pr.state === 'open' ? (
+          {pr.state === 'open' && owned ? (
             <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
               Merge
             </Button>
@@ -96,14 +98,18 @@ export function PrHeader({
               <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
                 Conversation ({commentCount})
               </Button>
-              <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
+              {owned ? (
+                <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
+              ) : null}
               <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
             </>
           ) : (
             <>
-              <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
-                Settings
-              </Button>
+              {owned ? (
+                <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
+                  Settings
+                </Button>
+              ) : null}
               <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
                 Refresh
               </Button>

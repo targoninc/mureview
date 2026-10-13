@@ -409,6 +409,22 @@ export class AdoClient implements ForgeClient {
   }
 
   async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
+    const replyTo = comment.replyTo?.match(/^(\d+):(\d+)$/);
+    if (replyTo) {
+      try {
+        const created = await this.request<{ id: number }>(
+          `${this.repoUrl(repo)}/pullrequests/${number}/threads/${replyTo[1]}/comments?api-version=7.1`,
+          {
+            method: 'POST',
+            json: { parentCommentId: Number(replyTo[2]), content: comment.body, commentType: 'text' },
+          },
+        );
+        return { kind: 'line', id: `${replyTo[1]}:${created.id}` };
+      } catch (error) {
+        if (!(error instanceof ForgeError)) throw error;
+        // The thread may be gone; start a new thread below.
+      }
+    }
     const line = { line: comment.line, offset: 1 };
     const context =
       comment.side === 'additions'

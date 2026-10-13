@@ -1,6 +1,7 @@
 import type { ForgeKind, ReviewSet, ReviewSetDetail, ReviewSetInput, ReviewSetRepo } from '../shared/types';
+import { Cache, mapLimit } from './cache';
 import { type UserRow, db } from './db';
-import { hostOf, organizationOf } from './forges';
+import { clientFor, hostOf, organizationOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
 import { buildPrStatus, clientsFor } from './pr';
 import { listComments } from './comments';
@@ -64,6 +65,64 @@ export function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
   return toReviewSet(row);
 }
 
+export interface OwnerInfo {
+  name: string;
+  avatarUrl: string;
+}
+
+function ownerInfo(ownerId: number): OwnerInfo | null {
+  const row = db
+    .query<{ name: string; avatar_url: string }, [number]>('SELECT name, avatar_url FROM users WHERE id = ?')
+    .get(ownerId);
+  return row ? { name: row.name || 'someone', avatarUrl: row.avatar_url } : null;
+}
+
+const accessCache = new Cache<boolean>(1000, 5 * 60_000);
+
+/**
+ * A review set is readable by another user when they can reach every one of
+ * its repositories with a connection of their own. The checks are done with
+ * their own credentials, so an inaccessible repository hides the whole set.
+ */
+async function reposAccessible(user: UserRow, repos: ReviewSetRepo[]): Promise<boolean> {
+  if (!repos.length) return false;
+  const connections = connectionsFor(user.id);
+  for (const repo of repos) {
+    const connection = connections.find(
+      (candidate) =>
+        candidate.kind === repo.kind &&
+        hostOf(candidate.base_url) === repo.host &&
+        (repo.kind !== 'ado' || organizationOf(candidate.base_url) === repo.org),
+    );
+    if (!connection) return false;
+    const key = `${user.id}#${connection.id}#${repo.repo}`;
+    if (accessCache.get(key)) continue;
+    try {
+      await clientFor(connection).ensureRepo(repo.repo, { fresh: true });
+    } catch {
+      return false;
+    }
+    accessCache.set(key, true);
+  }
+  return true;
+}
+
+export interface ReadableReviewSet {
+  reviewSet: ReviewSet;
+  ownerId: number;
+  owned: boolean;
+  owner: OwnerInfo | null;
+}
+
+export async function loadReadableReviewSet(user: UserRow, id: number): Promise<ReadableReviewSet> {
+  const row = db.query<ReviewSetRow, [number]>('SELECT * FROM review_sets WHERE id = ?').get(id);
+  if (!row) throw new HttpError(404, 'Review set not found');
+  const reviewSet = toReviewSet(row);
+  if (row.owner_id === user.id) return { reviewSet, ownerId: row.owner_id, owned: true, owner: ownerInfo(row.owner_id) };
+  if (!(await reposAccessible(user, reviewSet.repos))) throw new HttpError(404, 'Review set not found');
+  return { reviewSet, ownerId: row.owner_id, owned: false, owner: ownerInfo(row.owner_id) };
+}
+
 export function requireId(ctx: Ctx): number {
   const id = Number(ctx.params.id);
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'Review set not found');
@@ -121,15 +180,15 @@ function isFresh(ctx: Ctx): boolean {
  * parallel afterwards via the comments and commits endpoints.
  */
 export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
-  const reviewSet = loadOwnedReviewSet(user, id);
-  const pr = await buildPrStatus(connectionsFor(user.id), reviewSet, fresh, { commits: false, ensurePulls: false });
-  return { reviewSet, pr };
+  const access = await loadReadableReviewSet(user, id);
+  const pr = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, fresh, { commits: false, ensurePulls: false });
+  return { reviewSet: access.reviewSet, pr, owned: access.owned, owner: access.owner };
 }
 
 export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
-  const status = await buildPrStatus(connectionsFor(user.id), reviewSet, false, { discussions: false, commits: true, ensurePulls: false });
+  const access = await loadReadableReviewSet(user, requireId(ctx));
+  const status = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, false, { discussions: false, commits: true, ensurePulls: false });
   return json({
     repos: status.repos.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, commits: repo.commits ?? [] })),
   });
@@ -141,9 +200,9 @@ export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
  */
 export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
-  const connections = connectionsFor(user.id);
-  const status = await buildPrStatus(connections, reviewSet, false, { discussions: false, commits: false, ensurePulls: true });
+  const access = await loadReadableReviewSet(user, requireId(ctx));
+  const connections = connectionsFor(access.ownerId);
+  const status = await buildPrStatus(connections, access.reviewSet, false, { discussions: false, commits: false, ensurePulls: true });
 
   if (status.prId && status.state === 'open') {
     const clients = clientsFor(connections);
@@ -165,12 +224,25 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   });
 }
 
-export function listReviewSets(ctx: Ctx): Response {
+export async function listReviewSets(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const rows = db
-    .query<ReviewSetRow, [number]>('SELECT * FROM review_sets WHERE owner_id = ? ORDER BY name COLLATE NOCASE')
-    .all(user.id);
-  return json({ reviewSets: rows.map(toReviewSet) });
+  const rows = db.query<ReviewSetRow, []>('SELECT * FROM review_sets ORDER BY name COLLATE NOCASE').all();
+  const reviewSets: ReviewSet[] = [];
+  const foreign: ReviewSetRow[] = [];
+  for (const row of rows) {
+    if (row.owner_id === user.id) reviewSets.push(toReviewSet(row));
+    else foreign.push(row);
+  }
+
+  const sharedReviewSets: ReviewSet[] = [];
+  await mapLimit(foreign, 3, async (row) => {
+    const reviewSet = toReviewSet(row);
+    if (!(await reposAccessible(user, reviewSet.repos))) return;
+    sharedReviewSets.push({ ...reviewSet, owner: ownerInfo(row.owner_id) });
+  });
+  sharedReviewSets.sort((a, b) => a.name.localeCompare(b.name));
+
+  return json({ reviewSets, sharedReviewSets });
 }
 
 export async function createReviewSet(ctx: Ctx): Promise<Response> {

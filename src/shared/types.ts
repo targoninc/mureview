@@ -48,6 +48,8 @@ export interface ReviewSet {
   branchRegex: string;
   targetBranch: string;
   createdAt: string;
+  /** Set when the review set belongs to someone else. */
+  owner?: { name: string; avatarUrl: string } | null;
 }
 
 export interface ReviewSetInput {
@@ -135,6 +137,7 @@ export interface Comment {
   synced: boolean;
   source: 'mureview' | 'forge';
   forgeCommentId: string | null;
+  parentId: number | null;
   createdAt: string;
 }
 
@@ -153,6 +156,7 @@ export interface CommentInput {
   line: number | null;
   side: 'additions' | 'deletions' | null;
   body: string;
+  parentId?: number | null;
 }
 
 export interface ReviewMark {
@@ -174,6 +178,9 @@ export interface PrStatus {
 export interface ReviewSetDetail {
   reviewSet: ReviewSet;
   pr: PrStatus;
+  /** False when the review set belongs to another user and is only readable. */
+  owned: boolean;
+  owner: { name: string; avatarUrl: string } | null;
 }
 
 export interface MergeResult {

@@ -331,7 +331,13 @@ if (userVersion() < 4) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
-db.exec('PRAGMA user_version = 4;');
+if (userVersion() < 5) {
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(comments)').all();
+  if (!columns.some((column) => column.name === 'parent_id')) {
+    db.exec('ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE');
+  }
+}
+db.exec('PRAGMA user_version = 5;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

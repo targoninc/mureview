@@ -52,6 +52,8 @@ export function ReviewSetPage() {
     const commitsByRepo = new Map((commits ?? []).map((bundle) => [`${bundle.connectionId}:${bundle.repo}`, bundle.commits]));
     return {
       reviewSet: detail.reviewSet,
+      owned: detail.owned,
+      owner: detail.owner,
       pr: {
         ...detail.pr,
         comments: discussion?.comments ?? detail.pr.comments,

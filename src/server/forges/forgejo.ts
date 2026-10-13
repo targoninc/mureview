@@ -335,6 +335,25 @@ export class ForgejoClient implements ForgeClient {
   }
 
   async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
+    if (comment.replyTo && /^\d+$/.test(comment.replyTo)) {
+      try {
+        const review = await this.request<{ comments?: { id: number }[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            event: 'COMMENT',
+            commit_id: comment.commitId,
+            comments: [{ body: comment.body, in_reply_to: Number(comment.replyTo) }],
+          }),
+        });
+        const id = review.comments?.[0]?.id;
+        return { kind: 'line', id: id !== undefined ? String(id) : undefined };
+      } catch (error) {
+        if (!(error instanceof ForgeError)) throw error;
+        // Older Forgejo versions do not know in_reply_to; post a regular
+        // comment below instead.
+      }
+    }
     try {
       const review = await this.request<{ comments?: { id: number }[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
         method: 'POST',

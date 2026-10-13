@@ -92,6 +92,10 @@ body {
   gap: 16px;
 }
 
+.section-heading {
+  margin: 24px 0 8px;
+}
+
 .link-button {
   background: none;
   border: none;
@@ -554,6 +558,21 @@ svg.checks-pending {
 
 .comment:first-child {
   border-top: none;
+}
+
+.comment-nested {
+  margin-left: 20px;
+  border-left: 2px solid var(--borderColor-muted);
+}
+
+.comment-reply-composer {
+  padding: 0 12px 12px;
+}
+
+.comment-reply-composer .composer {
+  padding: 0;
+  border: none;
+  background: none;
 }
 
 .comment-header {

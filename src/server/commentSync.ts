@@ -92,10 +92,11 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
 
       let anchor = comment.path && comment.line ? { path: comment.path, line: comment.line, side: comment.side ?? 'additions' } : null;
       if (!anchor && comment.replyToId) anchor = anchors.get(comment.replyToId) ?? null;
+      const parent = comment.replyToId ? byForgeId.get(comment.replyToId) : undefined;
 
-      db.run(
-        `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, source, created_at)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, 'forge', ?)`,
+      const inserted = db.run(
+        `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, parent_id, source, created_at)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, 'forge', ?)`,
         [
           prId,
           comment.author.name,
@@ -107,9 +108,20 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
           anchor?.side ?? null,
           comment.body,
           comment.id,
+          parent?.id ?? null,
           normalizeDate(comment.createdAt),
         ],
       );
+      const row: ExistingRow = {
+        id: Number(inserted.lastInsertRowid),
+        forge_comment_id: comment.id,
+        body: comment.body,
+        path: comment.path ?? null,
+        line: comment.line ?? null,
+        author_name: comment.author.name,
+        author_avatar: comment.author.avatarUrl,
+      };
+      byForgeId.set(comment.id, row);
     }
   });
 }

@@ -21,6 +21,7 @@ interface CommentRow {
   body: string;
   synced_at: string | null;
   forge_comment_id: string | null;
+  parent_id: number | null;
   source: string;
   created_at: string;
 }
@@ -75,6 +76,7 @@ function toComment(row: CommentRow): Comment {
     synced: row.synced_at !== null,
     source: row.source === 'forge' ? 'forge' : 'mureview',
     forgeCommentId: row.forge_comment_id,
+    parentId: row.parent_id,
     createdAt: row.created_at,
   };
 }
@@ -131,10 +133,20 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
   if (!body) throw new HttpError(400, 'Write something before commenting.');
   if (body.length > 10_000) throw new HttpError(400, 'Comments are limited to 10000 characters.');
 
+  let parentId: number | null = null;
+  if (input.parentId !== undefined && input.parentId !== null) {
+    const candidate = Number(input.parentId);
+    const parent = Number.isInteger(candidate)
+      ? db.query<{ id: number }, [number, number]>('SELECT id FROM comments WHERE id = ? AND pr_id = ?').get(candidate, pr.id)
+      : null;
+    if (!parent) throw new HttpError(400, 'The comment you are replying to no longer exists.');
+    parentId = parent.id;
+  }
+
   const anchor = normalizeAnchor(user.id, input);
   const inserted = db.run(
-    'INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [pr.id, user.id, publicUser(user).name, user.avatar_url, anchor.connectionId, anchor.repo, anchor.path, anchor.line, anchor.side, body, 'mureview'],
+    'INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, parent_id, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [pr.id, user.id, publicUser(user).name, user.avatar_url, anchor.connectionId, anchor.repo, anchor.path, anchor.line, anchor.side, body, parentId, 'mureview'],
   );
   const commentId = Number(inserted.lastInsertRowid);
   const row = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
@@ -145,7 +157,8 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
 
 /**
  * Line comments are mirrored onto the repository's forge pull request right
- * away; general comments stay in mureview.
+ * away; general comments stay in mureview. Replies continue the forge thread
+ * when the comment being answered already exists there.
  */
 async function syncCommentToPullRequest(userId: number, prId: number, row: CommentRow): Promise<void> {
   if (!row.path || row.connection_id === null || !row.repo || row.line === null || !row.side) return;
@@ -153,6 +166,9 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
   if (!pull) return;
   const connection = connectionById(userId, row.connection_id);
   if (!connection) return;
+  const parent = row.parent_id
+    ? db.query<{ forge_comment_id: string | null }, [number]>('SELECT forge_comment_id FROM comments WHERE id = ?').get(row.parent_id)
+    : null;
   try {
     const posted = await clientFor(connection).postReviewComment(row.repo, pull.forge_pr_number, {
       body: row.body,
@@ -160,6 +176,7 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
       line: row.line,
       side: row.side as 'additions' | 'deletions',
       commitId: pull.head_sha || undefined,
+      replyTo: parent?.forge_comment_id ?? undefined,
     });
     markCommentSynced(row.id, posted.id);
   } catch (error) {
