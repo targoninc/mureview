@@ -14,6 +14,7 @@ import {
   type ForgeRepo,
   ForgeError,
   type PostedComment,
+  type RefInfo,
   type PullRequestRef,
   type ReviewComment,
   type TreeListing,
@@ -617,6 +618,35 @@ export class AdoClient implements ForgeClient {
       }
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async resolveReference(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null> {
+    if (!/^\d+$/.test(id)) return null;
+    if (type === 'work') {
+      const work = await this.request<{ fields?: Record<string, string>; _links?: { html?: { href?: string } } }>(
+        `${this.baseUrl}/_apis/wit/workitems/${id}?api-version=7.1`,
+      );
+      const project = repo.split('/')[0];
+      return {
+        url: work._links?.html?.href ?? `${this.baseUrl}/${encodeURIComponent(project)}/_workitems/edit/${id}`,
+        title: work.fields?.['System.Title'] ?? '',
+        kind: 'work',
+      };
+    }
+    // Pull request ids are unique per organization, so a "!123" reference can
+    // point at any repository; the lookup tells us which one.
+    const pull = await this.request<{
+      pullRequestId?: number;
+      title?: string;
+      repository?: { name?: string; webUrl?: string; project?: { name?: string } };
+    }>(`${this.baseUrl}/_apis/git/pullrequests/${id}?api-version=7.1`);
+    const org = organizationOf(this.baseUrl);
+    const project = pull.repository?.project?.name;
+    const name = pull.repository?.name;
+    const web =
+      pull.repository?.webUrl ?? (org && project && name ? `https://${this.host}/${org}/${encodeURIComponent(project)}/_git/${name}` : null);
+    if (!web) return null;
+    return { url: `${web.replace(/\/+$/, '')}/pullrequest/${pull.pullRequestId ?? id}`, title: pull.title ?? '', kind: 'pr' };
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {

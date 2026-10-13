@@ -1,6 +1,6 @@
 import type { Comment, CommentInput } from '../shared/types';
 import { loadReadableReviewSetRow } from './access';
-import { connectionById, matchingConnection } from './auth/identities';
+import { connectionOrMatching } from './auth/identities';
 import { publicUser, requireUser } from './auth/session';
 import { type ForgeConnectionRow, db } from './db';
 import { clientFor } from './forges';
@@ -220,11 +220,7 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
  * same forge and organization as the review set's connection.
  */
 function connectionForComment(userId: number, ownerConnectionId: number): ForgeConnectionRow | null {
-  const ownerConnection = db
-    .query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?')
-    .get(ownerConnectionId);
-  if (!ownerConnection) return null;
-  return connectionById(userId, ownerConnection.id) ?? matchingConnection(userId, ownerConnection);
+  return connectionOrMatching(userId, ownerConnectionId);
 }
 
 /**

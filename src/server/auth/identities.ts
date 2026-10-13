@@ -136,6 +136,14 @@ export function matchingConnection(userId: number, owner: ForgeConnectionRow): F
   );
 }
 
+/** A connection the user may act with: their own, or their matching one. */
+export function connectionOrMatching(userId: number, connectionId: number): ForgeConnectionRow | null {
+  const own = connectionById(userId, connectionId);
+  if (own) return own;
+  const owner = db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(connectionId);
+  return owner ? matchingConnection(userId, owner) : null;
+}
+
 export function mergeUsers(fromId: number, intoId: number): void {
   if (fromId === intoId) return;
   const apply = db.transaction(() => {

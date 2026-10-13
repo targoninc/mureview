@@ -794,6 +794,37 @@ body.sidebar-resizing {
   text-decoration: underline;
 }
 
+.comment-ref-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background-color: var(--bgColor-muted);
+  color: var(--fgColor-accent);
+  font-weight: 600;
+  text-decoration: none;
+  vertical-align: middle;
+  max-width: 100%;
+}
+
+.comment-ref-chip:hover {
+  border-color: var(--borderColor-accent-emphasis);
+  text-decoration: none;
+}
+
+.comment-ref-chip:hover .comment-ref-chip-text {
+  text-decoration: underline;
+}
+
+.comment-ref-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer {
   padding: 12px;
   display: flex;

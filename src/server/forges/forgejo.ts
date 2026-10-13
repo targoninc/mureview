@@ -15,6 +15,7 @@ import {
   ForgeError,
   type PostedComment,
   type PullRequestRef,
+  type RefInfo,
   type ReviewComment,
   type TreeListing,
   decodeText,
@@ -457,6 +458,13 @@ export class ForgejoClient implements ForgeClient {
       }
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async resolveReference(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null> {
+    if (type === 'work' || !/^\d+$/.test(id)) return null;
+    const issue = await this.request<{ title?: string; html_url?: string; pull_request?: unknown }>(`/repos/${repo}/issues/${id}`);
+    if (!issue.html_url) return null;
+    return { url: issue.html_url, title: issue.title ?? '', kind: issue.pull_request ? 'pr' : 'issue' };
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {

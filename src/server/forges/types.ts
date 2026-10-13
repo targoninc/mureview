@@ -1,6 +1,6 @@
-import type { CheckInfo, ChecksSummary, CommitInfo, FileStatus, ForgeKind } from '../../shared/types';
+import type { CheckInfo, ChecksSummary, CommitInfo, FileStatus, ForgeKind, RefInfo } from '../../shared/types';
 
-export type { CheckInfo, ChecksSummary, CommitInfo };
+export type { CheckInfo, ChecksSummary, CommitInfo, RefInfo };
 
 export interface ForgeComment {
   id: string;
@@ -132,6 +132,11 @@ export interface ForgeClient {
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
   /** When the stored credentials expire, if the forge reports it. */
   tokenExpiry?(): Promise<{ displayName: string; validTo: string } | null>;
+  /**
+   * Resolves what a "#123" (or Azure DevOps "!123") reference in a comment
+   * points at, for rendering it as a link or chip.
+   */
+  resolveReference?(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null>;
 }
 
 export function hostOf(baseUrl: string): string {

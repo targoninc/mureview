@@ -1,6 +1,5 @@
-import { connectionById, matchingConnection } from './auth/identities';
+import { connectionOrMatching } from './auth/identities';
 import { requireUser } from './auth/session';
-import { type ForgeConnectionRow, db } from './db';
 import { clientFor } from './forges';
 import { HttpError } from './http';
 import type { Ctx } from './router';
@@ -30,11 +29,7 @@ export async function forgeAvatarRoute(ctx: Ctx): Promise<Response> {
   // On shared review sets the comment's avatar belongs to the owner's
   // connection; fall back to the viewer's matching connection, which is what
   // they also need to post comments with.
-  let connection = Number.isInteger(connectionId) ? connectionById(user.id, connectionId) : null;
-  if (!connection && Number.isInteger(connectionId)) {
-    const owner = db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(connectionId);
-    connection = owner ? matchingConnection(user.id, owner) : null;
-  }
+  const connection = Number.isInteger(connectionId) ? connectionOrMatching(user.id, connectionId) : null;
   if (!connection) throw new HttpError(404, 'Connection not found');
 
   let url: URL;

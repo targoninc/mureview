@@ -44,6 +44,12 @@ export interface TokenWarning {
 
 export type LoadPhase = 'pending' | 'checking' | 'diffing' | 'done' | 'error';
 
+export interface RefInfo {
+  url: string;
+  title: string;
+  kind: 'pr' | 'issue' | 'work';
+}
+
 export interface LoadProgressRepo {
   label: string;
   phase: LoadPhase;

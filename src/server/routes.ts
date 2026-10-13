@@ -15,6 +15,7 @@ import {
 } from './auth/providers';
 import { createCommentRoute, deleteCommentRoute, listCommentsRoute } from './comments';
 import { forgeAvatarRoute } from './avatars';
+import { resolveReferenceRoute } from './refs';
 import { config } from './config';
 import { mergeReviewSet, streamMergePreview } from './merge';
 import { listAvailableRepos } from './repoSearch';
@@ -73,6 +74,7 @@ api.get('/api/prs/:id/comments', listCommentsRoute);
 api.post('/api/prs/:id/comments', createCommentRoute);
 api.delete('/api/comments/:id', deleteCommentRoute);
 api.get('/api/forge-avatar', forgeAvatarRoute);
+api.get('/api/refs', resolveReferenceRoute);
 api.put('/api/prs/:id/reviewed', setReviewedRoute);
 
 export function handleApi(req: Request, path: string, user: Parameters<typeof me>[0]['user']) {
