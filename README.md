@@ -26,12 +26,14 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   read & write, Project and Team: read) — it is a forge connection, so sign in
   with one of the other providers and add it under Settings.
 - Create a **review set**: a name, repositories picked with a search across all
-  your connected forges, a branch pattern (regular expression) and a target
-  branch. Review sets can mix repositories from different forges.
-- The pattern must match **at most one branch per repository** (0 or 1). If it
-  matches more, the UI shows an **invalid configuration** banner explaining
-  which repository and branches are the problem. Repositories you cannot access
-  are reported the same way.
+  your connected forges, one or more branch patterns (regular expressions,
+  separated by commas) and a target branch. Review sets can mix repositories
+  from different forges.
+- The patterns together must match **at most one branch per repository** (0 or
+  1) — list one pattern per branch you want to target, e.g.
+  `^main$, ^release/v\d+$`. If a repository matches more, the UI shows an
+  **invalid configuration** banner explaining which repository and branches are
+  the problem. Repositories you cannot access are reported the same way.
 - Matched branches are compared against the target branch for each repository
   (GitHub's compare API; for Forgejo, patches are generated from the two trees).
   If the target branch does not exist, it is treated as empty, so every file on

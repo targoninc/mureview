@@ -3,16 +3,75 @@ import { mapLimit } from './cache';
 import { type ForgeClient, ForgeError } from './forges';
 import { parseRepoList } from './repos';
 
-export function compileRegex(pattern: string): RegExp | null {
-  try {
-    return new RegExp(pattern);
-  } catch {
-    return null;
+/**
+ * Splits a comma-separated pattern list, ignoring commas that are escaped or
+ * part of a character class ([a,b]) or a quantifier ({1,3}).
+ */
+export function splitPatterns(input: string): string[] {
+  const patterns: string[] = [];
+  let current = '';
+  let inClass = false;
+  let inBraces = false;
+
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index];
+    if (char === '\\') {
+      current += char + (input[index + 1] ?? '');
+      index++;
+      continue;
+    }
+    if (inClass) {
+      current += char;
+      if (char === ']') inClass = false;
+      continue;
+    }
+    if (char === '[') {
+      inClass = true;
+      current += char;
+      continue;
+    }
+    if (char === '{') {
+      inBraces = true;
+      current += char;
+      continue;
+    }
+    if (char === '}') {
+      inBraces = false;
+      current += char;
+      continue;
+    }
+    if (char === ',' && !inBraces) {
+      patterns.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
   }
+  patterns.push(current.trim());
+  return patterns.filter(Boolean);
 }
 
-export function matchingBranches(branches: string[], regex: RegExp): string[] {
-  return branches.filter((name) => regex.test(name));
+export interface CompiledPatterns {
+  patterns: RegExp[];
+  error: string | null;
+}
+
+export function compilePatterns(input: string): CompiledPatterns {
+  const parts = splitPatterns(input);
+  if (!parts.length) return { patterns: [], error: 'A branch pattern is required.' };
+  const patterns: RegExp[] = [];
+  for (const part of parts) {
+    try {
+      patterns.push(new RegExp(part));
+    } catch {
+      return { patterns: [], error: `"${part}" is not a valid regular expression.` };
+    }
+  }
+  return { patterns, error: null };
+}
+
+export function matchingBranches(branches: string[], patterns: RegExp[]): string[] {
+  return branches.filter((name) => patterns.some((pattern) => pattern.test(name)));
 }
 
 export function forgeErrorMessage(error: unknown): string {
@@ -43,7 +102,7 @@ export function multiMatchError(status: RepoStatus): string | null {
   if (!status.accessible || status.matches.length <= 1) return null;
   const shown = status.matches.slice(0, 5).join(', ');
   const list = status.matches.length > 5 ? `${shown}, …` : shown;
-  return `${status.host}/${status.repo}: ${status.matches.length} branches match your pattern (${list}). A pattern must match at most one branch per repository.`;
+  return `${status.host}/${status.repo}: ${status.matches.length} branches match your patterns (${list}). The patterns together must match at most one branch per repository.`;
 }
 
 export interface LocatedRepo {
@@ -54,7 +113,7 @@ export interface LocatedRepo {
 export async function inspectRepos(
   clients: Map<number, ForgeClient>,
   repos: ReviewSetRepo[],
-  regex: RegExp | null,
+  patterns: RegExp[],
   fresh = false,
 ): Promise<LocatedRepo[]> {
   return mapLimit(repos, 4, async (repo): Promise<LocatedRepo> => {
@@ -70,7 +129,10 @@ export async function inspectRepos(
     }
     try {
       const branches = await client.listBranches(repo.repo, { fresh });
-      const matches = regex ? matchingBranches(branches.map((branch) => branch.name), regex) : [];
+      const matches = matchingBranches(
+        branches.map((branch) => branch.name),
+        patterns,
+      );
       const branch = matches.length === 1 ? matches[0] : null;
       const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
       return { status: { ...emptyRepoStatus(repo), accessible: true, matches, branch }, sha };

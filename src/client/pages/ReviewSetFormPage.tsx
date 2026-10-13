@@ -262,10 +262,15 @@ export function ReviewSetFormPage() {
         <FormControl>
           <FormControl.Label>Branch pattern</FormControl.Label>
           <FormControl.Caption>
-            A regular expression (no delimiters) that matches at most one branch per repository, for example release/v2\.\d+ (0 or 1
-            match).
+            One or more regular expressions separated by commas, for example ^main$, ^release/v2\.\d+. Across all patterns each
+            repository must match at most one branch.
           </FormControl.Caption>
-          <TextInput block value={form.branchRegex} onChange={(event) => update({ branchRegex: event.target.value })} placeholder="release/v2\\.\\d+" />
+          <TextInput
+            block
+            value={form.branchRegex}
+            onChange={(event) => update({ branchRegex: event.target.value })}
+            placeholder="^main$, ^release/v2\\.\\d+"
+          />
         </FormControl>
 
         <FormControl>

@@ -7,7 +7,7 @@ import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
 import { ensureRepoPullRequests } from './pullRequests';
 import { listReviewed } from './reviewed';
-import { compileRegex, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
+import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
 
@@ -139,10 +139,10 @@ function ensurePrLifecycle(reviewSetId: number, hasOpenRepos: boolean): PrLifecy
 export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet: ReviewSet, fresh = false): Promise<PrStatus> {
   const errors: string[] = [];
   const clients = clientsFor(connections);
-  const regex = compileRegex(reviewSet.branchRegex);
-  if (!regex) errors.push('The branch pattern is not a valid regular expression.');
+  const compiled = compilePatterns(reviewSet.branchRegex);
+  if (compiled.error) errors.push(compiled.error);
 
-  const located = await inspectRepos(clients, reviewSet.repos, regex, fresh);
+  const located = await inspectRepos(clients, reviewSet.repos, compiled.patterns, fresh);
   const repos = await mapLimit(located, 4, async ({ status, sha }) => {
     const client = clients.get(status.connectionId);
     return status.branch && sha && client ? inspectBranch(client, status, sha, reviewSet.targetBranch, fresh) : status;
