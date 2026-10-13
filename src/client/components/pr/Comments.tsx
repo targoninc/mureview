@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Avatar, Button, Flash, IconButton, Textarea, useConfirm } from '@primer/react';
-import { LinkExternalIcon, TrashIcon } from '@primer/octicons-react';
+import { ChevronDownIcon, ChevronRightIcon, LinkExternalIcon, TrashIcon } from '@primer/octicons-react';
 import type { Comment, RepoStatus } from '../../../shared/types';
 import { del, post } from '../../lib/api';
 import { useAppContext } from '../../lib/appContext';
@@ -35,6 +35,15 @@ export function CommentThread({
   const confirm = useConfirm();
   const { user } = useAppContext();
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  const toggleCollapsed = (id: number) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const remove = async (id: number) => {
     const approved = await confirm({
@@ -73,9 +82,17 @@ export function CommentThread({
       {comments.map((comment) => {
         const link = repos ? forgeCommentLink(repos, comment) : null;
         const canDelete = comment.authorId !== null && comment.authorId === user?.id;
+        const isCollapsed = collapsed.has(comment.id);
         return (
           <div className="comment" key={comment.id}>
             <div className="comment-header">
+              <IconButton
+                icon={isCollapsed ? ChevronRightIcon : ChevronDownIcon}
+                aria-label={isCollapsed ? 'Expand comment' : 'Collapse comment'}
+                variant="invisible"
+                size="small"
+                onClick={() => toggleCollapsed(comment.id)}
+              />
               <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
               <strong>{comment.author.name}</strong>
               <span>{timeAgo(comment.createdAt)}</span>
@@ -107,9 +124,11 @@ export function CommentThread({
                 />
               ) : null}
             </div>
-            <div className="comment-body">
-              <CommentBody body={comment.body} repos={repos} repo={comment} />
-            </div>
+            {isCollapsed ? null : (
+              <div className="comment-body">
+                <CommentBody body={comment.body} repos={repos} repo={comment} />
+              </div>
+            )}
           </div>
         );
       })}
