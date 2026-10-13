@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PrStatus, RepoStatus, ReviewSet, ReviewSetDetail } from '../../shared/types';
 import { ApiError, basePath } from './api';
 
-export interface LoadCount {
+interface LoadCount {
   loaded: number;
   total: number;
 }
@@ -123,5 +123,5 @@ export function useDetail(id: string | undefined) {
 
   useEffect(() => () => controllerRef.current?.abort(), []);
 
-  return { detail, error, loading, reload, setDetail };
+  return { detail, error, loading, reload };
 }

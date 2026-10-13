@@ -111,43 +111,43 @@ export function PrHeader({
         </div>
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
-          <Button leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
-            {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
-          </Button>
-          {pr.state === 'open' && owned ? (
-            <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
-              Merge
+            <Button leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
+              {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
             </Button>
-          ) : null}
-          {compact ? (
-            <>
-              <Button leadingVisual={FileDiffIcon} onClick={onOpenFiles}>
-                Files
+            {pr.state === 'open' && owned ? (
+              <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
+                Merge
               </Button>
-              <Button leadingVisual={GitCommitIcon} onClick={onOpenCommits}>
-                Commits ({commitCount})
-              </Button>
-              <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
-                Conversation ({commentCount})
-              </Button>
-              {owned ? (
-                <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
-              ) : null}
-              <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
-            </>
-          ) : (
-            <>
-              {owned ? (
-                <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
-                  Settings
+            ) : null}
+            {compact ? (
+              <>
+                <Button leadingVisual={FileDiffIcon} onClick={onOpenFiles}>
+                  Files
                 </Button>
-              ) : null}
-              <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
-                Refresh
-              </Button>
-            </>
-          )}
-        </div>
+                <Button leadingVisual={GitCommitIcon} onClick={onOpenCommits}>
+                  Commits ({commitCount})
+                </Button>
+                <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
+                  Conversation ({commentCount})
+                </Button>
+                {owned ? (
+                  <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
+                ) : null}
+                <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
+              </>
+            ) : (
+              <>
+                {owned ? (
+                  <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
+                    Settings
+                  </Button>
+                ) : null}
+                <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
+                  Refresh
+                </Button>
+              </>
+            )}
+          </div>
           {pr.state === 'loading' || pr.stats.files > 0 ? (
             <div className="row" style={{ gap: 6, alignItems: 'center' }}>
               {pr.state === 'loading' ? (

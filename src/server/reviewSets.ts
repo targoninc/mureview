@@ -56,14 +56,14 @@ export function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
   return toReviewSet(row);
 }
 
-export interface ReadableReviewSet {
+interface ReadableReviewSet {
   reviewSet: ReviewSet;
   ownerId: number;
   owned: boolean;
   owner: OwnerInfo | null;
 }
 
-export async function loadReadableReviewSet(user: UserRow, id: number): Promise<ReadableReviewSet> {
+async function loadReadableReviewSet(user: UserRow, id: number): Promise<ReadableReviewSet> {
   const access = await loadReadableReviewSetRow(user.id, id);
   return { reviewSet: toReviewSet(access.row), ownerId: access.row.owner_id, owned: access.owned, owner: access.owner };
 }
@@ -258,11 +258,6 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
   const id = Number(inserted.lastInsertRowid);
   saveRepos(id, input.repos);
   return json({ detail: await buildDetail(user, id) }, 201);
-}
-
-export async function getReviewSet(ctx: Ctx): Promise<Response> {
-  const user = ctx.user!;
-  return json({ detail: await buildDetail(user, requireId(ctx), isFresh(ctx)) });
 }
 
 export async function updateReviewSet(ctx: Ctx): Promise<Response> {

@@ -23,10 +23,6 @@ export function fileSegments(host: string, repo: string, path: string): string[]
   return [host, repo, ...path.split('/')];
 }
 
-export function repoLabelOf(repo: Pick<RepoStatus, 'host' | 'repo'>): string {
-  return `${repo.host}/${repo.repo}`;
-}
-
 export function repoStatusText(status: RepoStatus): string {
   if (status.state === 'error') return 'error';
   if (status.state === 'merged') return 'merged';

@@ -1,6 +1,6 @@
 import type { LoadPhase, LoadProgress } from '../shared/types';
 
-export interface ProgressRepo {
+interface ProgressRepo {
   key: string;
   label: string;
 }

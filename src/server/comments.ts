@@ -186,11 +186,7 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
   if (!row.path || row.connection_id === null || !row.repo || row.line === null || !row.side) return;
   const pull = repoPullRequest(prId, row.connection_id, row.repo);
   if (!pull) return;
-  const ownerConnection = db
-    .query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?')
-    .get(row.connection_id);
-  if (!ownerConnection) return;
-  const connection = connectionById(userId, ownerConnection.id) ?? matchingConnection(userId, ownerConnection);
+  const connection = connectionForComment(userId, row.connection_id);
   if (!connection) return;
   const parent = row.parent_id
     ? db.query<{ forge_comment_id: string | null }, [number]>('SELECT forge_comment_id FROM comments WHERE id = ?').get(row.parent_id)
@@ -216,6 +212,19 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
   } catch (error) {
     console.error(`Could not sync comment ${row.id} to the forge:`, error);
   }
+}
+
+/**
+ * The connection to act on a review set repository with: the user's own
+ * connection when the repository is theirs, otherwise their connection to the
+ * same forge and organization as the review set's connection.
+ */
+function connectionForComment(userId: number, ownerConnectionId: number): ForgeConnectionRow | null {
+  const ownerConnection = db
+    .query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?')
+    .get(ownerConnectionId);
+  if (!ownerConnection) return null;
+  return connectionById(userId, ownerConnection.id) ?? matchingConnection(userId, ownerConnection);
 }
 
 /** The user's own connection to the same forge and organization. */
@@ -251,10 +260,7 @@ export async function deleteCommentRoute(ctx: Ctx): Promise<Response> {
 
   if (comment.forge_comment_id && comment.connection_id !== null && comment.repo) {
     const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo);
-    const ownerConnection = pull
-      ? db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(comment.connection_id)
-      : null;
-    const connection = ownerConnection ? (connectionById(user.id, ownerConnection.id) ?? matchingConnection(user.id, ownerConnection)) : null;
+    const connection = pull ? connectionForComment(user.id, comment.connection_id) : null;
     if (pull && connection) {
       try {
         await clientFor(connection).deleteComment(comment.repo, pull.forge_pr_number, comment.forge_comment_id);

@@ -39,19 +39,29 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   If the target branch does not exist, it is treated as empty, so every file on
   the matched branch shows up as an addition (the fake PR "creates" it).
 - Comment on specific code lines (hover the line gutter) or in the general
-  conversation. Comments are stored in SQLite **only while the PR is open**.
-  Once the matched branches are merged into the target (or all disappear), the
-  PR is closed and its comments are discarded — the PR is ephemeral.
+  conversation; each discussion has a single reply box at the bottom. Comments
+  that exist on the forge pull request are imported into mureview and mirrored
+  back to it, so both sides stay in sync (including deletes). Comments are
+  stored in SQLite **only while the PR is open**. Once the matched branches are
+  merged into the target (or all disappear), the PR is closed and its comments
+  are discarded — the PR is ephemeral.
 - Mark files as viewed from the checkbox on each file row in the sidebar tree,
   or the Viewed checkbox in the file's diff header. The header shows an
   `x/y viewed` counter; the marks are ephemeral like comments.
-- Merge the whole review: each matched branch is merged into the target on
-  GitHub (the target is created when missing) behind a confirmation dialog.
-  When every branch is merged the PR closes automatically.
+- Merge the whole review: each matched branch is merged into the target on its
+  forge (the target branch is created when missing) behind a confirmation
+  dialog, blocked while checks fail or conflicts are detected. When every
+  branch is merged the PR closes automatically.
 
 Data is stored in a single SQLite database (migrated automatically on start).
-Everything is scoped to the signed-in owner: users only ever see their own
-review sets, and every forge request uses their own connection tokens.
+Everything is scoped to the signed-in owner and every forge request uses their
+own connection tokens. A review set also shows up for other users, under
+"Review sets from others", when they can reach **every** repository in it with
+their own connections; otherwise it stays invisible. Such shared review sets
+are read-only for the owner's configuration (no merging, settings or viewed
+marks), but anyone with access can comment — as themselves, on mureview and on
+the forge. A comment can only be deleted by its own author, so the two sides
+cannot drift apart.
 
 ## Configuration
 
@@ -98,7 +108,8 @@ docker run -p 8081:8081 \
 ## Layout
 
 ```
-src/server   Bun HTTP server: auth, review sets, validation, fake PRs, comments
+src/server   Bun HTTP server: auth, forge clients, review sets, validation,
+             fake PRs, comment sync, merges
 src/client   React app (pages, PR view, comments, file tree)
 src/shared   Types shared by both sides
 ```

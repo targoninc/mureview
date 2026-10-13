@@ -281,7 +281,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         />
       );
     },
-    [pr.prId, pr.repos, owned],
+    [pr.prId, pr.repos],
   );
 
   const applyReviewed = useCallback(
@@ -393,33 +393,33 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           <>
             <aside className="pr-sidebar" style={{ width: sidebarWidth }}>
               <div className="pr-sidebar-tabs">
-              <Button
-                size="small"
-                variant={tab === 'files' ? 'primary' : 'invisible'}
-                leadingVisual={FileDiffIcon}
-                onClick={() => setTab('files')}
-              >
-                Files
-              </Button>
-              <Button
-                size="small"
-                variant={tab === 'commits' ? 'primary' : 'invisible'}
-                leadingVisual={GitCommitIcon}
-                onClick={() => setTab('commits')}
-              >
-                Commits ({commitCount})
-              </Button>
-              <Button
-                size="small"
-                variant={tab === 'conversation' ? 'primary' : 'invisible'}
-                leadingVisual={CommentDiscussionIcon}
-                onClick={() => setTab('conversation')}
-              >
-                Conversation ({comments.length})
-              </Button>
-            </div>
-            <div className="pr-sidebar-content">{panelContent}</div>
-          </aside>
+                <Button
+                  size="small"
+                  variant={tab === 'files' ? 'primary' : 'invisible'}
+                  leadingVisual={FileDiffIcon}
+                  onClick={() => setTab('files')}
+                >
+                  Files
+                </Button>
+                <Button
+                  size="small"
+                  variant={tab === 'commits' ? 'primary' : 'invisible'}
+                  leadingVisual={GitCommitIcon}
+                  onClick={() => setTab('commits')}
+                >
+                  Commits ({commitCount})
+                </Button>
+                <Button
+                  size="small"
+                  variant={tab === 'conversation' ? 'primary' : 'invisible'}
+                  leadingVisual={CommentDiscussionIcon}
+                  onClick={() => setTab('conversation')}
+                >
+                  Conversation ({comments.length})
+                </Button>
+              </div>
+              <div className="pr-sidebar-content">{panelContent}</div>
+            </aside>
             <div
               className="sidebar-resizer"
               role="separator"
