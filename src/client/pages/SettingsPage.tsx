@@ -4,7 +4,7 @@ import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
 import { connectionAvatarUrl } from '../lib/format';
-import { AdoForm, AtprotoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
+import { AdoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail, serviceNames } from '../components/ServiceIcon';
 
 
@@ -23,7 +23,7 @@ function connectedName(key: string): string {
   return key;
 }
 
-type ConnectTarget = 'github' | 'forgejo' | 'entra' | 'atproto' | 'ado' | 'tangled';
+type ConnectTarget = 'github' | 'forgejo' | 'entra' | 'ado' | 'tangled';
 
 interface ConnectOption {
   key: ConnectTarget;
@@ -69,11 +69,15 @@ export function SettingsPage() {
       : []),
     { key: 'forgejo', name: 'Forgejo', detail: 'Sign-in and forge connection', icon: <ServiceGlyph kind="forgejo" /> },
     { key: 'ado', name: 'Azure DevOps', detail: 'Forge connection only (personal access token)', icon: <ServiceGlyph kind="ado" /> },
-    { key: 'tangled', name: 'Tangled', detail: 'Forge connection only (pull requests need an atproto sign-in)', icon: <ServiceGlyph kind="tangled" /> },
+    {
+      key: 'tangled',
+      name: 'Tangled',
+      detail: 'Sign-in and forge connection — uses your atproto account',
+      icon: <ServiceGlyph kind="tangled" />,
+    },
     ...(me.providers.includes('entra')
       ? [{ key: 'entra' as const, name: 'Entra ID', detail: 'Sign-in only', icon: providerVisual('entra') }]
       : []),
-    { key: 'atproto', name: 'atproto', detail: 'Sign-in only', icon: providerVisual('atproto') },
   ];
 
   const finishConnect = (name: string) => {
@@ -163,8 +167,8 @@ export function SettingsPage() {
                   </div>
                   {connection.kind === 'tangled' && connection.writeReady === false ? (
                     <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-                      Pull requests and comments on Tangled are written with your atproto account, so sign in with atproto as{' '}
-                      <span className="mono">{connection.login}</span> to use them.
+                      Pull requests and comments are written with your atproto account. Reconnect Tangled below to sign in with
+                      atproto as <span className="mono">{connection.login}</span>.
                     </span>
                   ) : null}
                   <div className="row">
@@ -230,21 +234,8 @@ export function SettingsPage() {
                 {adding === option.key ? (
                   <div className="settings-panel" style={{ marginBottom: 8 }}>
                     {option.key === 'forgejo' ? <ForgejoForm mode="connect" /> : null}
-                    {option.key === 'atproto' ? <AtprotoForm mode="connect" /> : null}
                     {option.key === 'ado' ? <AdoForm onDone={() => finishConnect('Azure DevOps')} /> : null}
-                    {option.key === 'tangled' ? (
-                      <TangledForm
-                        onDone={(connection) => {
-                          setAdding(null);
-                          setNotice(
-                            connection.writeReady === false
-                              ? `Tangled connected. Sign in with atproto as ${connection.login} (below) so mureview can create pull requests and comments.`
-                              : 'Tangled connected.',
-                          );
-                          load();
-                        }}
-                      />
-                    ) : null}
+                    {option.key === 'tangled' ? <TangledForm /> : null}
                   </div>
                 ) : null}
               </Fragment>

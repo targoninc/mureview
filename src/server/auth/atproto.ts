@@ -1,11 +1,13 @@
 import { Agent } from '@atproto/api';
 import { atprotoClient } from '../atproto/client';
+import { tangledAvatar, tangledDid, tangledHandleFor } from '../forges/tangled';
 import { config } from '../config';
 import { decrypt, encrypt } from '../crypto';
 import { HttpError, clearCookie, parseCookies, setCookie } from '../http';
 import type { Ctx } from '../router';
 import type { OAuthMode } from './oauthState';
 import { completeAuth, handleAuthError } from './providers';
+import type { ConnectionInput } from './identities';
 import { cookiePath, isSecure, requireUser } from './session';
 
 export { atprotoMetadata } from '../atproto/client';
@@ -17,6 +19,9 @@ export async function atprotoLoginStart(ctx: Ctx): Promise<Response> {
   if (!handle) throw new HttpError(400, 'Enter your atproto handle, for example alice.bsky.social.');
   const mode: OAuthMode = ctx.url.searchParams.get('mode') === 'connect' ? 'connect' : 'login';
   const userId = mode === 'connect' ? requireUser(ctx).id : undefined;
+  // Connecting Tangled is the same authorization; the callback then also
+  // creates the Tangled connection for the account that signed in.
+  const tangled = ctx.url.searchParams.get('tangled') === '1';
 
   let url: URL;
   try {
@@ -28,7 +33,7 @@ export async function atprotoLoginStart(ctx: Ctx): Promise<Response> {
   const headers = new Headers({ Location: url.toString() });
   headers.append(
     'Set-Cookie',
-    setCookie(pendingCookie, encrypt(JSON.stringify({ mode, userId, handle })), {
+    setCookie(pendingCookie, encrypt(JSON.stringify({ mode, userId, handle, tangled })), {
       path: cookiePath(),
       httpOnly: true,
       secure: isSecure(),
@@ -42,6 +47,7 @@ interface PendingAtproto {
   mode: OAuthMode;
   userId?: number;
   handle?: string;
+  tangled?: boolean;
 }
 
 function pendingAuth(ctx: Ctx): PendingAtproto | null {
@@ -74,7 +80,8 @@ async function atprotoCallbackInner(ctx: Ctx, pending: PendingAtproto | null): P
     const did = session.did;
 
     // The profile lookup goes through the PDS's AppView proxy, which is not
-    // always available; fall back to the handle that was typed in.
+    // always available (and needs the AppView scope); fall back to the handle
+    // that was typed in.
     let displayName = pending.handle || did;
     let avatarUrl = '';
     try {
@@ -86,9 +93,24 @@ async function atprotoCallbackInner(ctx: Ctx, pending: PendingAtproto | null): P
       console.error('atproto profile lookup failed, continuing without it:', error);
     }
 
+    // A Tangled connection writes through this account's session, so it is
+    // created in the same flow; its label must be the account that signed in.
+    let connection: ConnectionInput | null = null;
+    if (pending.tangled && pending.mode === 'connect') {
+      const resolved = await tangledDid(pending.handle ?? '');
+      const handle = resolved === did ? (pending.handle ?? displayName) : await tangledHandleFor(did);
+      connection = {
+        kind: 'tangled',
+        baseUrl: 'https://tangled.org',
+        accessToken: did,
+        login: handle,
+        avatarUrl: avatarUrl || (await tangledAvatar(did)),
+      };
+    }
+
     const response = completeAuth(
       { provider: 'atproto', subject: did, displayName, avatarUrl },
-      null,
+      connection,
       { provider: 'atproto', mode: pending.mode, userId: pending.userId ?? null, payload: {} },
     );
     response.headers.append('Set-Cookie', clearCookie(pendingCookie, cookiePath()));

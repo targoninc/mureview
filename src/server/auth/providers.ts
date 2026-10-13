@@ -8,7 +8,6 @@ import { ForgeError, organizationOf } from '../forges';
 import { AdoClient, normalizeAdoOrganization } from '../forges/ado';
 import { getForgejoUser } from '../forges/forgejo';
 import { getUser as getGithubUser } from '../forges/github';
-import { TangledClient, tangledAvatar, tangledDid } from '../forges/tangled';
 import { HttpError, json, readJson } from '../http';
 import type { Ctx } from '../router';
 import {
@@ -537,37 +536,6 @@ export async function connectAdo(ctx: Ctx): Promise<Response> {
     accessToken: token,
     login: account.name,
     avatarUrl: account.avatarUrl,
-  });
-  return json({ connection: connectionInfo(connection) }, 201);
-}
-
-/**
- * Tangled repositories live on knots and are addressed by their owner's atproto
- * handle (or DID). Reading them needs no credentials, so only the DID is kept.
- */
-export async function connectTangled(ctx: Ctx): Promise<Response> {
-  const user = requireUser(ctx);
-  const body = await readJson<{ handle?: unknown }>(ctx.req);
-  const input = typeof body.handle === 'string' ? body.handle.trim().replace(/^@/, '') : '';
-  if (!input) throw new HttpError(400, 'Enter your atproto handle or DID.');
-
-  const did = await tangledDid(input);
-  if (!did) throw new HttpError(400, `Could not resolve the atproto handle ${input}.`);
-
-  const client = new TangledClient('https://tangled.org', did);
-  try {
-    await client.listRepos();
-  } catch (error) {
-    throw new HttpError(400, `Could not read your Tangled repositories: ${(error as Error).message}`);
-  }
-  const avatarUrl = await tangledAvatar(did);
-
-  const connection = upsertConnection(user.id, {
-    kind: 'tangled',
-    baseUrl: 'https://tangled.org',
-    accessToken: did,
-    login: input,
-    avatarUrl,
   });
   return json({ connection: connectionInfo(connection) }, 201);
 }

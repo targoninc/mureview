@@ -1,7 +1,6 @@
 import { atprotoCallback, atprotoLoginStart } from './auth/atproto';
 import {
   connectAdo,
-  connectTangled,
   deleteAccountData,
   deleteConnection,
   entraCallback,
@@ -61,7 +60,6 @@ api.get('/api/auth/callback/entra', entraCallback, true);
 
 api.get('/api/connections', listConnections);
 api.post('/api/connections/ado', connectAdo);
-api.post('/api/connections/tangled', connectTangled);
 api.delete('/api/account/data', deleteAccountData);
 api.delete('/api/connections/:id', deleteConnection);
 api.get('/api/repos', (ctx: Ctx) => listAvailableRepos(requireUser(ctx), ctx.url.searchParams.get('fresh') === '1').then((result) => json(result)));

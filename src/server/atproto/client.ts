@@ -59,7 +59,16 @@ export const atprotoMetadata = {
   redirect_uris: [`${config.baseUrl}/api/auth/callback/atproto`],
   grant_types: ['authorization_code', 'refresh_token'],
   response_types: ['code'],
-  scope: 'atproto',
+  // The transitional "atproto" scope covers everything on PDSes that grant it;
+  // the granular rpc permissions are what newer PDSes actually hand out, and
+  // they are what Tangled writes need when a token is minted for a knot.
+  scope: [
+    'atproto',
+    'rpc:com.atproto.repo.createRecord?aud=*',
+    'rpc:com.atproto.repo.putRecord?aud=*',
+    'rpc:com.atproto.repo.deleteRecord?aud=*',
+    'rpc:sh.tangled.repo.pull.merge?aud=*',
+  ].join(' '),
   dpop_bound_access_tokens: true,
   token_endpoint_auth_method: 'none',
   application_type: 'web',

@@ -111,6 +111,8 @@ async function handleFor(did: string): Promise<string> {
   return (await didDocument(did)).handle ?? did;
 }
 
+export { handleFor as tangledHandleFor };
+
 async function getRecord<T>(base: string, repo: string, collection: string, rkey: string): Promise<T | null> {
   const params = new URLSearchParams({ repo, collection, rkey });
   const response = await fetch(`${base}/xrpc/com.atproto.repo.getRecord?${params}`, { headers: { accept: 'application/json' } });
