@@ -22,7 +22,7 @@ function normalizeDate(value: string): string {
 export interface SyncTarget {
   connectionId: number;
   repo: string;
-  pullRequestNumber: number;
+  pullRequestRef: string;
 }
 
 const lastSyncByPr = new Map<number, number>();
@@ -47,7 +47,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
 
     let forgeComments: ForgeComment[];
     try {
-      forgeComments = await client.listComments(repo.repo, target.pullRequestNumber);
+      forgeComments = await client.listComments(repo.repo, target.pullRequestRef);
     } catch (error) {
       console.error(`Could not read comments for ${repo.repo}:`, error);
       return;

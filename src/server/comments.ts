@@ -194,7 +194,7 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
     ? db.query<{ forge_comment_id: string | null }, [number]>('SELECT forge_comment_id FROM comments WHERE id = ?').get(row.parent_id)
     : null;
   try {
-    const posted = await clientFor(connection).postReviewComment(row.repo, pull.forge_pr_number, {
+    const posted = await clientFor(connection).postReviewComment(row.repo, pull.forge_pr_ref, {
       body: row.body,
       path: row.path,
       line: row.line,
@@ -257,7 +257,7 @@ export async function resolveCommentRoute(ctx: Ctx): Promise<Response> {
   const client = clientFor(connection);
   if (!client.setCommentResolved) throw new HttpError(400, 'This forge does not support resolving comments.');
   try {
-    await client.setCommentResolved(comment.repo, pull.forge_pr_number, comment.forge_comment_id, input.resolved);
+    await client.setCommentResolved(comment.repo, pull.forge_pr_ref, comment.forge_comment_id, input.resolved);
   } catch (error) {
     console.error(`Could not resolve comment ${comment.id} on the forge:`, error);
     throw new HttpError(502, 'The forge refused to change the resolved state.');
@@ -296,7 +296,7 @@ export async function deleteCommentRoute(ctx: Ctx): Promise<Response> {
     const connection = pull ? connectionForComment(user.id, comment.connection_id) : null;
     if (pull && connection) {
       try {
-        await clientFor(connection).deleteComment(comment.repo, pull.forge_pr_number, comment.forge_comment_id);
+        await clientFor(connection).deleteComment(comment.repo, pull.forge_pr_ref, comment.forge_comment_id);
       } catch (error) {
         console.error(`Could not delete comment ${comment.id} on the forge:`, error);
         throw new HttpError(502, 'The comment could not be deleted on the forge, so it was kept here. Try again later.');

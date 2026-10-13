@@ -155,7 +155,7 @@ export interface RepoStatus {
   deletions?: number;
   truncated?: boolean;
   headSha?: string;
-  pullRequest?: { number: number; url: string };
+  pullRequest?: { ref: string; url: string };
   commits?: CommitInfo[];
   commitsTruncated?: boolean;
   files?: FileDiff[];
@@ -268,14 +268,14 @@ export interface MergePreviewRepo {
   /** Whether the acting account may complete pull requests in this repository. */
   canComplete: 'yes' | 'no' | 'unknown';
   checks: ChecksSummary;
-  pullRequest?: { number: number; url: string };
+  pullRequest?: { ref: string; url: string };
   error?: string;
 }
 
 export interface ReviewSetDiscussion {
   comments: Comment[];
   reviewed: ReviewMark[];
-  pullRequests: { connectionId: number; repo: string; number: number; url: string }[];
+  pullRequests: { connectionId: number; repo: string; ref: string; url: string }[];
 }
 
 export interface RepoCommits {

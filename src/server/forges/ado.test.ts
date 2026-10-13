@@ -140,7 +140,7 @@ const client = new AdoClient(`http://localhost:${server.port}`, 'token');
 
 test('uses the pull request commits endpoint and pages through them, newest first', async () => {
   requests.length = 0;
-  const commits = await client.listCommits('Proj/Repo', { headSha: 'head', pullRequest: 7, limit: 200 });
+  const commits = await client.listCommits('Proj/Repo', { headSha: 'head', pullRequest: '7', limit: 200 });
 
   expect(commits).toHaveLength(120);
   expect(commits[0]!.sha).toBe('sha0020');
@@ -153,7 +153,7 @@ test('uses the pull request commits endpoint and pages through them, newest firs
 
 test('falls back to the branch comparison when the pull request is gone', async () => {
   requests.length = 0;
-  const commits = await client.listCommits('Proj/Repo', { headSha: 'head', baseSha: 'base', pullRequest: 8 });
+  const commits = await client.listCommits('Proj/Repo', { headSha: 'head', baseSha: 'base', pullRequest: '8' });
 
   expect(commits.map((entry) => entry.sha)).toEqual(['sha0004', 'sha0003', 'sha0002', 'sha0001']);
   expect(requests[0]).toContain('/pullrequests/8/commits');
@@ -163,10 +163,10 @@ test('falls back to the branch comparison when the pull request is gone', async 
 
 test('reports the account a comment was posted under', async () => {
   const avatar = `http://localhost:${server.port}/avatars/lena.png`;
-  const posted = await client.postReviewComment('Proj/Repo', 7, { body: 'hi', path: 'src/a.ts', line: 3, side: 'additions' });
+  const posted = await client.postReviewComment('Proj/Repo', '7', { body: 'hi', path: 'src/a.ts', line: 3, side: 'additions' });
   expect(posted).toEqual({ kind: 'line', id: '12:34', author: { name: 'Lena Muster', avatarUrl: avatar } });
 
-  const reply = await client.postReviewComment('Proj/Repo', 7, {
+  const reply = await client.postReviewComment('Proj/Repo', '7', {
     body: 're',
     path: 'src/a.ts',
     line: 3,
@@ -181,7 +181,7 @@ const url = 'https://mureview.example.com/review-sets/1';
 test('creates a pull request with the mureview link in the description', async () => {
   bodies.length = 0;
   const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/new', 'Merge feature', 'Review set: X', url);
-  expect(pull).toEqual({ number: 21, created: true });
+  expect(pull).toEqual({ ref: '21', created: true });
   const post = bodies.find((entry) => entry.method === 'POST');
   expect(post?.body?.description).toBe(`Review set: X\n\nOpen in mureview: ${url}`);
 });
@@ -189,7 +189,7 @@ test('creates a pull request with the mureview link in the description', async (
 test('appends the mureview link to an existing description', async () => {
   bodies.length = 0;
   const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/cool', 'Merge feature', 'Review set: X', url);
-  expect(pull).toEqual({ number: 12, created: false });
+  expect(pull).toEqual({ ref: '12', created: false });
   const patch = bodies.find((entry) => entry.method === 'PATCH');
   expect(patch?.body?.description).toBe(`Existing description\n\nOpen in mureview: ${url}`);
 });
@@ -197,13 +197,13 @@ test('appends the mureview link to an existing description', async () => {
 test('leaves a description that already links to mureview alone', async () => {
   bodies.length = 0;
   const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/already', 'Merge feature', 'Review set: X', url);
-  expect(pull).toEqual({ number: 12, created: false });
+  expect(pull).toEqual({ ref: '12', created: false });
   expect(bodies.some((entry) => entry.method === 'PATCH')).toBe(false);
 });
 
 test('deletes a thread comment on the forge', async () => {
   requests.length = 0;
-  await client.deleteComment('Proj/Repo', 7, '12:35');
+  await client.deleteComment('Proj/Repo', '7', '12:35');
   expect(requests[0]).toContain('/pullrequests/7/threads/12/comments/35');
   expect(requests[0]).toContain('api-version=7.1');
 });

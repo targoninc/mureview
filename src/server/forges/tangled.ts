@@ -21,6 +21,7 @@ import {
   type TreeBlob,
   type TreeListing,
   fetchImage,
+  withMureviewLink,
 } from './types';
 
 const maxFiles = 300;
@@ -45,7 +46,15 @@ async function resolveHandleTxt(hostname: string): Promise<string[] | null> {
 const handleResolver = new AtprotoHandleResolver({ fetch: globalThis.fetch, resolveTxt: resolveHandleTxt });
 
 const didCache = new Cache<string>(500, 6 * 60 * 60_000);
-const pdsCache = new Cache<string | null>(500, 24 * 60 * 60_000);
+
+interface DidDocument {
+  /** The PDS — or, for a repository DID, the knot hosting it. */
+  pds: string | null;
+  /** The account's handle, when the document names one. */
+  handle: string | null;
+}
+
+const didDocCache = new Cache<DidDocument>(500, 24 * 60 * 60_000);
 
 /** Resolves an atproto handle (or passes a DID through). */
 export async function tangledDid(handleOrDid: string): Promise<string | null> {
@@ -64,26 +73,42 @@ export async function tangledDid(handleOrDid: string): Promise<string | null> {
   }
 }
 
-/** The PDS (or, for a repository DID, the knot hosting it) of a DID. */
-async function pdsFor(did: string): Promise<string | null> {
-  const hit = pdsCache.get(did);
-  if (hit !== undefined) return hit;
-  let endpoint: string | undefined;
+interface DidDocumentJson {
+  service?: { id?: string; serviceEndpoint?: string }[];
+  alsoKnownAs?: string[];
+}
+
+async function didDocument(did: string): Promise<DidDocument> {
+  const hit = didDocCache.get(did);
+  if (hit) return hit;
+  let document: DidDocumentJson | null = null;
   try {
     const url = did.startsWith('did:web:')
       ? `https://${did.slice('did:web:'.length).replace(/:/g, '%3A')}/.well-known/did.json`
       : `https://plc.directory/${did}`;
     const response = await fetch(url, { headers: { accept: 'application/json' } });
-    if (response.ok) {
-      const document = (await response.json()) as { service?: { id?: string; serviceEndpoint?: string }[] };
-      endpoint = document.service?.find((service) => service.id === '#atproto_pds')?.serviceEndpoint;
-    }
+    if (response.ok) document = (await response.json()) as DidDocumentJson;
   } catch {
     // no document
   }
-  const base = endpoint ? endpoint.replace(/\/+$/, '') : null;
-  pdsCache.set(did, base);
-  return base;
+  const endpoint = document?.service?.find((service) => service.id === '#atproto_pds')?.serviceEndpoint;
+  const handle = (document?.alsoKnownAs ?? [])
+    .map((alias) => alias.replace(/^at:\/\//, ''))
+    .find((alias) => alias && !alias.startsWith('did:')) ?? null;
+  const resolved: DidDocument = { pds: endpoint ? endpoint.replace(/\/+$/, '') : null, handle };
+  didDocCache.set(did, resolved);
+  return resolved;
+}
+
+/** The PDS (or, for a repository DID, the knot hosting it) of a DID. */
+async function pdsFor(did: string): Promise<string | null> {
+  return (await didDocument(did)).pds;
+}
+
+/** The handle of an atproto account, when its DID document names one. */
+async function handleFor(did: string): Promise<string> {
+  if (!did) return 'unknown';
+  return (await didDocument(did)).handle ?? did;
 }
 
 async function getRecord<T>(base: string, repo: string, collection: string, rkey: string): Promise<T | null> {
@@ -120,17 +145,26 @@ async function responseMessage(response: Response): Promise<string> {
   }
 }
 
+const avatarCache = new Cache<string>(300, 6 * 60 * 60_000);
+
 /** The avatar of an atproto account, when it has one. */
 export async function tangledAvatar(did: string): Promise<string> {
+  if (!did) return '';
+  const hit = avatarCache.get(did);
+  if (hit !== undefined) return hit;
+  let avatarUrl = '';
   const pds = await pdsFor(did);
-  if (!pds) return '';
-  try {
-    const record = await getRecord<{ avatar?: { ref?: { $link?: string } } }>(pds, did, 'app.bsky.actor.profile', 'self');
-    const cid = record?.avatar?.ref?.$link;
-    return cid ? `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@jpeg` : '';
-  } catch {
-    return '';
+  if (pds) {
+    try {
+      const record = await getRecord<{ avatar?: { ref?: { $link?: string } } }>(pds, did, 'app.bsky.actor.profile', 'self');
+      const cid = record?.avatar?.ref?.$link;
+      if (cid) avatarUrl = `https://cdn.bsky.app/img/avatar/plain/${did}/${cid}@jpeg`;
+    } catch {
+      // no profile record
+    }
   }
+  avatarCache.set(did, avatarUrl);
+  return avatarUrl;
 }
 
 // --- knot XRPC ---------------------------------------------------------------
@@ -388,35 +422,66 @@ function toCompareFile(file: KnotFile): CompareFile {
   return { path, prevPath, type, additions, deletions, patch: filePatch(file, path, prevPath, type) };
 }
 
-function toCommitInfo(entry: KnotPatchEntry): CommitInfo {
+function toCommitInfo(entry: KnotPatchEntry, url: (sha: string) => string): CommitInfo {
   return {
     sha: entry.SHA,
     message: entry.Title || entry.Body?.split('\n')[0] || '',
     author: entry.Author?.Name || 'unknown',
     date: entry.AuthorDate ?? '',
+    url: url(entry.SHA),
   };
 }
 
-function toLogCommit(commit: KnotCommit): CommitInfo {
+function toLogCommit(commit: KnotCommit, url: (sha: string) => string): CommitInfo {
+  const sha = commit.this ?? '';
   return {
-    sha: commit.this ?? '',
+    sha,
     message: (commit.message ?? '').split('\n')[0],
     author: commit.author?.Name || 'unknown',
     date: commit.author?.When ?? '',
+    url: sha ? url(sha) : undefined,
   };
 }
 
 // --- client ------------------------------------------------------------------
 
+export interface TangledWriteAuth {
+  /** The atproto account whose session mints service-auth tokens. */
+  did: string;
+  /** Mints a service-auth JWT for a knot call (aud is the repository DID). */
+  serviceAuth: (options: { aud: string; lxm: string }) => Promise<string>;
+}
+
+interface KnotWrittenRecord {
+  uri?: string;
+  cid?: string;
+}
+
+interface KnotPatchRecord {
+  ticket?: string;
+  createdAt?: string;
+}
+
+interface KnotCommentRecord {
+  subject?: { uri?: string; cid?: string };
+  replyTo?: { uri?: string; cid?: string };
+  body?: { text?: string };
+  createdAt?: string;
+  'x-tngl-editor'?: string;
+}
+
 export class TangledClient implements ForgeClient {
   readonly kind: ForgeKind = 'tangled';
-  readonly readOnly = true;
   readonly baseUrl: string;
   readonly host: string;
 
-  constructor(baseUrl: string, private login: string) {
+  constructor(baseUrl: string, private login: string, private writes?: TangledWriteAuth) {
     this.baseUrl = (baseUrl || 'https://tangled.org').replace(/\/+$/, '');
     this.host = new URL(this.baseUrl).host;
+  }
+
+  private commitUrl(repo: string, sha: string): string {
+    return `${this.baseUrl}/${repo}/commit/${sha}`;
   }
 
   async listRepos(): Promise<ForgeRepo[]> {
@@ -523,7 +588,7 @@ export class TangledClient implements ForgeClient {
       aheadBy: entries.length,
       behindBy: 0,
       files: capped,
-      commits: entries.map(toCommitInfo).reverse(),
+      commits: entries.map((entry) => toCommitInfo(entry, (sha) => this.commitUrl(repo, sha))).reverse(),
       truncated: files.length > capped.length || Boolean(out.binary_omitted) || entries.length >= 500,
     };
   }
@@ -586,7 +651,7 @@ export class TangledClient implements ForgeClient {
     return value;
   }
 
-  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]> {
+  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: string }): Promise<CommitInfo[]> {
     const limit = options.limit ?? 100;
     if (options.baseSha) {
       const comparison = await this.compare(repo, options.baseSha, options.headSha);
@@ -604,7 +669,7 @@ export class TangledClient implements ForgeClient {
         cursor,
       });
       const commits = page.commits ?? [];
-      for (const commit of commits) out.push(toLogCommit(commit));
+      for (const commit of commits) out.push(toLogCommit(commit, (sha) => this.commitUrl(repo, sha)));
       if (commits.length < perPage) break;
       cursor += perPage;
     }
@@ -623,31 +688,224 @@ export class TangledClient implements ForgeClient {
     return 'unknown';
   }
 
-  pullRequestUrl(repo: string, number: number): string {
-    return `${this.baseUrl}/${repo}/pulls/${number}`;
+  pullRequestUrl(repo: string, ref: string): string {
+    return `${this.baseUrl}/${repo}/pulls/${ref}`;
   }
 
-  async listComments(): Promise<ForgeComment[]> {
-    return [];
+  // --- writes ----------------------------------------------------------------
+
+  /**
+   * Calls a knot method with a service-auth token minted through the
+   * connected account's PDS. Knots verify the token's audience against the
+   * repository's DID and the method against the JWT's lxm claim.
+   */
+  private async authorizedPost<T>(knot: string, method: string, body: unknown, repoDid: string): Promise<T> {
+    if (!this.writes) {
+      throw new ForgeError(401, 'connect this Tangled account with atproto to write — sign in with atproto under Settings');
+    }
+    let token: string;
+    try {
+      token = await this.writes.serviceAuth({ aud: repoDid, lxm: method });
+    } catch (error) {
+      throw new ForgeError(401, `could not mint a service token for this knot (${(error as Error).message})`);
+    }
+    const response = await fetch(`${knot}/xrpc/${method}`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${token}`,
+        'user-agent': 'mureview',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new ForgeError(response.status, await responseMessage(response));
+    try {
+      return (await response.json()) as T;
+    } catch {
+      throw new ForgeError(502, 'the knot returned an unexpected response');
+    }
   }
 
-  async deleteComment(): Promise<void> {
-    // Nothing is mirrored yet, so there is nothing to delete.
+  private async hosted(repo: string): Promise<ResolvedRepo & { repoDid: string }> {
+    const target = await resolveRepo(repo);
+    if (!target.repoDid) {
+      throw new ForgeError(400, 'this repository predates repository DIDs, so mureview cannot write to it');
+    }
+    return { ...target, repoDid: target.repoDid };
   }
 
-  async ensurePullRequest(): Promise<PullRequestRef> {
-    throw new ForgeError(501, 'mureview cannot create Tangled pull requests yet');
+  private ticketUri(repoDid: string, ref: string): string {
+    return `at://${repoDid}/org.tangled.track.ticket/${ref}`;
   }
 
-  async mergePullRequest(): Promise<string> {
-    throw new ForgeError(501, 'mureview cannot merge on Tangled yet');
+  /** The patches of a ticket, newest first. */
+  private async ticketPatches(knot: string, repoDid: string, ref: string): Promise<{ rkey: string; record: KnotPatchRecord }[]> {
+    const records = await listRecords<{ uri?: string; value?: KnotPatchRecord }>(knot, repoDid, 'org.tangled.review.patch');
+    return records
+      .filter((record) => record.value?.ticket === ref)
+      .map((record) => ({ rkey: record.uri?.split('/').pop() ?? '', record: record.value ?? {} }))
+      .filter((entry) => entry.rkey)
+      .sort((a, b) => (b.record.createdAt ?? '').localeCompare(a.record.createdAt ?? ''));
+  }
+
+  /**
+   * A Tangled pull request is a ticket (the discussion) plus a patch (the
+   * commit range); the knot replays the patch onto the target branch when it
+   * is merged.
+   */
+  async ensurePullRequest(
+    repo: string,
+    base: string,
+    head: string,
+    title: string,
+    body = '',
+    mureviewUrl?: string,
+  ): Promise<PullRequestRef> {
+    const target = await this.hosted(repo);
+    const [baseRef, headRef] = await Promise.all([this.getBranch(repo, base, { fresh: true }), this.getBranch(repo, head, { fresh: true })]);
+    if (!baseRef) throw new ForgeError(404, `the target branch ${base} does not exist`);
+    if (!headRef) throw new ForgeError(404, `the branch ${head} does not exist`);
+    const mergeBase = (await this.mergeBase(repo, baseRef.sha, headRef.sha)) ?? baseRef.sha;
+    const description = withMureviewLink(body, mureviewUrl);
+    const createdAt = new Date().toISOString();
+
+    const ticket = await this.authorizedPost<KnotWrittenRecord>(
+      target.knot,
+      'com.atproto.repo.createRecord',
+      {
+        repo: target.repoDid,
+        collection: 'org.tangled.track.ticket',
+        record: {
+          $type: 'org.tangled.track.ticket',
+          title: { text: title },
+          ...(description ? { body: { $type: 'org.tangled.markup.markdown', text: description } } : {}),
+          state: 'open',
+          targetBranch: base,
+          createdAt,
+        },
+      },
+      target.repoDid,
+    );
+    const ticketRkey = ticket.uri?.split('/').pop();
+    if (!ticketRkey) throw new ForgeError(502, 'the knot did not return the new pull request');
+
+    await this.authorizedPost(
+      target.knot,
+      'com.atproto.repo.createRecord',
+      {
+        repo: target.repoDid,
+        collection: 'org.tangled.review.patch',
+        record: {
+          $type: 'org.tangled.review.patch',
+          ticket: ticketRkey,
+          base: { oid: mergeBase },
+          head: { oid: headRef.sha },
+          createdAt,
+        },
+      },
+      target.repoDid,
+    );
+    return { ref: ticketRkey, created: true };
+  }
+
+  async mergePullRequest(repo: string, ref: string, _message: string): Promise<string> {
+    const target = await this.hosted(repo);
+    const patches = await this.ticketPatches(target.knot, target.repoDid, ref);
+    const latest = patches[0];
+    if (!latest) throw new ForgeError(404, 'this pull request has no patch to merge');
+    await this.authorizedPost(
+      target.knot,
+      'sh.tangled.repo.pull.merge',
+      { repo: target.repoDid, rkey: latest.rkey },
+      target.repoDid,
+    );
+    return `merged pull request ${ref}`;
   }
 
   async createBranch(): Promise<void> {
     throw new ForgeError(501, 'mureview cannot create Tangled branches yet');
   }
 
-  async postReviewComment(_repo: string, _number: number, _comment: ReviewComment): Promise<PostedComment> {
-    throw new ForgeError(501, 'mureview cannot post Tangled comments yet');
+  async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
+    const target = await this.hosted(repo);
+    const subject = await recordRef(target.knot, target.repoDid, 'org.tangled.track.ticket', ref);
+    if (!subject) throw new ForgeError(404, 'the pull request this comment belongs to is gone');
+
+    let replyTo: { uri: string; cid: string } | undefined;
+    if (comment.replyTo) {
+      const parent = await recordRef(target.knot, target.repoDid, 'org.tangled.feed.comment', comment.replyTo);
+      if (parent) replyTo = parent;
+    }
+
+    // Tangled comments are not anchored to lines; keep the location readable
+    // in the body so it is not lost.
+    const text = comment.path ? `${comment.path}:${comment.line}\n\n${comment.body}` : comment.body;
+    const created = await this.authorizedPost<KnotWrittenRecord>(
+      target.knot,
+      'com.atproto.repo.createRecord',
+      {
+        repo: target.repoDid,
+        collection: 'org.tangled.feed.comment',
+        record: {
+          $type: 'org.tangled.feed.comment',
+          subject,
+          ...(replyTo ? { replyTo } : {}),
+          body: { $type: 'org.tangled.markup.markdown', text },
+          createdAt: new Date().toISOString(),
+        },
+      },
+      target.repoDid,
+    );
+    const rkey = created.uri?.split('/').pop();
+    return { kind: 'pull-request', id: rkey };
   }
+
+  async deleteComment(repo: string, _ref: string, commentId: string): Promise<void> {
+    const target = await this.hosted(repo);
+    try {
+      await this.authorizedPost(
+        target.knot,
+        'com.atproto.repo.deleteRecord',
+        { repo: target.repoDid, collection: 'org.tangled.feed.comment', rkey: commentId },
+        target.repoDid,
+      );
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return;
+      throw error;
+    }
+  }
+
+  async listComments(repo: string, ref: string): Promise<ForgeComment[]> {
+    const target = await this.hosted(repo);
+    const subjectUris = new Set([this.ticketUri(target.repoDid, ref)]);
+    for (const patch of await this.ticketPatches(target.knot, target.repoDid, ref)) {
+      subjectUris.add(`at://${target.repoDid}/org.tangled.review.patch/${patch.rkey}`);
+    }
+    const records = await listRecords<{ uri?: string; value?: KnotCommentRecord }>(target.knot, target.repoDid, 'org.tangled.feed.comment');
+    const comments: ForgeComment[] = [];
+    for (const record of records) {
+      const value = record.value;
+      const subject = value?.subject?.uri;
+      if (!value || !subject || !subjectUris.has(subject)) continue;
+      const editor = value['x-tngl-editor'] ?? '';
+      comments.push({
+        id: record.uri?.split('/').pop() ?? '',
+        author: { name: await handleFor(editor), avatarUrl: editor ? await tangledAvatar(editor) : '' },
+        body: value.body?.text ?? '',
+        createdAt: value.createdAt ?? '',
+      });
+    }
+    return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+}
+
+/** A strongRef to a record: the knot needs both its URI and its CID. */
+async function recordRef(knot: string, repoDid: string, collection: string, rkey: string): Promise<{ uri: string; cid: string } | null> {
+  const params = new URLSearchParams({ repo: repoDid, collection, rkey });
+  const response = await fetch(`${knot}/xrpc/com.atproto.repo.getRecord?${params}`, { headers: { accept: 'application/json' } });
+  if (response.status === 400 || response.status === 404) return null;
+  if (!response.ok) throw new ForgeError(response.status, await responseMessage(response));
+  const body = (await response.json()) as { uri?: string; cid?: string };
+  return body.uri && body.cid ? { uri: body.uri, cid: body.cid } : null;
 }

@@ -77,7 +77,7 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
               leadingVisual={GitPullRequestIcon}
               style={{ alignSelf: 'flex-start' }}
             >
-              PR #{repo.pullRequest.number}
+              PR #{repo.pullRequest.ref}
             </Button>
           ) : null}
         </div>

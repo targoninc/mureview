@@ -1,5 +1,6 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
+import { pullNumber } from './github';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from '../patch';
 import {
   type BranchInfo,
@@ -461,7 +462,7 @@ export class AdoClient implements ForgeClient {
           description,
         },
       });
-      return { number: created.pullRequestId, created: true };
+      return { ref: String(created.pullRequestId), created: true };
     } catch (error) {
       if (!(error instanceof ForgeError) || error.status !== 409) throw error;
       const query =
@@ -480,18 +481,20 @@ export class AdoClient implements ForgeClient {
           });
         }
       }
-      return { number: existing.pullRequestId, created: false };
+      return { ref: String(existing.pullRequestId), created: false };
     }
   }
 
-  pullRequestUrl(repo: string, number: number): string {
+  pullRequestUrl(repo: string, ref: string): string {
+    const number = ref;
     const slash = repo.indexOf('/');
     const project = encodeURIComponent(repo.slice(0, slash));
     const name = encodeURIComponent(repo.slice(slash + 1));
     return `${this.baseUrl}/${project}/_git/${name}/pullrequest/${number}`;
   }
 
-  async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
+  async mergePullRequest(repo: string, ref: string, message: string): Promise<string> {
+    const number = pullNumber(ref);
     const pull = await this.request<AdoPull>(`${this.repoUrl(repo)}/pullrequests/${number}?api-version=7.1`);
     await this.request(`${this.repoUrl(repo)}/pullrequests/${number}?api-version=7.1`, {
       method: 'PATCH',
@@ -504,7 +507,8 @@ export class AdoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment> {
+  async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
+    const number = pullNumber(ref);
     const replyTo = comment.replyTo?.match(/^(\d+):(\d+)$/);
     if (replyTo) {
       try {
@@ -576,7 +580,8 @@ export class AdoClient implements ForgeClient {
     return href || image;
   }
 
-  async setCommentResolved(repo: string, number: number, commentId: string, resolved: boolean): Promise<void> {
+  async setCommentResolved(repo: string, ref: string, commentId: string, resolved: boolean): Promise<void> {
+    const number = pullNumber(ref);
     const match = commentId.match(/^(\d+):/);
     if (!match) throw new ForgeError(400, 'the comment is not part of a thread');
     await this.request(`${this.repoUrl(repo)}/pullrequests/${number}/threads/${match[1]}?api-version=7.1`, {
@@ -585,7 +590,8 @@ export class AdoClient implements ForgeClient {
     });
   }
 
-  async deleteComment(repo: string, number: number, commentId: string): Promise<void> {
+  async deleteComment(repo: string, ref: string, commentId: string): Promise<void> {
+    const number = pullNumber(ref);
     const match = commentId.match(/^(\d+):(\d+)$/);
     if (!match) return;
     try {
@@ -599,7 +605,8 @@ export class AdoClient implements ForgeClient {
     }
   }
 
-  async listComments(repo: string, number: number): Promise<ForgeComment[]> {
+  async listComments(repo: string, ref: string): Promise<ForgeComment[]> {
+    const number = pullNumber(ref);
     const data = await this.request<{ value: AdoThread[] }>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`);
     const comments: ForgeComment[] = [];
     for (const thread of data.value ?? []) {
@@ -694,12 +701,12 @@ export class AdoClient implements ForgeClient {
     }
   }
 
-  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]> {
+  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: string }): Promise<CommitInfo[]> {
     const limit = Math.min(options.limit ?? 300, 500);
     // The pull request endpoint matches what the Azure DevOps UI shows; the
     // branch comparison below is the fallback when no pull request is known.
     if (options.pullRequest) {
-      const fromPullRequest = await this.pullRequestCommits(repo, options.pullRequest, limit);
+      const fromPullRequest = await this.pullRequestCommits(repo, pullNumber(options.pullRequest), limit);
       if (fromPullRequest) return fromPullRequest;
     }
     const compare = options.baseSha
@@ -737,11 +744,12 @@ export class AdoClient implements ForgeClient {
    * ordinary pipeline runs and are not used, so a repository without a pull
    * request reports no checks.
    */
-  async checks(repo: string, _sha: string, options: { pullRequest?: number } = {}): Promise<ChecksSummary> {
+  async checks(repo: string, _sha: string, options: { pullRequest?: string } = {}): Promise<ChecksSummary> {
     if (!options.pullRequest) return { state: 'none', runs: [] };
+    const pullRef = pullNumber(options.pullRequest);
     try {
       const project = await this.project(repo);
-      const artifactId = `vstfs:///CodeReview/CodeReviewId/${project.id}/${options.pullRequest}`;
+      const artifactId = `vstfs:///CodeReview/CodeReviewId/${project.id}/${pullRef}`;
       const data = await this.request<{ value: AdoEvaluation[] }>(
         `${this.baseUrl}/${encodeURIComponent(project.name)}/_apis/policy/evaluations` +
           `?artifactId=${encodeURIComponent(artifactId)}&api-version=7.1-preview.1`,

@@ -84,7 +84,7 @@ async function loadCommits(
   repo: string,
   headSha: string,
   baseSha?: string,
-  pullRequest?: number,
+  pullRequest?: string,
 ): Promise<CommitInfo[] | undefined> {
   try {
     return await cached(commitsCache, `${connectionId}:${repo}:${pullRequest ?? baseSha ?? ''}:${headSha}`, () =>
@@ -102,7 +102,7 @@ async function inspectBranch(
   branchSha: string,
   fresh: boolean,
   includeCommits: boolean,
-  knownPull: number | null = null,
+  knownPull: string | null = null,
   onPhase?: (phase: 'diffing' | 'done' | 'error') => void,
 ): Promise<RepoStatus> {
   const repo = status.repo;

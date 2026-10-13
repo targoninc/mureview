@@ -230,7 +230,7 @@ export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
     try {
       const head = await client.getBranch(repo.repo, repo.branch!, {});
       if (!head) return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'none' as const, runs: [] } };
-      return { connectionId: repo.connectionId, repo: repo.repo, checks: await client.checks(repo.repo, head.sha, { pullRequest: repo.pullRequest?.number }) };
+      return { connectionId: repo.connectionId, repo: repo.repo, checks: await client.checks(repo.repo, head.sha, { pullRequest: repo.pullRequest?.ref }) };
     } catch (error) {
       console.error(`Could not read the checks for ${repo.repo}:`, error);
       return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'unknown' as const, runs: [] } };
@@ -253,11 +253,11 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   if (status.prId && status.state === 'open') {
     const clients = clientsFor(connections);
     const targets = db
-      .query<{ connection_id: number; repo: string; forge_pr_number: number }, [number]>(
-        'SELECT connection_id, repo, forge_pr_number FROM pull_request_repos WHERE pr_id = ?',
+      .query<{ connection_id: number; repo: string; forge_pr_ref: string }, [number]>(
+        'SELECT connection_id, repo, forge_pr_ref FROM pull_request_repos WHERE pr_id = ?',
       )
       .all(status.prId)
-      .map((row) => ({ connectionId: row.connection_id, repo: row.repo, pullRequestNumber: row.forge_pr_number }));
+      .map((row) => ({ connectionId: row.connection_id, repo: row.repo, pullRequestRef: row.forge_pr_ref }));
     await syncForgeComments(status.prId, clients, targets, ctx.url.searchParams.get('sync') === 'force');
   }
 

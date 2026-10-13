@@ -37,6 +37,15 @@ legacy.exec(`
     repo TEXT NOT NULL,
     PRIMARY KEY (review_set_id, connection_id, repo)
   );
+  CREATE TABLE pull_request_repos (
+    pr_id INTEGER NOT NULL,
+    connection_id INTEGER NOT NULL,
+    repo TEXT NOT NULL,
+    forge_pr_number INTEGER NOT NULL,
+    head_sha TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (pr_id, connection_id, repo)
+  );
   INSERT INTO users (id, name) VALUES (1, 'legacy');
   INSERT INTO forge_connections (user_id, kind, base_url, access_token, login) VALUES (1, 'github', 'https://github.com', 'old-token', 'account-a');
   INSERT INTO review_set_repos (review_set_id, connection_id, repo) VALUES (1, 1, 'acme/repo');

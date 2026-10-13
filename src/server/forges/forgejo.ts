@@ -1,5 +1,6 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
+import { pullNumber } from './github';
 // The database and crypto are imported lazily so importing this module (tests,
 // type checks) never opens the database.
 import type { ForgeConnectionRow } from '../db';
@@ -397,7 +398,7 @@ export class ForgejoClient implements ForgeClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ head, base, title, body: withMureviewLink(body, mureviewUrl) }),
       });
-      return { number: pull.number, created: true };
+      return { ref: String(pull.number), created: true };
     } catch (error) {
       if (!(error instanceof ForgeError) || error.status !== 409) throw error;
       const pulls = await this.request<GiteaPull[]>(`/repos/${repo}/pulls?state=open&limit=50`);
@@ -413,15 +414,16 @@ export class ForgejoClient implements ForgeClient {
           });
         }
       }
-      return { number: existing.number, created: false };
+      return { ref: String(existing.number), created: false };
     }
   }
 
-  pullRequestUrl(repo: string, number: number): string {
-    return `${this.baseUrl}/${repo}/pulls/${number}`;
+  pullRequestUrl(repo: string, ref: string): string {
+    return `${this.baseUrl}/${repo}/pulls/${ref}`;
   }
 
-  async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
+  async mergePullRequest(repo: string, ref: string, message: string): Promise<string> {
+    const number = pullNumber(ref);
     await this.request(`/repos/${repo}/pulls/${number}/merge`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -430,7 +432,8 @@ export class ForgejoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment> {
+  async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
+    const number = pullNumber(ref);
     if (comment.replyTo && /^\d+$/.test(comment.replyTo)) {
       try {
         const review = await this.request<{ comments?: GiteaReviewComment[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
@@ -493,7 +496,7 @@ export class ForgejoClient implements ForgeClient {
     return user ? { name: user.login, avatarUrl: this.absoluteAvatar(user.avatar_url) } : undefined;
   }
 
-  async deleteComment(repo: string, _number: number, commentId: string): Promise<void> {
+  async deleteComment(repo: string, _ref: string, commentId: string): Promise<void> {
     if (!/^\d+$/.test(commentId)) return;
     try {
       await this.request(`/repos/${repo}/issues/comments/${commentId}`, { method: 'DELETE' });
@@ -503,7 +506,8 @@ export class ForgejoClient implements ForgeClient {
     }
   }
 
-  async listComments(repo: string, number: number): Promise<ForgeComment[]> {
+  async listComments(repo: string, ref: string): Promise<ForgeComment[]> {
+    const number = pullNumber(ref);
     const issueComments = await this.paginate<GiteaIssueComment>(`/repos/${repo}/issues/${number}/comments`);
     const reviews = await this.paginate<GiteaReview>(`/repos/${repo}/pulls/${number}/reviews`);
     const comments: ForgeComment[] = [];

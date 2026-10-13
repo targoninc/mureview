@@ -88,7 +88,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
       const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
       if (!headRef) throw new Error('the matched branch no longer exists');
 
-      const checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.number });
+      const checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.ref });
       if (checks.state === 'failure') {
         const failing = checks.runs
           .filter((run) => run.state === 'failure')
@@ -102,8 +102,8 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         return { connectionId: repo.connectionId, label, ok: true, message: `created ${target} from ${repo.branch}` };
       }
 
-      const pullNumber =
-        repo.pullRequest?.number ??
+      const pullRef =
+        repo.pullRequest?.ref ??
         (
           await client.ensurePullRequest(
             repo.repo,
@@ -113,7 +113,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
             `Review set: ${reviewSet.name}`,
             reviewSetUrl(reviewSet.id),
           )
-        ).number;
+        ).ref;
 
       // Comments are synced as they are written; this catches the ones whose
       // immediate sync failed.
@@ -122,7 +122,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
       let failed = 0;
       for (const comment of comments) {
         try {
-          await client.postReviewComment(repo.repo, pullNumber, {
+          await client.postReviewComment(repo.repo, pullRef, {
             body: comment.body,
             path: comment.path!,
             line: comment.line!,
@@ -136,7 +136,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         }
       }
 
-      const message = await client.mergePullRequest(repo.repo, pullNumber, `Merge ${repo.branch} into ${target}`);
+      const message = await client.mergePullRequest(repo.repo, pullRef, `Merge ${repo.branch} into ${target}`);
       const commentNote = [
         posted > 0 ? `${posted} late comment${posted === 1 ? '' : 's'} synced` : '',
         failed > 0 ? `${failed} comment${failed === 1 ? '' : 's'} could not be synced` : '',

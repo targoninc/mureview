@@ -31,6 +31,12 @@ import {
 
 const API = 'https://api.github.com';
 
+/** Most forges number their pull requests; Tangled does not. */
+export function pullNumber(ref: string): number {
+  if (!/^\d+$/.test(ref)) throw new ForgeError(400, `pull request ${ref} is not a number`);
+  return Number(ref);
+}
+
 export interface GithubAuth {
   /** Exchanges the stored refresh token for a new access token. */
   refresh: () => Promise<string>;
@@ -342,7 +348,7 @@ export class GithubClient implements ForgeClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title, head, base, body: withMureviewLink(body, mureviewUrl) }),
       });
-      return { number: created.number, created: true };
+      return { ref: String(created.number), created: true };
     } catch (error) {
       if (!(error instanceof ForgeError) || error.status !== 422) throw error;
       const [owner] = repo.split('/');
@@ -361,15 +367,16 @@ export class GithubClient implements ForgeClient {
           });
         }
       }
-      return { number: pull.number, created: false };
+      return { ref: String(pull.number), created: false };
     }
   }
 
-  pullRequestUrl(repo: string, number: number): string {
-    return `https://github.com/${repo}/pull/${number}`;
+  pullRequestUrl(repo: string, ref: string): string {
+    return `https://github.com/${repo}/pull/${ref}`;
   }
 
-  async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
+  async mergePullRequest(repo: string, ref: string, message: string): Promise<string> {
+    const number = pullNumber(ref);
     await this.request(`/repos/${repo}/pulls/${number}/merge`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -378,7 +385,8 @@ export class GithubClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment> {
+  async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
+    const number = pullNumber(ref);
     if (comment.replyTo) {
       try {
         const reply = await this.request<{ id: number; user?: GithubUser | null }>(
@@ -421,7 +429,7 @@ export class GithubClient implements ForgeClient {
     }
   }
 
-  async deleteComment(repo: string, _number: number, commentId: string): Promise<void> {
+  async deleteComment(repo: string, _ref: string, commentId: string): Promise<void> {
     try {
       await this.request(`/repos/${repo}/pulls/comments/${commentId}`, { method: 'DELETE' });
       return;
@@ -473,8 +481,8 @@ export class GithubClient implements ForgeClient {
     }));
   }
 
-  async setCommentResolved(repo: string, number: number, commentId: string, resolved: boolean): Promise<void> {
-    const threads = await this.reviewThreads(repo, number);
+  async setCommentResolved(repo: string, ref: string, commentId: string, resolved: boolean): Promise<void> {
+    const threads = await this.reviewThreads(repo, pullNumber(ref));
     const thread = threads.find((entry) => entry.commentIds.includes(commentId));
     if (!thread) throw new ForgeError(404, 'the review thread was not found');
     const mutation = resolved ? 'resolveReviewThread' : 'unresolveReviewThread';
@@ -489,7 +497,8 @@ export class GithubClient implements ForgeClient {
     if (data.errors?.length) throw new ForgeError(400, data.errors[0]?.message ?? 'the graphql mutation failed');
   }
 
-  async listComments(repo: string, number: number): Promise<ForgeComment[]> {
+  async listComments(repo: string, ref: string): Promise<ForgeComment[]> {
+    const number = pullNumber(ref);
     const reviewComments = await this.paginate<GithubReviewComment>(`/repos/${repo}/pulls/${number}/comments`);
     const issueComments = await this.paginate<GithubIssueComment>(`/repos/${repo}/issues/${number}/comments`);
     const resolvedByComment = new Map<string, boolean>();

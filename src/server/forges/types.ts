@@ -69,7 +69,8 @@ export interface ForgeCallOptions {
 }
 
 export interface PullRequestRef {
-  number: number;
+  /** The forge's own identifier: a number for most forges, a record key for Tangled. */
+  ref: string;
   created: boolean;
 }
 
@@ -124,15 +125,15 @@ export interface ForgeClient {
   listBlobs(repo: string, sha: string): Promise<TreeListing>;
   getBlobText(repo: string, sha: string): Promise<string | null>;
   ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string, mureviewUrl?: string): Promise<PullRequestRef>;
-  mergePullRequest(repo: string, number: number, message: string): Promise<string>;
-  pullRequestUrl(repo: string, number: number): string;
-  postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment>;
+  mergePullRequest(repo: string, ref: string, message: string): Promise<string>;
+  pullRequestUrl(repo: string, ref: string): string;
+  postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment>;
   /** Removes a comment that exists on the forge; a missing comment is fine. */
-  deleteComment(repo: string, number: number, commentId: string): Promise<void>;
-  listComments(repo: string, number: number): Promise<ForgeComment[]>;
+  deleteComment(repo: string, ref: string, commentId: string): Promise<void>;
+  listComments(repo: string, ref: string): Promise<ForgeComment[]>;
   fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null>;
-  listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]>;
-  checks(repo: string, sha: string, options?: { pullRequest?: number }): Promise<ChecksSummary>;
+  listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: string }): Promise<CommitInfo[]>;
+  checks(repo: string, sha: string, options?: { pullRequest?: string }): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
   /** When the stored credentials expire, if the forge reports it. */
   tokenExpiry?(): Promise<{ displayName: string; validTo: string } | null>;
@@ -147,7 +148,7 @@ export interface ForgeClient {
    */
   pullRequestPermission?(repo: string): Promise<'write' | 'read' | 'unknown'>;
   /** Resolves or reactivates the thread a comment belongs to, when supported. */
-  setCommentResolved?(repo: string, number: number, commentId: string, resolved: boolean): Promise<void>;
+  setCommentResolved?(repo: string, ref: string, commentId: string, resolved: boolean): Promise<void>;
 }
 
 export function hostOf(baseUrl: string): string {

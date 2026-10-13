@@ -10,7 +10,7 @@ export function reviewSetUrl(reviewSetId: number): string {
 }
 
 export interface RepoPullRow {
-  forge_pr_number: number;
+  forge_pr_ref: string;
   head_sha: string;
 }
 
@@ -18,23 +18,23 @@ export function repoPullRequest(prId: number, connectionId: number, repo: string
   return (
     db
       .query<RepoPullRow, [number, number, string]>(
-        'SELECT forge_pr_number, head_sha FROM pull_request_repos WHERE pr_id = ? AND connection_id = ? AND repo = ?',
+        'SELECT forge_pr_ref, head_sha FROM pull_request_repos WHERE pr_id = ? AND connection_id = ? AND repo = ?',
       )
       .get(prId, connectionId, repo) ?? null
   );
 }
 
-/** The forge pull request number tracked for a repository of a review set. */
-export function reviewSetPullRequest(reviewSetId: number, connectionId: number, repo: string): number | null {
+/** The forge pull request tracked for a repository of a review set. */
+export function reviewSetPullRequest(reviewSetId: number, connectionId: number, repo: string): string | null {
   const row = db
-    .query<{ forge_pr_number: number }, [number, number, string]>(
-      `SELECT rp.forge_pr_number FROM pull_request_repos rp
+    .query<{ forge_pr_ref: string }, [number, number, string]>(
+      `SELECT rp.forge_pr_ref FROM pull_request_repos rp
        JOIN pull_requests p ON p.id = rp.pr_id
        WHERE p.review_set_id = ? AND p.closed_at IS NULL AND rp.connection_id = ? AND rp.repo = ?
        ORDER BY rp.pr_id DESC LIMIT 1`,
     )
     .get(reviewSetId, connectionId, repo);
-  return row?.forge_pr_number ?? null;
+  return row?.forge_pr_ref ?? null;
 }
 
 /**
@@ -64,10 +64,10 @@ export async function ensureRepoPullRequests(
         reviewSetUrl(reviewSet.id),
       );
       db.run(
-        `INSERT INTO pull_request_repos (pr_id, connection_id, repo, forge_pr_number, head_sha) VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO pull_request_repos (pr_id, connection_id, repo, forge_pr_ref, head_sha) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(pr_id, connection_id, repo)
-         DO UPDATE SET forge_pr_number = excluded.forge_pr_number, head_sha = excluded.head_sha`,
-        [prId, repo.connectionId, repo.repo, pull.number, repo.headSha ?? ''],
+         DO UPDATE SET forge_pr_ref = excluded.forge_pr_ref, head_sha = excluded.head_sha`,
+        [prId, repo.connectionId, repo.repo, pull.ref, repo.headSha ?? ''],
       );
     } catch (error) {
       console.error(`Could not ensure a pull request for ${repo.host}/${repo.repo}:`, error);
@@ -84,7 +84,7 @@ export function attachKnownPullRequests(clients: Map<number, ForgeClient>, repos
     if (repo.state !== 'open' || !repo.targetExists || repo.pullRequest) continue;
     const row = repoPullRequest(prId, repo.connectionId, repo.repo);
     const client = clients.get(repo.connectionId);
-    if (row && client) repo.pullRequest = { number: row.forge_pr_number, url: client.pullRequestUrl(repo.repo, row.forge_pr_number) };
+    if (row && client) repo.pullRequest = { ref: row.forge_pr_ref, url: client.pullRequestUrl(repo.repo, row.forge_pr_ref) };
   }
 }
 

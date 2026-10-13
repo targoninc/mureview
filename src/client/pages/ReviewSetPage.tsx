@@ -64,7 +64,7 @@ export function ReviewSetPage() {
           const pull = pullsByRepo.get(key);
           return {
             ...repo,
-            pullRequest: repo.pullRequest ?? (pull ? { number: pull.number, url: pull.url } : undefined),
+            pullRequest: repo.pullRequest ?? (pull ? { ref: pull.ref, url: pull.url } : undefined),
             commits: commitsByRepo.get(key) ?? repo.commits,
           };
         }),

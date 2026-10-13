@@ -575,7 +575,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                         size="small"
                         leadingVisual={GitPullRequestIcon}
                       >
-                        PR #{repo.pullRequest!.number}
+                        PR #{repo.pullRequest!.ref}
                       </Button>
                     </div>
                     {repoChecks ? (

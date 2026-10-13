@@ -34,7 +34,7 @@ const repo = (kind: RepoStatus['kind'], url: string): RepoStatus => ({
   target: 'main',
   targetExists: true,
   state: 'open',
-  pullRequest: { number: 7, url },
+  pullRequest: { ref: '7', url },
 });
 
 test('github links use discussion and issue anchors', () => {

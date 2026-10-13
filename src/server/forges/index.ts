@@ -1,4 +1,5 @@
 import type { ForgeConnectionRow } from '../db';
+import { mintAtprotoServiceAuth } from '../atproto/client';
 import { decrypt } from '../crypto';
 import { AdoClient, invalidateAdoBranchCaches } from './ado';
 import { ForgejoClient, invalidateForgejoBranchCaches, refreshForgejoToken } from './forgejo';
@@ -13,7 +14,13 @@ export function clientFor(connection: ForgeConnectionRow): ForgeClient {
     return new ForgejoClient(baseUrl, token, { refresh: () => refreshForgejoToken(connection.id) });
   }
   if (connection.kind === 'ado') return new AdoClient(baseUrl, token);
-  if (connection.kind === 'tangled') return new TangledClient(baseUrl, connection.login || token);
+  if (connection.kind === 'tangled') {
+    const did = token || connection.login;
+    return new TangledClient(baseUrl, connection.login || did, {
+      did,
+      serviceAuth: (options) => mintAtprotoServiceAuth(did, options),
+    });
+  }
   return new GithubClient(token, { refresh: () => refreshGithubToken(connection.id) });
 }
 

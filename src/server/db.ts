@@ -141,7 +141,7 @@ const SCHEMA_V2 = `
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
     connection_id INTEGER NOT NULL,
     repo TEXT NOT NULL,
-    forge_pr_number INTEGER NOT NULL,
+    forge_pr_ref TEXT NOT NULL,
     head_sha TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (pr_id, connection_id, repo)
@@ -159,6 +159,12 @@ const SCHEMA_V2 = `
   CREATE TABLE settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
+  );
+
+  CREATE TABLE atproto_sessions (
+    did TEXT PRIMARY KEY,
+    session TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
@@ -466,7 +472,44 @@ if (userVersion() < 10) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
-db.exec('PRAGMA user_version = 10;');
+if (userVersion() < 11) {
+  // Tangled names pull requests with record keys rather than numbers, so the
+  // reference is text everywhere. Atproto sessions are kept so service-auth
+  // tokens can be minted for Tangled after a restart.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS atproto_sessions (
+      did TEXT PRIMARY KEY,
+      session TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  const repoColumns = hasTable('pull_request_repos')
+    ? db.query<{ name: string }, []>('PRAGMA table_info(pull_request_repos)').all()
+    : [];
+  if (repoColumns.length && !repoColumns.some((column) => column.name === 'forge_pr_ref')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE pull_request_repos_v11 (
+          pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          connection_id INTEGER NOT NULL,
+          repo TEXT NOT NULL,
+          forge_pr_ref TEXT NOT NULL,
+          head_sha TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (pr_id, connection_id, repo)
+        );
+        INSERT INTO pull_request_repos_v11 (pr_id, connection_id, repo, forge_pr_ref, head_sha, created_at)
+          SELECT pr_id, connection_id, repo, CAST(forge_pr_number AS TEXT), head_sha, created_at FROM pull_request_repos;
+        DROP TABLE pull_request_repos;
+        ALTER TABLE pull_request_repos_v11 RENAME TO pull_request_repos;
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+db.exec('PRAGMA user_version = 11;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);
