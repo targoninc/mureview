@@ -268,6 +268,27 @@ export function ReviewSetFormPage() {
               </div>
             </AnchoredOverlay>
           </div>
+          <div className="row" style={{ gap: 8, marginTop: 8 }}>
+            <Button
+              size="small"
+              variant={form.mode === 'pattern' ? 'primary' : 'invisible'}
+              onClick={() => update({ mode: 'pattern' })}
+            >
+              Pattern-based
+            </Button>
+            <Button
+              size="small"
+              variant={form.mode === 'per-repo' ? 'primary' : 'invisible'}
+              onClick={() => update({ mode: 'per-repo' })}
+            >
+              Per-repo
+            </Button>
+          </div>
+          <FormControl.Caption>
+            {form.mode === 'per-repo'
+              ? 'Pick a source and target branch for every repository below. Repositories without a source branch are skipped.'
+              : 'Branches are matched with the patterns configured further down.'}
+          </FormControl.Caption>
           {available === null ? <Spinner size="small" aria-label="Loading repositories" /> : null}
           {available !== null && results.length > 0 ? (
             <>
@@ -370,26 +391,10 @@ export function ReviewSetFormPage() {
           <FormControl.Caption>No repositories selected yet.</FormControl.Caption>
         )}
 
-        <FormControl>
-          <FormControl.Label>Branches</FormControl.Label>
-          <div className="row" style={{ gap: 8, marginBottom: 8 }}>
-            <Button
-              size="small"
-              variant={form.mode === 'pattern' ? 'primary' : 'invisible'}
-              onClick={() => update({ mode: 'pattern' })}
-            >
-              Pattern-based
-            </Button>
-            <Button
-              size="small"
-              variant={form.mode === 'per-repo' ? 'primary' : 'invisible'}
-              onClick={() => update({ mode: 'per-repo' })}
-            >
-              Per-repo
-            </Button>
-          </div>
-          {form.mode === 'pattern' ? (
-            <>
+        {form.mode === 'pattern' ? (
+          <>
+            <FormControl>
+              <FormControl.Label>Branch pattern</FormControl.Label>
               <FormControl.Caption>
                 One or more regular expressions separated by commas, for example ^main$, ^release/v2\.\d+. Across all patterns
                 each repository must match at most one branch.
@@ -400,22 +405,16 @@ export function ReviewSetFormPage() {
                 onChange={(event) => update({ branchRegex: event.target.value })}
                 placeholder="^main$, ^release/v2\\.\\d+"
               />
-            </>
-          ) : (
-            <FormControl.Caption>
-              Pick a source and target branch for every repository above. Repositories without a source branch are skipped.
-            </FormControl.Caption>
-          )}
-        </FormControl>
+            </FormControl>
 
-        {form.mode === 'pattern' ? (
-          <FormControl>
-            <FormControl.Label>Target branch</FormControl.Label>
-            <FormControl.Caption>
-              The branch your matched branches are compared against. It is created for repositories where it does not exist yet.
-            </FormControl.Caption>
-            <TextInput block value={form.targetBranch} onChange={(event) => update({ targetBranch: event.target.value })} />
-          </FormControl>
+            <FormControl>
+              <FormControl.Label>Target branch</FormControl.Label>
+              <FormControl.Caption>
+                The branch your matched branches are compared against. It is created for repositories where it does not exist yet.
+              </FormControl.Caption>
+              <TextInput block value={form.targetBranch} onChange={(event) => update({ targetBranch: event.target.value })} />
+            </FormControl>
+          </>
         ) : null}
 
         <div className="form-actions">
