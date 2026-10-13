@@ -71,7 +71,9 @@ async function loadCommits(
   baseSha?: string,
 ): Promise<CommitInfo[] | undefined> {
   try {
-    return await cached(commitsCache, `${connectionId}:${repo}:${baseSha ?? ''}:${headSha}`, () => client.listCommits(repo, { headSha, baseSha }));
+    return await cached(commitsCache, `${connectionId}:${repo}:${baseSha ?? ''}:${headSha}`, () =>
+      client.listCommits(repo, { headSha, baseSha, limit: 300 }),
+    );
   } catch (error) {
     console.error(`Could not list commits for ${repo}:`, error);
     return undefined;

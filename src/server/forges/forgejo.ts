@@ -425,8 +425,15 @@ export class ForgejoClient implements ForgeClient {
       const comparison = await this.compare(repo, options.baseSha, options.headSha);
       return comparison.commits.slice(0, limit);
     }
-    const commits = await this.request<GiteaCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&limit=${Math.min(limit, 50)}&page=1`);
+    const perPage = Math.min(limit, 50);
+    const commits = await this.request<GiteaCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&limit=${perPage}&page=1`);
+    for (let page = 2; commits.length < limit; page++) {
+      const next = await this.request<GiteaCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&limit=${perPage}&page=${page}`);
+      if (!next.length) break;
+      commits.push(...next);
+    }
     return commits
+      .slice(0, limit)
       .map((commit) => ({
         sha: commit.sha,
         message: commit.commit.message.split('\n')[0],

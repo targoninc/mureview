@@ -374,8 +374,14 @@ export class GithubClient implements ForgeClient {
       }
       return commits.slice(0, limit).map(toCommitInfo);
     }
-    const commits = await this.request<GithubCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&per_page=${Math.min(limit, 100)}`);
-    return commits.map(toCommitInfo).reverse();
+    const perPage = Math.min(limit, 100);
+    const commits = await this.request<GithubCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&per_page=${perPage}`);
+    for (let page = 2; commits.length < limit; page++) {
+      const next = await this.request<GithubCommit[]>(`/repos/${repo}/commits?sha=${options.headSha}&per_page=${perPage}&page=${page}`);
+      if (!next.length) break;
+      commits.push(...next);
+    }
+    return commits.slice(0, limit).map(toCommitInfo).reverse();
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {

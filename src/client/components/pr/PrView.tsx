@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
@@ -9,7 +9,7 @@ import { CommentDiscussionIcon, FileDiffIcon, GitCommitIcon, GitPullRequestIcon 
 import type { Comment, PrStatus, ReviewSetDetail } from '../../../shared/types';
 import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
-import { fileItemId, repoStatusText, treePathFor } from '../../lib/format';
+import { fileItemId, fileSegments, repoStatusText } from '../../lib/format';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { ServiceIcon, serviceDetail } from '../ServiceIcon';
 import { PrStatusBanner } from './PrStatusBanner';
@@ -72,6 +72,12 @@ export function PrView({ detail, onReload }: PrViewProps) {
     () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path))),
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const sidebarMin = 220;
+  const sidebarMax = () => Math.max(sidebarMin, window.innerWidth - 520);
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = Number(window.localStorage.getItem('mureview:sidebar-width'));
+    return Number.isFinite(stored) && stored > 0 ? Math.min(Math.max(stored, sidebarMin), sidebarMax()) : 320;
+  });
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleFrame = useRef<number | null>(null);
@@ -81,6 +87,29 @@ export function PrView({ detail, onReload }: PrViewProps) {
   useEffect(
     () => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path)))),
     [pr.reviewed],
+  );
+  useEffect(() => {
+    window.localStorage.setItem('mureview:sidebar-width', String(sidebarWidth));
+  }, [sidebarWidth]);
+
+  const beginSidebarResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const startX = event.clientX;
+      const startWidth = sidebarWidth;
+      const move = (moveEvent: PointerEvent) => {
+        setSidebarWidth(Math.min(Math.max(startWidth + moveEvent.clientX - startX, sidebarMin), sidebarMax()));
+      };
+      const finish = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', finish);
+        document.body.classList.remove('sidebar-resizing');
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', finish);
+      document.body.classList.add('sidebar-resizing');
+    },
+    [sidebarWidth],
   );
 
   const computeVisibleItems = useCallback(() => {
@@ -127,7 +156,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         parsed.map((entry) => ({
           ...entry,
           itemId: entry.id,
-          treePath: treePathFor(entry.host, entry.repo, entry.path),
+          segments: fileSegments(entry.host, entry.repo, entry.path),
         })),
       ),
     [parsed],
@@ -350,8 +379,9 @@ export function PrView({ detail, onReload }: PrViewProps) {
       </div>
       <div className="pr-body">
         {isMobile ? null : (
-          <aside className="pr-sidebar">
-            <div className="pr-sidebar-tabs">
+          <>
+            <aside className="pr-sidebar" style={{ width: sidebarWidth }}>
+              <div className="pr-sidebar-tabs">
               <Button
                 size="small"
                 variant={tab === 'files' ? 'primary' : 'invisible'}
@@ -379,6 +409,14 @@ export function PrView({ detail, onReload }: PrViewProps) {
             </div>
             <div className="pr-sidebar-content">{panelContent}</div>
           </aside>
+            <div
+              className="sidebar-resizer"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize the file panel"
+              onPointerDown={beginSidebarResize}
+            />
+          </>
         )}
         <div className="pr-main">
           <div className="pr-diffs">

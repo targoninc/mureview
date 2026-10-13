@@ -1,5 +1,6 @@
 export interface TreeEntry {
-  treePath: string;
+  /** Path segments, most general first; the last segment is the file name. */
+  segments: string[];
   itemId: string;
 }
 
@@ -24,7 +25,7 @@ export function buildFileTree<T extends TreeEntry>(entries: T[]): TreeNode<T>[] 
   const root: DirNode<T> = { kind: 'dir', name: '', key: '', children: [], fileIds: [] };
 
   for (const entry of entries) {
-    const segments = entry.treePath.split('/');
+    const segments = entry.segments;
     let node = root;
     segments.slice(0, -1).forEach((segment, index) => {
       const key = segments.slice(0, index + 1).join('/');
@@ -35,7 +36,7 @@ export function buildFileTree<T extends TreeEntry>(entries: T[]): TreeNode<T>[] 
       }
       node = child;
     });
-    node.children.push({ kind: 'file', name: segments[segments.length - 1], key: entry.treePath, entry });
+    node.children.push({ kind: 'file', name: segments[segments.length - 1], key: segments.join('/'), entry });
   }
 
   const assignFileIds = (node: DirNode<T>): string[] => {

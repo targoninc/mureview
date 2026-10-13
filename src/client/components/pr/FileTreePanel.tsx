@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon, FileIcon } from '@primer/octicons-react';
-import type { FileDiff, FileStatus, PrStatus } from '../../../shared/types';
+import type { FileDiff, FileStatus, ForgeKind, PrStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
-import { fileItemId, treePathFor } from '../../lib/format';
+import { fileItemId, fileSegments } from '../../lib/format';
+import { ServiceGlyph } from '../ServiceIcon';
 
 interface Entry extends TreeEntry {
   file: FileDiff;
+  path: string;
 }
 
 const statusLetter: Record<FileStatus, string> = {
@@ -47,14 +49,20 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
       for (const file of repo.files ?? []) {
         if (!file.patch) continue;
         list.push({
-          treePath: treePathFor(repo.host, repo.repo, file.path),
+          segments: fileSegments(repo.host, repo.repo, file.path),
           itemId: fileItemId(repo.connectionId, repo.repo, file.path),
           file,
+          path: file.path,
         });
       }
     }
     return list;
   }, [pr]);
+
+  const repoKinds = useMemo(
+    () => new Map<string, ForgeKind>(pr.repos.map((repo) => [`${repo.host}/${repo.repo}`, repo.kind])),
+    [pr],
+  );
 
   const tree = useMemo(() => buildFileTree(entries), [entries]);
 
@@ -73,6 +81,7 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
         const isCollapsed = collapsed.has(node.key);
         const allReviewed = node.fileIds.length > 0 && node.fileIds.every((id) => reviewedItems.has(id));
         const someReviewed = !allReviewed && node.fileIds.some((id) => reviewedItems.has(id));
+        const repoKind = repoKinds.get(node.key);
         return [
           <div key={node.key} className="tree-row tree-dir" style={indent} onClick={() => toggleDir(node.key)}>
             {onSetReviewed ? (
@@ -86,10 +95,12 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
               </span>
             ) : null}
             <span className="tree-chevron">{isCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}</span>
-            <span className="tree-icon tree-icon-dir">
-              <FileDirectoryIcon size={14} />
+            <span className={`tree-icon ${repoKind ? 'tree-icon-repo' : 'tree-icon-dir'}`}>
+              {repoKind ? <ServiceGlyph kind={repoKind} size={14} /> : <FileDirectoryIcon size={14} />}
             </span>
-            <span className="tree-name">{node.name}</span>
+            <span className="tree-name" title={node.name}>
+              {node.name}
+            </span>
           </div>,
           ...(isCollapsed ? [] : renderNodes(node.children, depth + 1)),
         ];
@@ -120,7 +131,9 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
           <span className="tree-icon">
             <FileIcon size={14} />
           </span>
-          <span className="tree-name">{node.name}</span>
+          <span className="tree-name" title={node.entry.path}>
+            {node.name}
+          </span>
           <span className="tree-stats">
             {file.additions > 0 ? <span className="additions">+{file.additions}</span> : null}
             {file.deletions > 0 ? <span className="deletions">−{file.deletions}</span> : null}

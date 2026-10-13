@@ -522,6 +522,24 @@ svg.checks-pending {
   overflow: auto;
 }
 
+.sidebar-resizer {
+  flex: none;
+  width: 5px;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color 120ms ease;
+}
+
+.sidebar-resizer:hover,
+body.sidebar-resizing .sidebar-resizer {
+  background-color: var(--fgColor-accent);
+}
+
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
 .pr-main {
   flex: 1;
   min-width: 0;
@@ -674,6 +692,10 @@ svg.checks-pending {
 
 .tree-icon-dir {
   color: var(--fgColor-accent);
+}
+
+.tree-icon-repo {
+  color: var(--fgColor-default);
 }
 
 .tree-checkbox {

@@ -18,8 +18,9 @@ export function fileItemId(connectionId: number, repo: string, path: string): st
   return `${connectionId}:${repo}:${path}`;
 }
 
-export function treePathFor(host: string, repo: string, path: string): string {
-  return `${host}/${repo}/${path}`;
+/** Tree segments for a changed file, keeping "owner/name" repositories atomic. */
+export function fileSegments(host: string, repo: string, path: string): string[] {
+  return [host, repo, ...path.split('/')];
 }
 
 export function repoLabelOf(repo: Pick<RepoStatus, 'host' | 'repo'>): string {

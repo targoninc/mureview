@@ -153,13 +153,8 @@ export class AdoClient implements ForgeClient {
     return { Authorization: `Basic ${credentials}`, Accept: accept, 'User-Agent': 'mureview' };
   }
 
-  private async request<T>(url: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
-    const { json, ...rest } = init;
-    const response = await fetch(url, {
-      ...rest,
-      headers: { ...this.headers(), ...(json !== undefined ? { 'Content-Type': 'application/json' } : {}), ...rest.headers },
-      body: json !== undefined ? JSON.stringify(json) : rest.body,
-    });
+  private async fetchResponse(url: string, init: RequestInit = {}): Promise<Response> {
+    const response = await fetch(url, { ...init, headers: { ...this.headers(), ...init.headers } });
     if (!ok(response) && response.status !== 204) {
       if (response.status === 203) {
         throw new ForgeError(401, 'Azure DevOps rejected the credentials and returned its sign-in page');
@@ -173,6 +168,16 @@ export class AdoClient implements ForgeClient {
       }
       throw new ForgeError(response.status, message);
     }
+    return response;
+  }
+
+  private async request<T>(url: string, init: RequestInit & { json?: unknown } = {}): Promise<T> {
+    const { json, ...rest } = init;
+    const response = await this.fetchResponse(url, {
+      ...rest,
+      headers: { ...(json !== undefined ? { 'Content-Type': 'application/json' } : {}), ...rest.headers },
+      body: json !== undefined ? JSON.stringify(json) : rest.body,
+    });
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }
@@ -509,15 +514,34 @@ export class AdoClient implements ForgeClient {
   }
 
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
-    const limit = Math.min(options.limit ?? 100, 300);
+    const limit = Math.min(options.limit ?? 300, 500);
     const compare = options.baseSha
-      ? `&searchCriteria.compareVersion.version=${options.baseSha}&searchCriteria.compareVersion.versionType=commit`
+      ? `&searchCriteria.compareVersion.version=${encodeURIComponent(options.baseSha)}&searchCriteria.compareVersion.versionType=commit`
       : '';
-    const data = await this.request<{ value: AdoCommit[] }>(
-      `${this.repoUrl(repo)}/commits?searchCriteria.itemVersion.version=${options.headSha}` +
-        `&searchCriteria.itemVersion.versionType=commit${compare}&$top=${limit}&api-version=7.1`,
-    );
-    return (data.value ?? [])
+    // The commits endpoint pages with $skip and, on busy repositories, a
+    // continuation token; walking them avoids silently dropping commits of
+    // long-running branches.
+    const commits: AdoCommit[] = [];
+    const seen = new Set<string>();
+    let continuation: string | null = null;
+    for (let page = 0; page < 6 && commits.length < limit; page++) {
+      const paging = continuation ? `&continuationToken=${encodeURIComponent(continuation)}` : `&searchCriteria.$skip=${page * 100}`;
+      const url =
+        `${this.repoUrl(repo)}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(options.headSha)}` +
+        `&searchCriteria.itemVersion.versionType=commit${compare}&searchCriteria.$top=100${paging}&api-version=7.1`;
+      const response = await this.fetchResponse(url);
+      const data = (await response.json()) as { value?: AdoCommit[] };
+      const batch = data.value ?? [];
+      for (const commit of batch) {
+        if (seen.has(commit.commitId)) continue;
+        seen.add(commit.commitId);
+        commits.push(commit);
+      }
+      continuation = response.headers.get('x-ms-continuationtoken');
+      if (!continuation && batch.length < 100) break;
+    }
+    return commits
+      .slice(0, limit)
       .map((commit) => ({
         sha: commit.commitId,
         message: commit.comment.split('\n')[0],
