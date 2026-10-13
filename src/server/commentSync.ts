@@ -76,10 +76,24 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
       ]);
     };
 
+    // For comments that exist on the forge, the forge account is the author
+    // to show; this also repairs rows stored before that was the case.
+    const applyForgeAuthor = (row: ExistingRow, comment: ForgeComment) => {
+      const name = comment.author.name && comment.author.name !== 'unknown' ? comment.author.name : null;
+      const avatar = comment.author.avatarUrl || null;
+      if (!name && !avatar) return;
+      if (row.author_name === (name ?? row.author_name) && row.author_avatar === (avatar ?? row.author_avatar)) return;
+      db.run('UPDATE comments SET author_name = COALESCE(?, author_name), author_avatar = COALESCE(?, author_avatar) WHERE id = ?', [
+        name,
+        avatar,
+        row.id,
+      ]);
+    };
+
     for (const comment of forgeComments) {
       if (knownIds.has(comment.id)) {
         const known = byForgeId.get(comment.id);
-        if (known) fillAuthor(known, comment);
+        if (known) applyForgeAuthor(known, comment);
         continue;
       }
       const duplicate = existing.find(

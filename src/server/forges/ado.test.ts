@@ -44,6 +44,28 @@ const server = Bun.serve({
       });
     }
 
+    if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/threads') {
+      return Response.json({
+        id: 12,
+        comments: [
+          {
+            id: 34,
+            author: {
+              displayName: 'Lena Muster',
+              _links: { avatar: { href: `http://localhost:${url.port}/avatars/lena.png` } },
+            },
+          },
+        ],
+      });
+    }
+
+    if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/threads/12/comments') {
+      return Response.json({
+        id: 35,
+        author: { displayName: 'Lena Muster', imageUrl: `http://localhost:${url.port}/avatars/lena.png` },
+      });
+    }
+
     if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/commits') {
       const skip = Number(url.searchParams.get('$skip') ?? 0);
       if (skip === 0) {
@@ -95,6 +117,21 @@ test('falls back to the branch comparison when the pull request is gone', async 
   expect(requests[0]).toContain('/pullrequests/8/commits');
   expect(requests[1]).toContain('searchCriteria.compareVersion.version=base');
   expect(requests).toHaveLength(3);
+});
+
+test('reports the account a comment was posted under', async () => {
+  const avatar = `http://localhost:${server.port}/avatars/lena.png`;
+  const posted = await client.postReviewComment('Proj/Repo', 7, { body: 'hi', path: 'src/a.ts', line: 3, side: 'additions' });
+  expect(posted).toEqual({ kind: 'line', id: '12:34', author: { name: 'Lena Muster', avatarUrl: avatar } });
+
+  const reply = await client.postReviewComment('Proj/Repo', 7, {
+    body: 're',
+    path: 'src/a.ts',
+    line: 3,
+    side: 'additions',
+    replyTo: '12:34',
+  });
+  expect(reply).toEqual({ kind: 'line', id: '12:35', author: { name: 'Lena Muster', avatarUrl: avatar } });
 });
 
 test('picks the soonest expiring code token for the organization', async () => {

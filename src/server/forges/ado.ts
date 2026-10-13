@@ -13,6 +13,7 @@ import {
   type ForgeComment,
   type ForgeRepo,
   ForgeError,
+  type PostedComment,
   type PullRequestRef,
   type ReviewComment,
   type TreeListing,
@@ -466,18 +467,18 @@ export class AdoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment> {
     const replyTo = comment.replyTo?.match(/^(\d+):(\d+)$/);
     if (replyTo) {
       try {
-        const created = await this.request<{ id: number }>(
+        const created = await this.request<{ id: number; author?: AdoCommentAuthor }>(
           `${this.repoUrl(repo)}/pullrequests/${number}/threads/${replyTo[1]}/comments?api-version=7.1`,
           {
             method: 'POST',
             json: { parentCommentId: Number(replyTo[2]), content: comment.body, commentType: 'text' },
           },
         );
-        return { kind: 'line', id: `${replyTo[1]}:${created.id}` };
+        return { kind: 'line', id: `${replyTo[1]}:${created.id}`, author: this.commentAuthor(created.author) };
       } catch (error) {
         if (!(error instanceof ForgeError)) throw error;
         // The thread may be gone; start a new thread below.
@@ -498,7 +499,7 @@ export class AdoClient implements ForgeClient {
           threadContext: context,
         },
       });
-      return { kind: 'line', id: threadId(thread) };
+      return { kind: 'line', id: threadId(thread), author: this.commentAuthor(thread.comments?.[0]?.author) };
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
       const thread = await this.request<AdoThread>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`, {
@@ -508,8 +509,14 @@ export class AdoClient implements ForgeClient {
           status: 'active',
         },
       });
-      return { kind: 'pull-request', id: threadId(thread) };
+      return { kind: 'pull-request', id: threadId(thread), author: this.commentAuthor(thread.comments?.[0]?.author) };
     }
+  }
+
+  /** The account a posted comment belongs to, for display in mureview. */
+  private commentAuthor(author?: AdoCommentAuthor): { name: string; avatarUrl: string } | undefined {
+    if (!author) return undefined;
+    return { name: author.displayName ?? '', avatarUrl: this.avatarUrl(author) };
   }
 
   /**

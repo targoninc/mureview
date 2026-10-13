@@ -13,6 +13,7 @@ import {
   type ForgeComment,
   type ForgeRepo,
   ForgeError,
+  type PostedComment,
   type PullRequestRef,
   type ReviewComment,
   type TreeListing,
@@ -334,10 +335,10 @@ export class ForgejoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment> {
     if (comment.replyTo && /^\d+$/.test(comment.replyTo)) {
       try {
-        const review = await this.request<{ comments?: { id: number }[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
+        const review = await this.request<{ comments?: GiteaReviewComment[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -346,8 +347,8 @@ export class ForgejoClient implements ForgeClient {
             comments: [{ body: comment.body, in_reply_to: Number(comment.replyTo) }],
           }),
         });
-        const id = review.comments?.[0]?.id;
-        return { kind: 'line', id: id !== undefined ? String(id) : undefined };
+        const created = review.comments?.[0];
+        return { kind: 'line', id: created ? String(created.id) : undefined, author: this.authorOf(created) };
       } catch (error) {
         if (!(error instanceof ForgeError)) throw error;
         // Older Forgejo versions do not know in_reply_to; post a regular
@@ -355,7 +356,7 @@ export class ForgejoClient implements ForgeClient {
       }
     }
     try {
-      const review = await this.request<{ comments?: { id: number }[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
+      const review = await this.request<{ comments?: GiteaReviewComment[] }>(`/repos/${repo}/pulls/${number}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -371,17 +372,30 @@ export class ForgejoClient implements ForgeClient {
           ],
         }),
       });
-      const id = review.comments?.[0]?.id;
-      return { kind: 'line', id: id !== undefined ? String(id) : undefined };
+      const created = review.comments?.[0];
+      return { kind: 'line', id: created ? String(created.id) : undefined, author: this.authorOf(created) };
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
-      const created = await this.request<{ id: number }>(`/repos/${repo}/issues/${number}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
-      });
-      return { kind: 'pull-request', id: String(created.id) };
+      const created = await this.request<{ id: number; user?: { login: string; avatar_url: string } | null }>(
+        `/repos/${repo}/issues/${number}/comments`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
+        },
+      );
+      return {
+        kind: 'pull-request',
+        id: String(created.id),
+        author: created.user ? { name: created.user.login, avatarUrl: this.absoluteAvatar(created.user.avatar_url) } : undefined,
+      };
     }
+  }
+
+  /** The account a posted review comment belongs to. */
+  private authorOf(comment?: GiteaReviewComment): { name: string; avatarUrl: string } | undefined {
+    const user = comment?.user ?? comment?.poster;
+    return user ? { name: user.login, avatarUrl: this.absoluteAvatar(user.avatar_url) } : undefined;
   }
 
   async listComments(repo: string, number: number): Promise<ForgeComment[]> {

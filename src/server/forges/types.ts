@@ -81,6 +81,13 @@ export interface ReviewComment {
   replyTo?: string;
 }
 
+export interface PostedComment {
+  kind: 'line' | 'pull-request';
+  id?: string;
+  /** The forge account the comment was posted as, when the forge reports it. */
+  author?: { name: string; avatarUrl: string };
+}
+
 export interface ForgeClient {
   readonly kind: ForgeKind;
   readonly baseUrl: string;
@@ -96,7 +103,7 @@ export interface ForgeClient {
   ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef>;
   mergePullRequest(repo: string, number: number, message: string): Promise<string>;
   pullRequestUrl(repo: string, number: number): string;
-  postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }>;
+  postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment>;
   listComments(repo: string, number: number): Promise<ForgeComment[]>;
   fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null>;
   listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]>;

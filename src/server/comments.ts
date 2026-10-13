@@ -67,7 +67,7 @@ function toComment(row: CommentRow): Comment {
     prId: row.pr_id,
     author: {
       name: row.author_name,
-      avatarUrl: row.source === 'forge' ? proxiedAvatar(row.connection_id, row.author_avatar) : row.author_avatar,
+      avatarUrl: proxiedAvatar(row.connection_id, row.author_avatar),
     },
     authorId: row.author_id,
     connectionId: row.connection_id,
@@ -205,6 +205,14 @@ async function syncCommentToPullRequest(userId: number, prId: number, row: Comme
       replyTo: parent?.forge_comment_id ?? undefined,
     });
     markCommentSynced(row.id, posted.id);
+    // The forge names the account the comment ended up under; show that
+    // account instead of the mureview sign-in identity.
+    if (posted.author && (posted.author.name || posted.author.avatarUrl)) {
+      db.run(
+        "UPDATE comments SET author_name = COALESCE(NULLIF(?, ''), author_name), author_avatar = COALESCE(NULLIF(?, ''), author_avatar) WHERE id = ?",
+        [posted.author.name, posted.author.avatarUrl, row.id],
+      );
+    }
   } catch (error) {
     console.error(`Could not sync comment ${row.id} to the forge:`, error);
   }

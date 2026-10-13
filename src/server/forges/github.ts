@@ -12,6 +12,7 @@ import {
   type ForgeComment,
   type ForgeRepo,
   ForgeError,
+  type PostedComment,
   type PullRequestRef,
   type ReviewComment,
   type TreeListing,
@@ -22,6 +23,10 @@ import {
 } from './types';
 
 const API = 'https://api.github.com';
+
+function authorOf(user?: GithubUser | null): { name: string; avatarUrl: string } | undefined {
+  return user ? { name: user.login, avatarUrl: user.avatar_url ?? '' } : undefined;
+}
 
 interface GithubUser {
   id: number;
@@ -280,15 +285,18 @@ export class GithubClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
-  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }> {
+  async postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment> {
     if (comment.replyTo) {
       try {
-        const reply = await this.request<{ id: number }>(`/repos/${repo}/pulls/${number}/comments/${comment.replyTo}/replies`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ body: comment.body }),
-        });
-        return { kind: 'line', id: String(reply.id) };
+        const reply = await this.request<{ id: number; user?: GithubUser | null }>(
+          `/repos/${repo}/pulls/${number}/comments/${comment.replyTo}/replies`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: comment.body }),
+          },
+        );
+        return { kind: 'line', id: String(reply.id), author: authorOf(reply.user) };
       } catch (error) {
         if (!(error instanceof ForgeError)) throw error;
         // The parent is not a review comment (an issue comment, say); fall
@@ -296,7 +304,7 @@ export class GithubClient implements ForgeClient {
       }
     }
     try {
-      const created = await this.request<{ id: number }>(`/repos/${repo}/pulls/${number}/comments`, {
+      const created = await this.request<{ id: number; user?: GithubUser | null }>(`/repos/${repo}/pulls/${number}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -307,16 +315,16 @@ export class GithubClient implements ForgeClient {
           commit_id: comment.commitId,
         }),
       });
-      return { kind: 'line', id: String(created.id) };
+      return { kind: 'line', id: String(created.id), author: authorOf(created.user) };
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
       // The line may not be part of the pull request diff; keep the comment.
-      const created = await this.request<{ id: number }>(`/repos/${repo}/issues/${number}/comments`, {
+      const created = await this.request<{ id: number; user?: GithubUser | null }>(`/repos/${repo}/issues/${number}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: `${comment.path}:${comment.line}\n\n${comment.body}` }),
       });
-      return { kind: 'pull-request', id: String(created.id) };
+      return { kind: 'pull-request', id: String(created.id), author: authorOf(created.user) };
     }
   }
 
