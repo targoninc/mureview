@@ -1,8 +1,9 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
 import { config } from '../config';
-import { decrypt, encrypt } from '../crypto';
-import { type ForgeConnectionRow, db } from '../db';
+// The database and crypto are imported lazily so importing this module (tests,
+// type checks) never opens the database.
+import type { ForgeConnectionRow } from '../db';
 import { withPatchHeader } from '../patch';
 import {
   type BranchInfo,
@@ -69,6 +70,7 @@ export function refreshGithubToken(connectionId: number): Promise<string> {
   const pending = refreshing.get(connectionId);
   if (pending) return pending;
   const task = (async () => {
+    const [{ db }, { decrypt, encrypt }] = await Promise.all([import('../db'), import('../crypto')]);
     const connection = db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(connectionId);
     if (!connection) throw new ForgeError(401, 'the GitHub connection was removed');
     const refreshToken = connection.refresh_token ? decrypt(connection.refresh_token) : '';

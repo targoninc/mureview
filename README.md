@@ -18,6 +18,8 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   email + password. All four end up in one account: sign-in methods and forge
   connections are separate, and connecting a forge identity that already
   belongs to another account merges that account's data into yours.
+- Several accounts per forge are fine (for example two GitHub accounts):
+  repositories from all of them show up in the review set search.
 - Forgejo is connected per user: register an OAuth2 application on your
   instance (Settings → Applications) with the callback URL
   `${BASE_URL}/api/auth/callback/forgejo` and paste its client id/secret into

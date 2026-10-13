@@ -1,14 +1,49 @@
 import { afterAll, expect, test } from 'bun:test';
-
-// Must be set before anything imports the database.
-process.env.DATABASE_PATH = `/tmp/opencode/github-forge-test-${process.pid}.db`;
-process.env.SESSION_SECRET = 'test-secret';
-
-const { GithubClient, exchangeGithubRefreshToken, refreshGithubToken } = await import('./github');
+import { upsertConnection } from '../auth/identities';
+import { decrypt } from '../crypto';
+import { db } from '../db';
+import { GithubClient, exchangeGithubRefreshToken, refreshGithubToken } from './github';
 
 const realFetch = globalThis.fetch;
 afterAll(() => {
   globalThis.fetch = realFetch;
+});
+
+test('the v10 migration keeps connections and their review set repositories', () => {
+  const connection = db.query<{ login: string }, [string]>('SELECT login FROM forge_connections WHERE login = ?').get('account-a');
+  expect(connection?.login).toBe('account-a');
+  const repo = db.query<{ repo: string }, []>('SELECT repo FROM review_set_repos').get();
+  expect(repo?.repo).toBe('acme/repo');
+});
+
+test('a second account on the same forge becomes its own connection', () => {
+  const second = upsertConnection(1, {
+    kind: 'github',
+    baseUrl: 'https://github.com',
+    accessToken: 'token-b',
+    refreshToken: 'refresh-b',
+    login: 'account-b',
+  });
+  expect(second.login).toBe('account-b');
+  const count = db
+    .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM forge_connections WHERE kind = 'github' AND base_url = 'https://github.com'")
+    .get();
+  expect(count?.count).toBe(2);
+});
+
+test('reconnecting the same account updates its connection', () => {
+  const first = upsertConnection(1, {
+    kind: 'github',
+    baseUrl: 'https://github.com',
+    accessToken: 'new-token',
+    login: 'account-a',
+  });
+  expect(first.login).toBe('account-a');
+  expect(decrypt(first.access_token)).toBe('new-token');
+  const count = db
+    .query<{ count: number }, []>("SELECT COUNT(*) AS count FROM forge_connections WHERE kind = 'github' AND base_url = 'https://github.com'")
+    .get();
+  expect(count?.count).toBe(2);
 });
 
 test('exchangeGithubRefreshToken exchanges and rotates the refresh token', async () => {
@@ -62,17 +97,12 @@ test('GithubClient surfaces a 401 when there is nothing to refresh with', async 
 });
 
 test('refreshGithubToken persists the rotated tokens', async () => {
-  const { upsertConnection } = await import('../auth/identities');
-  const { db } = await import('../db');
-  const { decrypt } = await import('../crypto');
-
-  const inserted = db.run("INSERT INTO users (name, avatar_url) VALUES ('tester', '')");
-  const connection = upsertConnection(Number(inserted.lastInsertRowid), {
+  const connection = upsertConnection(1, {
     kind: 'github',
-    baseUrl: 'https://github.com',
+    baseUrl: 'https://github.com/refresh',
     accessToken: 'expired',
     refreshToken: 'refresh-1',
-    login: 'tester',
+    login: 'refresher',
   });
 
   globalThis.fetch = (async () => Response.json({ access_token: 'fresh', refresh_token: 'refresh-2' })) as unknown as typeof fetch;
@@ -87,16 +117,11 @@ test('refreshGithubToken persists the rotated tokens', async () => {
 });
 
 test('refreshGithubToken fails cleanly without a stored refresh token', async () => {
-  const { upsertConnection } = await import('../auth/identities');
-  const { db } = await import('../db');
-  const { userById } = await import('../auth/identities');
-  const userId = db.query<{ id: number }, []>('SELECT id FROM users LIMIT 1').get()!.id;
-  const connection = upsertConnection(userId, {
+  const connection = upsertConnection(1, {
     kind: 'github',
-    baseUrl: 'https://github.com/other',
+    baseUrl: 'https://github.com/no-refresh',
     accessToken: 'expired',
-    login: 'tester',
+    login: 'no-refresh',
   });
-  expect(userById(userId)).toBeTruthy();
   await expect(refreshGithubToken(connection.id)).rejects.toThrow('reconnect GitHub');
 });

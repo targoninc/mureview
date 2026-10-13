@@ -79,9 +79,13 @@ function updateIdentityForLogin(userId: number, profile: IdentityProfile): void 
 
 export function upsertConnection(userId: number, input: ConnectionInput): ForgeConnectionRow {
   const baseUrl = input.baseUrl.replace(/\/+$/, '');
+  // One connection per account: reconnecting the same account updates its
+  // row, connecting another account on the same forge adds one.
   const existing = db
-    .query<ForgeConnectionRow, [number, string, string]>('SELECT * FROM forge_connections WHERE user_id = ? AND kind = ? AND base_url = ?')
-    .get(userId, input.kind, baseUrl);
+    .query<ForgeConnectionRow, [number, string, string, string]>(
+      'SELECT * FROM forge_connections WHERE user_id = ? AND kind = ? AND base_url = ? AND login = ?',
+    )
+    .get(userId, input.kind, baseUrl, input.login);
 
   const values = [
     input.clientId ?? existing?.client_id ?? '',

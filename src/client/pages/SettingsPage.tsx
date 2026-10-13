@@ -218,7 +218,7 @@ export function SettingsPage() {
                       setAdding(adding === option.key ? null : option.key);
                     }}
                   >
-                    {option.key === 'github' && hasGithub ? 'Reconnect GitHub' : `Connect ${option.name}`}
+                    {option.key === 'github' && hasGithub ? 'Connect another account' : `Connect ${option.name}`}
                   </Button>
                 </div>
                 {adding === option.key ? (

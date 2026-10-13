@@ -74,7 +74,7 @@ const SCHEMA_V2 = `
     login TEXT NOT NULL,
     avatar_url TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (user_id, kind, base_url)
+    UNIQUE (user_id, kind, base_url, login)
   );
 
   CREATE TABLE sessions (
@@ -430,7 +430,43 @@ if (userVersion() < 9) {
     db.exec("ALTER TABLE forge_connections ADD COLUMN refresh_token TEXT NOT NULL DEFAULT ''");
   }
 }
-db.exec('PRAGMA user_version = 9;');
+if (userVersion() < 10) {
+  // Several accounts per forge are allowed now, so a connection is unique per
+  // account rather than per forge.
+  const definition =
+    db
+      .query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'forge_connections'")
+      .get()?.sql ?? '';
+  if (!definition.includes('base_url, login')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE forge_connections_v10 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL,
+          base_url TEXT NOT NULL,
+          client_id TEXT NOT NULL DEFAULT '',
+          client_secret TEXT NOT NULL DEFAULT '',
+          access_token TEXT NOT NULL,
+          refresh_token TEXT NOT NULL DEFAULT '',
+          login TEXT NOT NULL,
+          avatar_url TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE (user_id, kind, base_url, login)
+        );
+        INSERT INTO forge_connections_v10 (id, user_id, kind, base_url, client_id, client_secret, access_token, refresh_token, login, avatar_url, created_at)
+          SELECT id, user_id, kind, base_url, client_id, client_secret, access_token, refresh_token, login, avatar_url, created_at FROM forge_connections;
+        DROP TABLE forge_connections;
+        ALTER TABLE forge_connections_v10 RENAME TO forge_connections;
+        CREATE INDEX IF NOT EXISTS idx_connections_user ON forge_connections(user_id);
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+db.exec('PRAGMA user_version = 10;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);
