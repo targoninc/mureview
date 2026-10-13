@@ -225,6 +225,10 @@ export class GithubClient implements ForgeClient {
     }
   }
 
+  pullRequestUrl(repo: string, number: number): string {
+    return `https://github.com/${repo}/pull/${number}`;
+  }
+
   async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
     await this.request(`/repos/${repo}/pulls/${number}/merge`, {
       method: 'PUT',

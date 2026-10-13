@@ -5,6 +5,7 @@ import { constants } from './config';
 import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
+import { ensureRepoPullRequests } from './pullRequests';
 import { listReviewed } from './reviewed';
 import { compileRegex, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
@@ -77,6 +78,7 @@ async function inspectBranch(
         ...status,
         targetExists: false,
         state: 'open',
+        headSha: branchSha,
         aheadBy: diff.files.length,
         additions: diff.additions,
         deletions: 0,
@@ -87,7 +89,7 @@ async function inspectBranch(
 
     const comparison = await client.compare(repo, targetRef.sha, branchSha);
     if (comparison.merged) {
-      return { ...status, targetExists: true, state: 'merged', aheadBy: comparison.aheadBy, behindBy: comparison.behindBy };
+      return { ...status, targetExists: true, state: 'merged', headSha: branchSha, aheadBy: comparison.aheadBy, behindBy: comparison.behindBy };
     }
 
     const files = comparison.files.map(toFileDiff);
@@ -96,6 +98,7 @@ async function inspectBranch(
       ...status,
       targetExists: true,
       state: 'open',
+      headSha: branchSha,
       aheadBy: comparison.aheadBy,
       behindBy: comparison.behindBy,
       additions: totals.additions,
@@ -169,6 +172,7 @@ export async function buildPrStatus(connections: ForgeConnectionRow[], reviewSet
 
   const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
   if (hasOpen && lifecycle) {
+    if (lifecycle.prId) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
     return {
       state: 'open',
       errors,

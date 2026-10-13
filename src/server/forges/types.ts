@@ -81,6 +81,7 @@ export interface ForgeClient {
   getBlobText(repo: string, sha: string): Promise<string | null>;
   ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef>;
   mergePullRequest(repo: string, number: number, message: string): Promise<string>;
+  pullRequestUrl(repo: string, number: number): string;
   postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'>;
   checks(repo: string, sha: string): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;

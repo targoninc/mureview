@@ -268,6 +268,10 @@ export class ForgejoClient implements ForgeClient {
     }
   }
 
+  pullRequestUrl(repo: string, number: number): string {
+    return `${this.baseUrl}/${repo}/pulls/${number}`;
+  }
+
   async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
     await this.request(`/repos/${repo}/pulls/${number}/merge`, {
       method: 'POST',

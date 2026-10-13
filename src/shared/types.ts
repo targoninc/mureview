@@ -98,6 +98,8 @@ export interface RepoStatus {
   additions?: number;
   deletions?: number;
   truncated?: boolean;
+  headSha?: string;
+  pullRequest?: { number: number; url: string };
   files?: FileDiff[];
 }
 
@@ -113,6 +115,7 @@ export interface Comment {
   line: number | null;
   side: 'additions' | 'deletions' | null;
   body: string;
+  synced: boolean;
   createdAt: string;
 }
 
@@ -186,6 +189,7 @@ export interface MergePreviewRepo {
   checkedFiles: number;
   uncheckedFiles: number;
   checks: ChecksSummary;
+  pullRequest?: { number: number; url: string };
   error?: string;
 }
 

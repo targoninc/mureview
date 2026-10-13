@@ -342,6 +342,13 @@ export class AdoClient implements ForgeClient {
     }
   }
 
+  pullRequestUrl(repo: string, number: number): string {
+    const slash = repo.indexOf('/');
+    const project = encodeURIComponent(repo.slice(0, slash));
+    const name = encodeURIComponent(repo.slice(slash + 1));
+    return `${this.baseUrl}/${project}/_git/${name}/pullrequest/${number}`;
+  }
+
   async mergePullRequest(repo: string, number: number, message: string): Promise<string> {
     const pull = await this.request<AdoPull>(`${this.repoUrl(repo)}/pullrequests/${number}?api-version=7.1`);
     await this.request(`${this.repoUrl(repo)}/pullrequests/${number}?api-version=7.1`, {

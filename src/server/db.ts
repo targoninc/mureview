@@ -124,7 +124,18 @@ const SCHEMA_V2 = `
     line INTEGER,
     side TEXT,
     body TEXT NOT NULL,
+    synced_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE pull_request_repos (
+    pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+    connection_id INTEGER NOT NULL,
+    repo TEXT NOT NULL,
+    forge_pr_number INTEGER NOT NULL,
+    head_sha TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (pr_id, connection_id, repo)
   );
 
   CREATE TABLE reviewed_files (
@@ -262,7 +273,24 @@ if (!hasTable('users')) {
   run();
   db.exec('PRAGMA foreign_keys = ON;');
 }
-db.exec('PRAGMA user_version = 2;');
+if (userVersion() < 3) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pull_request_repos (
+      pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+      connection_id INTEGER NOT NULL,
+      repo TEXT NOT NULL,
+      forge_pr_number INTEGER NOT NULL,
+      head_sha TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (pr_id, connection_id, repo)
+    );
+  `);
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(comments)').all();
+  if (!columns.some((column) => column.name === 'synced_at')) {
+    db.exec('ALTER TABLE comments ADD COLUMN synced_at TEXT');
+  }
+}
+db.exec('PRAGMA user_version = 3;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

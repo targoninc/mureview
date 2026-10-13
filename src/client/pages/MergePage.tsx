@@ -41,6 +41,11 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
           <span className="mono" style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
             {repo.branch} → {repo.target}
           </span>
+          {repo.pullRequest ? (
+            <a className="forge-link" href={repo.pullRequest.url} target="_blank" rel="noreferrer">
+              Pull request #{repo.pullRequest.number}
+            </a>
+          ) : null}
         </div>
         <div className="row" style={{ gap: 6 }}>
           {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}

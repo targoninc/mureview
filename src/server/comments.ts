@@ -1,8 +1,10 @@
 import type { Comment, CommentInput } from '../shared/types';
-import { connectionsFor } from './auth/identities';
+import { connectionById, connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
 import { db } from './db';
+import { clientFor } from './forges';
 import { HttpError, json, readJson } from './http';
+import { markCommentSynced, repoPullRequest } from './pullRequests';
 import type { Ctx } from './router';
 
 interface CommentRow {
@@ -16,6 +18,7 @@ interface CommentRow {
   line: number | null;
   side: string | null;
   body: string;
+  synced_at: string | null;
   created_at: string;
 }
 
@@ -39,8 +42,16 @@ function toComment(row: CommentRow): Comment {
     line: row.line,
     side: row.side === 'additions' || row.side === 'deletions' ? row.side : null,
     body: row.body,
+    synced: row.synced_at !== null,
     createdAt: row.created_at,
   };
+}
+
+export function listUnsyncedComments(prId: number): Comment[] {
+  const rows = db
+    .query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.pr_id = ? AND c.path IS NOT NULL AND c.synced_at IS NULL ORDER BY c.id`)
+    .all(prId);
+  return rows.map(toComment);
 }
 
 export function listComments(prId: number): Comment[] {
@@ -99,8 +110,35 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
     anchor.side,
     body,
   ]);
-  const row = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(Number(inserted.lastInsertRowid))!;
-  return json({ comment: toComment(row) }, 201);
+  const commentId = Number(inserted.lastInsertRowid);
+  const row = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
+  await syncCommentToPullRequest(user.id, pr.id, row);
+  const synced = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
+  return json({ comment: toComment(synced) }, 201);
+}
+
+/**
+ * Line comments are mirrored onto the repository's forge pull request right
+ * away; general comments stay in mureview.
+ */
+async function syncCommentToPullRequest(userId: number, prId: number, row: CommentRow): Promise<void> {
+  if (!row.path || row.connection_id === null || !row.repo || row.line === null || !row.side) return;
+  const pull = repoPullRequest(prId, row.connection_id, row.repo);
+  if (!pull) return;
+  const connection = connectionById(userId, row.connection_id);
+  if (!connection) return;
+  try {
+    await clientFor(connection).postReviewComment(row.repo, pull.forge_pr_number, {
+      body: row.body,
+      path: row.path,
+      line: row.line,
+      side: row.side as 'additions' | 'deletions',
+      commitId: pull.head_sha || undefined,
+    });
+    markCommentSynced(row.id);
+  } catch (error) {
+    console.error(`Could not sync comment ${row.id} to the forge:`, error);
+  }
 }
 
 export function deleteCommentRoute(ctx: Ctx): Response {

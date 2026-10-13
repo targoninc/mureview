@@ -106,6 +106,16 @@ body {
   background-color: var(--bgColor-default);
 }
 
+.forge-link {
+  font-size: 12px;
+  color: var(--fgColor-accent);
+  text-decoration: none;
+}
+
+.forge-link:hover {
+  text-decoration: underline;
+}
+
 .check-row {
   display: flex;
   align-items: center;

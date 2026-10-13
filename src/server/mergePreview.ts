@@ -89,6 +89,7 @@ export async function buildMergePreview(connections: ForgeConnectionRow[], revie
       checkedFiles: 0,
       uncheckedFiles: 0,
       checks: { state: 'none', runs: [] },
+      pullRequest: repo.pullRequest,
     };
     if (!client) return { ...base, conflicts: 'unknown', checks: { state: 'unknown', runs: [] }, error: 'the forge connection was removed' };
     try {
