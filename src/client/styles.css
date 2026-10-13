@@ -2,6 +2,20 @@ html {
   color-scheme: dark;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji',
     'Segoe UI Emoji';
+  /* File icon colours, copied from @pierre/trees' colored icon theme. */
+  --trees-icon-gray: light-dark(#84848a, #adadb1);
+  --trees-icon-red: light-dark(#d52c36, #ff6762);
+  --trees-icon-vermilion: light-dark(#ff8c5b, #d5512f);
+  --trees-icon-orange: light-dark(#d47628, #ffa359);
+  --trees-icon-yellow: light-dark(#d5a910, #ffd452);
+  --trees-icon-green: light-dark(#199f43, #5ecc71);
+  --trees-icon-teal: light-dark(#17a5af, #64d1db);
+  --trees-icon-cyan: light-dark(#1ca1c7, #68cdf2);
+  --trees-icon-blue: light-dark(#1a85d4, #69b1ff);
+  --trees-icon-indigo: light-dark(#693acf, #9d6afb);
+  --trees-icon-purple: light-dark(#a631be, #d568ea);
+  --trees-icon-pink: light-dark(#d32a61, #ff678d);
+  --trees-icon-mauve: light-dark(#594c5b, #79697b);
 }
 
 html,
@@ -163,6 +177,19 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.pr-checks-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+
+.pr-checks-group:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .check-dot {

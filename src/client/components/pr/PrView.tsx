@@ -4,8 +4,15 @@ import { useNavigate } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
-import { Button, Checkbox, Dialog, Label } from '@primer/react';
-import { CommentDiscussionIcon, FileDiffIcon, GitCommitIcon, GitPullRequestIcon } from '@primer/octicons-react';
+import { Button, Checkbox, Dialog, IconButton, Label } from '@primer/react';
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CommentDiscussionIcon,
+  FileDiffIcon,
+  GitCommitIcon,
+  GitPullRequestIcon,
+} from '@primer/octicons-react';
 import type { Comment, PrStatus, RepoChecks, ReviewSetDetail } from '../../../shared/types';
 import { api, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
@@ -67,6 +74,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const [tab, setTab] = useState<'files' | 'commits' | 'conversation'>('files');
   const [panel, setPanel] = useState<'files' | 'commits' | 'conversation' | null>(null);
   const [pullsOpen, setPullsOpen] = useState(false);
+  const [collapsedChecks, setCollapsedChecks] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
   const [reviewed, setReviewedItems] = useState<Set<string>>(
@@ -485,16 +493,34 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           footerButtons={[{ content: 'Close', onClick: () => setPullsOpen(false), buttonType: 'default' }]}
         >
           <div className="stack" style={{ gap: 20 }}>
-            <div className="stack" style={{ gap: 8 }}>
+            <div className="stack" style={{ gap: 0 }}>
               <strong style={{ fontSize: 12 }}>Open pull requests</strong>
               {pullRequests.length === 0 ? (
                 <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No pull requests yet.</span>
               ) : null}
               {pullRequests.map((repo) => {
                 const repoChecks = checksByRepo.get(`${repo.connectionId}:${repo.repo}`);
+                const key = `${repo.connectionId}:${repo.repo}`;
+                const isCollapsed = collapsedChecks.has(key);
                 return (
-                  <div className="stack" key={`${repo.connectionId}:${repo.repo}`} style={{ gap: 6 }}>
+                  <div className="pr-checks-group" key={key}>
                     <div className="dialog-row">
+                      {repoChecks && repoChecks.runs.length > 0 ? (
+                        <IconButton
+                          icon={isCollapsed ? ChevronRightIcon : ChevronDownIcon}
+                          aria-label={isCollapsed ? 'Show checks' : 'Hide checks'}
+                          variant="invisible"
+                          size="small"
+                          onClick={() =>
+                            setCollapsedChecks((current) => {
+                              const next = new Set(current);
+                              if (next.has(key)) next.delete(key);
+                              else next.add(key);
+                              return next;
+                            })
+                          }
+                        />
+                      ) : null}
                       <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
                         <span className="row" style={{ gap: 6 }}>
                           <ServiceIcon kind={repo.kind} detail={serviceDetail(repo.kind, repo)} />
@@ -522,7 +548,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                         <span style={{ color: 'var(--fgColor-muted)', fontSize: 12, paddingLeft: 8 }}>
                           No checks reported for this branch.
                         </span>
-                      ) : (
+                      ) : isCollapsed ? null : (
                         <div className="stack" style={{ gap: 6, paddingLeft: 8 }}>
                           {repoChecks.runs.map((run) => (
                             <div className="check-row" key={run.name}>
