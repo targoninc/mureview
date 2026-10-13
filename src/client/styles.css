@@ -629,11 +629,6 @@ body.sidebar-resizing {
   border-top: none;
 }
 
-.comment-nested {
-  margin-left: 20px;
-  border-left: 2px solid var(--borderColor-muted);
-}
-
 .comment-reply-composer {
   padding: 0 12px 12px;
 }

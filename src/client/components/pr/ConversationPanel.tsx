@@ -16,14 +16,13 @@ export function ConversationPanel({ prId, comments, repos, canModerate, onAdded,
 
   return (
     <div className="conversation">
-      <CommentComposer
-        prId={prId}
-        anchor={{ connectionId: null, repo: null, path: null, line: null, side: null }}
-        placeholder="Start a conversation on this pull request"
-        onDone={onAdded}
-      />
       {general.length === 0 ? (
-        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No general comments yet.</span>
+        <CommentComposer
+          prId={prId}
+          anchor={{ connectionId: null, repo: null, path: null, line: null, side: null }}
+          placeholder="Start a conversation on this pull request"
+          onDone={onAdded}
+        />
       ) : (
         <CommentThread prId={prId} comments={general} repos={repos} canModerate={canModerate} onAdded={onAdded} onDeleted={onDeleted} />
       )}
