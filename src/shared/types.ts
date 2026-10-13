@@ -23,6 +23,18 @@ export interface ForgeConnectionInfo {
   login: string;
   avatarUrl: string;
   manageUrl: string | null;
+  /** For Tangled: whether an atproto sign-in exists to write with. */
+  writeReady?: boolean;
+}
+
+export interface CommentInput {
+  connectionId: number | null;
+  repo: string | null;
+  position?: number;
+  path: string | null;
+  login: string;
+  avatarUrl: string;
+  manageUrl: string | null;
 }
 
 export interface MeResponse {
@@ -62,7 +74,7 @@ export interface LoadProgress {
   finished: boolean;
 }
 
-export type ReviewSetMode = 'pattern' | 'per-repo';
+export type ReviewSetMode = 'pattern' | 'per-repo' | 'stack';
 
 export interface ReviewSetRepo {
   connectionId: number;
@@ -70,10 +82,12 @@ export interface ReviewSetRepo {
   kind: ForgeKind;
   host: string;
   org: string | null;
-  /** Selected source branch in per-repo mode. */
+  /** Selected source branch in per-repo and stack modes. */
   branch: string | null;
-  /** Selected target branch in per-repo mode. */
+  /** Selected target branch in per-repo mode; the layer below in stack mode. */
   target: string | null;
+  /** The layer of a stack; 0 for pattern and per-repo review sets. */
+  position: number;
 }
 
 export interface ReviewSet {
@@ -90,7 +104,7 @@ export interface ReviewSet {
 
 export interface ReviewSetInput {
   name: string;
-  repos: { connectionId: number; repo: string; branch?: string | null; target?: string | null }[];
+  repos: { connectionId: number; repo: string; branch?: string | null; target?: string | null; position?: number }[];
   mode: ReviewSetMode;
   branchRegex: string;
   targetBranch: string;
@@ -147,6 +161,10 @@ export interface RepoStatus {
   branch: string | null;
   /** The branch the matched branch is compared against. */
   target: string;
+  /** The layer of a stack this entry is; 0 otherwise. */
+  position: number;
+  /** A note about a collapsed or missing layer, for the review page. */
+  note?: string;
   targetExists: boolean;
   state: RepoPrState;
   aheadBy?: number;
@@ -156,6 +174,8 @@ export interface RepoStatus {
   truncated?: boolean;
   headSha?: string;
   pullRequest?: { ref: string; url: string };
+  /** Why creating the forge pull request failed, when it did. */
+  prError?: string;
   commits?: CommitInfo[];
   commitsTruncated?: boolean;
   files?: FileDiff[];
@@ -171,6 +191,7 @@ export interface Comment {
   authorId: number | null;
   connectionId: number | null;
   repo: string | null;
+  position: number;
   path: string | null;
   line: number | null;
   side: 'additions' | 'deletions' | null;
@@ -205,6 +226,7 @@ export interface CommentInput {
 export interface ReviewMark {
   connectionId: number;
   repo: string;
+  position: number;
   path: string;
 }
 
@@ -212,6 +234,8 @@ export interface PrStatus {
   state: PrLifecycle;
   errors: string[];
   repos: RepoStatus[];
+  /** For stacked review sets: one cumulative diff per repository (position -1). */
+  combined?: RepoStatus[];
   prId: number | null;
   comments: Comment[];
   reviewed: ReviewMark[];
@@ -252,6 +276,8 @@ export interface MergePreviewRepo {
   kind: ForgeKind;
   host: string;
   repo: string;
+  /** The layer of a stack this entry is; 0 otherwise. */
+  position: number;
   branch: string;
   target: string;
   targetExists: boolean;
@@ -275,18 +301,20 @@ export interface MergePreviewRepo {
 export interface ReviewSetDiscussion {
   comments: Comment[];
   reviewed: ReviewMark[];
-  pullRequests: { connectionId: number; repo: string; ref: string; url: string }[];
+  pullRequests: { connectionId: number; repo: string; position: number; ref: string; url: string }[];
 }
 
 export interface RepoCommits {
   connectionId: number;
   repo: string;
+  position: number;
   commits: CommitInfo[];
 }
 
 export interface RepoChecks {
   connectionId: number;
   repo: string;
+  position: number;
   checks: ChecksSummary;
 }
 

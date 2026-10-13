@@ -18,6 +18,7 @@ interface RepoRow {
   repo: string;
   branch: string | null;
   target_branch: string | null;
+  position: number;
   kind: ForgeKind;
   base_url: string;
 }
@@ -25,11 +26,11 @@ interface RepoRow {
 function reposFor(reviewSetId: number): ReviewSetRepo[] {
   return db
     .query<RepoRow, [number]>(
-      `SELECT rsr.connection_id, rsr.repo, rsr.branch, rsr.target_branch, fc.kind, fc.base_url
+      `SELECT rsr.connection_id, rsr.repo, rsr.branch, rsr.target_branch, rsr.position, fc.kind, fc.base_url
        FROM review_set_repos rsr
        JOIN forge_connections fc ON fc.id = rsr.connection_id
        WHERE rsr.review_set_id = ?
-       ORDER BY fc.kind, fc.base_url, rsr.repo`,
+       ORDER BY fc.kind, fc.base_url, rsr.repo, rsr.position`,
     )
     .all(reviewSetId)
     .map((row) => ({
@@ -40,6 +41,7 @@ function reposFor(reviewSetId: number): ReviewSetRepo[] {
       org: organizationOf(row.base_url),
       branch: row.branch,
       target: row.target_branch,
+      position: row.position,
     }));
 }
 
@@ -48,7 +50,7 @@ function toReviewSet(row: ReviewSetRow): ReviewSet {
     id: row.id,
     name: row.name,
     repos: reposFor(row.id),
-    mode: row.mode === 'per-repo' ? 'per-repo' : 'pattern',
+    mode: row.mode === 'per-repo' || row.mode === 'stack' ? row.mode : 'pattern',
     branchRegex: row.branch_regex,
     targetBranch: row.target_branch,
     createdAt: row.created_at,
@@ -82,7 +84,7 @@ export function requireId(ctx: Ctx): number {
 function parseInput(user: UserRow, body: unknown): ReviewSetInput {
   const record = (body ?? {}) as Record<string, unknown>;
   const name = requireString(record.name, 'name', 200);
-  const mode: ReviewSetInput['mode'] = record.mode === 'per-repo' ? 'per-repo' : 'pattern';
+  const mode: ReviewSetInput['mode'] = record.mode === 'per-repo' || record.mode === 'stack' ? record.mode : 'pattern';
 
   const raw = Array.isArray(record.repos) ? record.repos : [];
   const connections = new Set(connectionsFor(user.id).map((connection) => connection.id));
@@ -90,30 +92,61 @@ function parseInput(user: UserRow, body: unknown): ReviewSetInput {
   const seen = new Set<string>();
 
   for (const entry of raw) {
-    const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown; branch?: unknown; target?: unknown };
+    const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown; branch?: unknown; target?: unknown; position?: unknown };
     const connectionId = Number(item.connectionId);
     if (!Number.isInteger(connectionId) || !connections.has(connectionId)) {
       throw new HttpError(400, 'Every repository must reference one of your forge connections.');
     }
     const repo = typeof item.repo === 'string' ? normalizeRepo(item.repo) : null;
     if (!repo) throw new HttpError(400, `"${String(item.repo)}" is not a valid repository name. Use "owner/name".`);
-    const key = `${connectionId}:${repo}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
 
     const branch = typeof item.branch === 'string' && item.branch.trim() ? item.branch.trim().slice(0, 255) : null;
     const target = typeof item.target === 'string' && item.target.trim() ? item.target.trim().slice(0, 255) : null;
-    if (mode === 'per-repo' && (!branch || !target)) {
-      throw new HttpError(400, `Pick a source and target branch for ${repo}.`);
+    const position = Number.isInteger(Number(item.position)) && Number(item.position) >= 0 ? Number(item.position) : 0;
+
+    if (mode === 'stack') {
+      if (!branch) throw new HttpError(400, `Every layer of a stack needs a branch (${repo}).`);
+      const key = `${connectionId}:${repo}:${position}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    } else {
+      const key = `${connectionId}:${repo}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (mode === 'per-repo' && (!branch || !target)) {
+        throw new HttpError(400, `Pick a source and target branch for ${repo}.`);
+      }
     }
-    repos.push({ connectionId, repo, branch, target });
+    repos.push({ connectionId, repo, branch, target: mode === 'stack' ? null : target, position: mode === 'stack' ? position : 0 });
   }
 
   if (!repos.length) throw new HttpError(400, 'Add at least one repository.');
   if (repos.length > 50) throw new HttpError(400, 'A review set can include at most 50 repositories.');
 
-  const branchRegex = mode === 'per-repo' ? '' : requireString(record.branchRegex, 'branchRegex', 500);
-  const targetBranch = mode === 'per-repo' ? '' : requireString(record.targetBranch, 'targetBranch', 255);
+  if (mode === 'stack') {
+    // Every repository's layers must be numbered 0..n-1 without gaps, and no
+    // branch may appear twice in one stack.
+    const byRepo = new Map<string, { positions: number[]; branches: string[] }>();
+    for (const repo of repos) {
+      const key = `${repo.connectionId}:${repo.repo}`;
+      const group = byRepo.get(key) ?? { positions: [], branches: [] };
+      group.positions.push(repo.position ?? 0);
+      group.branches.push(repo.branch!);
+      byRepo.set(key, group);
+    }
+    for (const [key, group] of byRepo) {
+      const sorted = [...group.positions].sort((a, b) => a - b);
+      if (sorted.some((position, index) => position !== index)) {
+        throw new HttpError(400, `The layers of ${key.split(':')[1]} must be numbered in order without gaps.`);
+      }
+      if (new Set(group.branches).size !== group.branches.length) {
+        throw new HttpError(400, `A branch can only appear once in the stack of ${key.split(':')[1]}.`);
+      }
+    }
+  }
+
+  const branchRegex = mode === 'pattern' ? requireString(record.branchRegex, 'branchRegex', 500) : '';
+  const targetBranch = requireString(record.targetBranch, 'targetBranch', 255);
   return { name, repos, mode, branchRegex, targetBranch };
 }
 
@@ -121,13 +154,10 @@ function saveRepos(reviewSetId: number, repos: ReviewSetInput['repos']): void {
   const apply = db.transaction(() => {
     db.run('DELETE FROM review_set_repos WHERE review_set_id = ?', [reviewSetId]);
     for (const repo of repos) {
-      db.run('INSERT INTO review_set_repos (review_set_id, connection_id, repo, branch, target_branch) VALUES (?, ?, ?, ?, ?)', [
-        reviewSetId,
-        repo.connectionId,
-        repo.repo,
-        repo.branch ?? null,
-        repo.target ?? null,
-      ]);
+      db.run(
+        'INSERT INTO review_set_repos (review_set_id, connection_id, repo, position, branch, target_branch) VALUES (?, ?, ?, ?, ?, ?)',
+        [reviewSetId, repo.connectionId, repo.repo, repo.position ?? 0, repo.branch ?? null, repo.target ?? null],
+      );
     }
   });
   apply();
@@ -253,11 +283,11 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   if (status.prId && status.state === 'open') {
     const clients = clientsFor(connections);
     const targets = db
-      .query<{ connection_id: number; repo: string; forge_pr_ref: string }, [number]>(
-        'SELECT connection_id, repo, forge_pr_ref FROM pull_request_repos WHERE pr_id = ?',
+      .query<{ connection_id: number; repo: string; position: number; forge_pr_ref: string }, [number]>(
+        'SELECT connection_id, repo, position, forge_pr_ref FROM pull_request_repos WHERE pr_id = ?',
       )
       .all(status.prId)
-      .map((row) => ({ connectionId: row.connection_id, repo: row.repo, pullRequestRef: row.forge_pr_ref }));
+      .map((row) => ({ connectionId: row.connection_id, repo: row.repo, position: row.position, pullRequestRef: row.forge_pr_ref }));
     await syncForgeComments(status.prId, clients, targets, ctx.url.searchParams.get('sync') === 'force');
   }
 

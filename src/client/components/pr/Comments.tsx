@@ -19,6 +19,7 @@ import type { Side } from './annotations';
 export interface CommentAnchor {
   connectionId: number | null;
   repo: string | null;
+  position?: number;
   path: string | null;
   line: number | null;
   side: Side | null;
@@ -75,6 +76,7 @@ export function CommentThread({
     ? {
         connectionId: anchored.connectionId,
         repo: anchored.repo,
+        position: anchored.position,
         path: anchored.path,
         line: anchored.line,
         side: anchored.side,

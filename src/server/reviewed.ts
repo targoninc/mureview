@@ -9,7 +9,7 @@ import type { Ctx } from './router';
 export function listReviewed(prId: number, userId: number): ReviewMark[] {
   return db
     .query<ReviewMark, [number, number]>(
-      'SELECT connection_id AS connectionId, repo, path FROM reviewed_files WHERE pr_id = ? AND user_id = ? ORDER BY connection_id, repo, path',
+      'SELECT connection_id AS connectionId, repo, position, path FROM reviewed_files WHERE pr_id = ? AND user_id = ? ORDER BY connection_id, repo, position, path',
     )
     .all(prId, userId);
 }
@@ -25,13 +25,14 @@ interface ReviewedInput {
 const maxBatch = 5000;
 
 function parseMark(value: unknown): ReviewMark {
-  const record = (value ?? {}) as { connectionId?: unknown; repo?: unknown; path?: unknown };
+  const record = (value ?? {}) as { connectionId?: unknown; repo?: unknown; position?: unknown; path?: unknown };
   const connectionId = Number(record.connectionId);
   if (!Number.isInteger(connectionId) || connectionId <= 0) throw new HttpError(400, 'Each file needs a "connectionId".');
   if (typeof record.repo !== 'string' || !record.repo) throw new HttpError(400, 'Each file needs a "repo".');
   if (typeof record.path !== 'string' || !record.path) throw new HttpError(400, 'Each file needs a "path".');
   if (record.path.length > 1000) throw new HttpError(400, '"path" is too long.');
-  return { connectionId, repo: record.repo, path: record.path };
+  const position = Number.isInteger(Number(record.position)) && Number(record.position) >= 0 ? Number(record.position) : 0;
+  return { connectionId, repo: record.repo, position, path: record.path };
 }
 
 export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
@@ -51,29 +52,31 @@ export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
 
   for (const mark of marks) {
     const known = db
-      .query<{ repo: string }, [number, number, string]>(
-        'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ?',
+      .query<{ repo: string }, [number, number, string, number]>(
+        'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ? AND position = ?',
       )
-      .get(pr.review_set_id, mark.connectionId, mark.repo);
+      .get(pr.review_set_id, mark.connectionId, mark.repo, mark.position);
     if (!known) throw new HttpError(400, 'A file does not belong to this review set.');
   }
 
   const apply = db.transaction((entries: ReviewMark[]) => {
     for (const entry of entries) {
       if (reviewed) {
-        db.run('INSERT OR IGNORE INTO reviewed_files (pr_id, user_id, connection_id, repo, path) VALUES (?, ?, ?, ?, ?)', [
+        db.run('INSERT OR IGNORE INTO reviewed_files (pr_id, user_id, connection_id, repo, position, path) VALUES (?, ?, ?, ?, ?, ?)', [
           pr.id,
           user.id,
           entry.connectionId,
           entry.repo,
+          entry.position,
           entry.path,
         ]);
       } else {
-        db.run('DELETE FROM reviewed_files WHERE pr_id = ? AND user_id = ? AND connection_id = ? AND repo = ? AND path = ?', [
+        db.run('DELETE FROM reviewed_files WHERE pr_id = ? AND user_id = ? AND connection_id = ? AND repo = ? AND position = ? AND path = ?', [
           pr.id,
           user.id,
           entry.connectionId,
           entry.repo,
+          entry.position,
           entry.path,
         ]);
       }

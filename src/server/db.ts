@@ -107,7 +107,8 @@ const SCHEMA_V2 = `
     review_set_id INTEGER NOT NULL REFERENCES review_sets(id) ON DELETE CASCADE,
     connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
     repo TEXT NOT NULL,
-    PRIMARY KEY (review_set_id, connection_id, repo)
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (review_set_id, connection_id, repo, position)
   );
 
   CREATE TABLE pull_requests (
@@ -132,6 +133,7 @@ const SCHEMA_V2 = `
     synced_at TEXT,
     forge_comment_id TEXT,
     source TEXT NOT NULL DEFAULT 'mureview',
+    position INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -141,19 +143,21 @@ const SCHEMA_V2 = `
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
     connection_id INTEGER NOT NULL,
     repo TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
     forge_pr_ref TEXT NOT NULL,
     head_sha TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (pr_id, connection_id, repo)
+    PRIMARY KEY (pr_id, connection_id, repo, position)
   );
 
   CREATE TABLE reviewed_files (
     pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
     connection_id INTEGER NOT NULL,
     repo TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
     path TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (pr_id, connection_id, repo, path)
+    PRIMARY KEY (pr_id, connection_id, repo, position, path)
   );
 
   CREATE TABLE settings (
@@ -509,7 +513,84 @@ if (userVersion() < 11) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
-db.exec('PRAGMA user_version = 11;');
+if (userVersion() < 12) {
+  // Stacks: a repository holds an ordered list of branches, and comments,
+  // reviewed marks and forge pull requests belong to one layer of it.
+  const columns = (table: string): { name: string }[] =>
+    hasTable(table) ? db.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all() : [];
+  if (columns('review_set_repos').length && !columns('review_set_repos').some((column) => column.name === 'position')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE review_set_repos_v12 (
+          review_set_id INTEGER NOT NULL REFERENCES review_sets(id) ON DELETE CASCADE,
+          connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
+          repo TEXT NOT NULL,
+          position INTEGER NOT NULL DEFAULT 0,
+          branch TEXT,
+          target_branch TEXT,
+          PRIMARY KEY (review_set_id, connection_id, repo, position)
+        );
+        INSERT INTO review_set_repos_v12 (review_set_id, connection_id, repo, position, branch, target_branch)
+          SELECT review_set_id, connection_id, repo, 0, branch, target_branch FROM review_set_repos;
+        DROP TABLE review_set_repos;
+        ALTER TABLE review_set_repos_v12 RENAME TO review_set_repos;
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+  if (columns('comments').length && !columns('comments').some((column) => column.name === 'position')) {
+    db.exec('ALTER TABLE comments ADD COLUMN position INTEGER NOT NULL DEFAULT 0');
+  }
+  if (columns('pull_request_repos').length && !columns('pull_request_repos').some((column) => column.name === 'position')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE pull_request_repos_v12 (
+          pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          connection_id INTEGER NOT NULL,
+          repo TEXT NOT NULL,
+          position INTEGER NOT NULL DEFAULT 0,
+          forge_pr_ref TEXT NOT NULL,
+          head_sha TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (pr_id, connection_id, repo, position)
+        );
+        INSERT INTO pull_request_repos_v12 (pr_id, connection_id, repo, position, forge_pr_ref, head_sha, created_at)
+          SELECT pr_id, connection_id, repo, 0, forge_pr_ref, head_sha, created_at FROM pull_request_repos;
+        DROP TABLE pull_request_repos;
+        ALTER TABLE pull_request_repos_v12 RENAME TO pull_request_repos;
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+  if (columns('reviewed_files').length && !columns('reviewed_files').some((column) => column.name === 'position')) {
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE reviewed_files_v12 (
+          pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          connection_id INTEGER NOT NULL,
+          repo TEXT NOT NULL,
+          position INTEGER NOT NULL DEFAULT 0,
+          path TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (pr_id, user_id, connection_id, repo, position, path)
+        );
+        INSERT INTO reviewed_files_v12 (pr_id, user_id, connection_id, repo, position, path, created_at)
+          SELECT pr_id, user_id, connection_id, repo, 0, path, created_at FROM reviewed_files;
+        DROP TABLE reviewed_files;
+        ALTER TABLE reviewed_files_v12 RENAME TO reviewed_files;
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+db.exec('PRAGMA user_version = 12;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

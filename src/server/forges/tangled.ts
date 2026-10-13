@@ -590,6 +590,7 @@ export class TangledClient implements ForgeClient {
       files: capped,
       commits: entries.map((entry) => toCommitInfo(entry, (sha) => this.commitUrl(repo, sha))).reverse(),
       truncated: files.length > capped.length || Boolean(out.binary_omitted) || entries.length >= 500,
+      mergeBase: out.merge_base,
     };
   }
 
@@ -701,13 +702,19 @@ export class TangledClient implements ForgeClient {
    */
   private async authorizedPost<T>(knot: string, method: string, body: unknown, repoDid: string): Promise<T> {
     if (!this.writes) {
-      throw new ForgeError(401, 'connect this Tangled account with atproto to write — sign in with atproto under Settings');
+      throw new ForgeError(401, `sign in with atproto as ${this.login} under Settings to write on Tangled`);
     }
     let token: string;
     try {
       token = await this.writes.serviceAuth({ aud: repoDid, lxm: method });
     } catch (error) {
-      throw new ForgeError(401, `could not mint a service token for this knot (${(error as Error).message})`);
+      const detail = (error as Error).message;
+      throw new ForgeError(
+        401,
+        /no atproto session/i.test(detail)
+          ? `sign in with atproto as ${this.login} under Settings, then reload this review set`
+          : `could not mint a service token for this knot (${detail})`,
+      );
     }
     const response = await fetch(`${knot}/xrpc/${method}`, {
       method: 'POST',
@@ -766,7 +773,10 @@ export class TangledClient implements ForgeClient {
     const [baseRef, headRef] = await Promise.all([this.getBranch(repo, base, { fresh: true }), this.getBranch(repo, head, { fresh: true })]);
     if (!baseRef) throw new ForgeError(404, `the target branch ${base} does not exist`);
     if (!headRef) throw new ForgeError(404, `the branch ${head} does not exist`);
-    const mergeBase = (await this.mergeBase(repo, baseRef.sha, headRef.sha)) ?? baseRef.sha;
+    // The patch's range should start at the merge base so the pull request
+    // shows only this branch's changes; a comparison that is too large for the
+    // knot falls back to the target tip.
+    const mergeBase = (await this.mergeBase(repo, baseRef.sha, headRef.sha).catch(() => null)) ?? baseRef.sha;
     const description = withMureviewLink(body, mureviewUrl);
     const createdAt = new Date().toISOString();
 

@@ -146,6 +146,12 @@ async function inspectBranch(
     const commits = includeCommits
       ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull ?? undefined)
       : undefined;
+    // A layer of a stack is supposed to build on the branch below it; when the
+    // forge reports a different merge base, the stack is out of order.
+    const diverged =
+      status.position > 0 && comparison.mergeBase && comparison.mergeBase !== targetRef.sha
+        ? `This layer's branch does not build on ${target}; they split at ${comparison.mergeBase.slice(0, 7)}.`
+        : undefined;
     onPhase?.('done');
     return {
       ...status,
@@ -159,6 +165,7 @@ async function inspectBranch(
       truncated: comparison.truncated,
       commits,
       commitsTruncated: commits !== undefined && comparison.aheadBy > commits.length,
+      note: [status.note, diverged].filter(Boolean).join(' ') || undefined,
       files,
     };
   } catch (error) {
@@ -222,27 +229,31 @@ export async function buildPrStatus(
   const errors: string[] = [];
   const clients = options.clients ?? clientsFor(connections);
   const perRepo = reviewSet.mode === 'per-repo';
-  const compiled = perRepo ? { patterns: [] as RegExp[], error: null } : compilePatterns(reviewSet.branchRegex);
+  const stacked = reviewSet.mode === 'stack';
+  const compiled = perRepo || stacked ? { patterns: [] as RegExp[], error: null } : compilePatterns(reviewSet.branchRegex);
   if (compiled.error) errors.push(compiled.error);
+
+  const layerLabel = (repo: ReviewSet['repos'][number]) =>
+    stacked && repo.branch ? `${repo.host}/${repo.repo} · ${repo.branch}` : `${repo.host}/${repo.repo}`;
 
   const reporting = options.progress === true && options.progressUserId !== undefined;
   if (reporting) {
     beginRun(
       options.progressUserId!,
       reviewSet.id,
-      reviewSet.repos.map((repo) => ({ key: `${repo.connectionId}:${repo.repo}`, label: `${repo.host}/${repo.repo}` })),
+      reviewSet.repos.map((repo) => ({ key: `${repo.connectionId}:${repo.repo}:${repo.position}`, label: layerLabel(repo) })),
     );
   }
-  const phase = (connectionId: number, repo: string, value: LoadPhase) => {
-    if (reporting) setPhase(reviewSet.id, `${connectionId}:${repo}`, value);
+  const phase = (connectionId: number, repo: string, position: number, value: LoadPhase) => {
+    if (reporting) setPhase(reviewSet.id, `${connectionId}:${repo}:${position}`, value);
   };
 
   try {
     const located = await inspectRepos(
       clients,
       reviewSet.repos,
-      { patterns: compiled.patterns, perRepo, defaultTarget: reviewSet.targetBranch, fresh },
-      (repo, value) => phase(repo.connectionId, repo.repo, value),
+      { patterns: compiled.patterns, perRepo, stack: stacked, defaultTarget: reviewSet.targetBranch, fresh },
+      (repo, value) => phase(repo.connectionId, repo.repo, repo.position, value),
     );
     const repos = await mapLimit(located, 4, async ({ status, sha }) => {
       const client = clients.get(status.connectionId);
@@ -250,9 +261,9 @@ export async function buildPrStatus(
         options.onRepo?.(status);
         return status;
       }
-      const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo);
+      const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo, status.position);
       const result = await inspectBranch(client, status, sha, fresh, includeCommits, knownPull, (value) =>
-        phase(status.connectionId, status.repo, value),
+        phase(status.connectionId, status.repo, status.position, value),
       );
       options.onRepo?.(result);
       return result;
@@ -266,6 +277,10 @@ export async function buildPrStatus(
     const openRepos = repos.filter((repo) => repo.state === 'open');
     const matchedOk = repos.filter((repo) => repo.branch && repo.state !== 'error');
     const hasRepoErrors = repos.some((repo) => repo.state === 'error');
+
+    // Stacks can be read layer by layer or as one cumulative diff from the
+    // target branch to the top of the stack.
+    const combined = stacked ? await combinedStacks(clients, repos, reviewSet, fresh) : undefined;
 
     const hasOpen = openRepos.length > 0;
     const lifecycle = hasOpen ? ensurePrLifecycle(reviewSet.id, true) : hasRepoErrors ? null : ensurePrLifecycle(reviewSet.id, false);
@@ -288,16 +303,70 @@ export async function buildPrStatus(
         state: 'open',
         errors,
         repos,
+        combined,
         prId: lifecycle.prId,
         comments: includeDiscussions && lifecycle.prId ? listComments(lifecycle.prId) : [],
         reviewed: includeDiscussions && lifecycle.prId && options.viewerId ? listReviewed(lifecycle.prId, options.viewerId) : [],
         stats,
       };
     }
-    if (matchedOk.length > 0) return { state: 'closed', errors, repos, ...empty };
-    if (errors.length > 0) return { state: 'invalid', errors, repos, ...empty };
-    return { state: 'empty', errors, repos, ...empty };
+    if (matchedOk.length > 0) return { state: 'closed', errors, repos, combined, ...empty };
+    if (errors.length > 0) return { state: 'invalid', errors, repos, combined, ...empty };
+    return { state: 'empty', errors, repos, combined, ...empty };
   } finally {
     if (reporting) finishRun(reviewSet.id);
   }
+}
+
+/**
+ * The cumulative diff of every stack: the review set's target branch against
+ * the top layer's head. Entries carry position -1 so nothing treats them as a
+ * layer (comments, pull requests and merging skip them).
+ */
+async function combinedStacks(
+  clients: Map<number, ForgeClient>,
+  repos: RepoStatus[],
+  reviewSet: ReviewSet,
+  fresh: boolean,
+): Promise<RepoStatus[]> {
+  const stacks = new Map<string, RepoStatus[]>();
+  for (const repo of repos) {
+    if (!repo.branch || !repo.headSha || repo.state === 'error') continue;
+    const key = `${repo.connectionId}:${repo.repo}`;
+    const group = stacks.get(key) ?? [];
+    group.push(repo);
+    stacks.set(key, group);
+  }
+
+  const combined: RepoStatus[] = [];
+  await mapLimit([...stacks.values()], 4, async (layers) => {
+    const ordered = [...layers].sort((a, b) => a.position - b.position);
+    const top = ordered[ordered.length - 1];
+    const client = clients.get(top.connectionId);
+    if (!client) return;
+    try {
+      const targetRef = await client.getBranch(top.repo, reviewSet.targetBranch, { fresh });
+      if (!targetRef) return;
+      const comparison = await client.compare(top.repo, targetRef.sha, top.headSha!);
+      const files = comparison.files.map(toFileDiff);
+      const totals = summarize(files);
+      combined.push({
+        ...top,
+        position: -1,
+        target: reviewSet.targetBranch,
+        targetExists: true,
+        state: comparison.merged ? 'merged' : 'open',
+        aheadBy: comparison.aheadBy,
+        behindBy: comparison.behindBy,
+        additions: totals.additions,
+        deletions: totals.deletions,
+        truncated: comparison.truncated,
+        files,
+        commits: comparison.commits,
+      });
+    } catch (error) {
+      console.error(`Could not build the combined diff for ${top.repo}:`, error);
+    }
+  });
+  return combined;
 }

@@ -13,7 +13,7 @@ import {
   GitCommitIcon,
   GitPullRequestIcon,
 } from '@primer/octicons-react';
-import type { Comment, PrStatus, RepoChecks, ReviewSetDetail } from '../../../shared/types';
+import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewSetDetail } from '../../../shared/types';
 import { api, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
@@ -33,6 +33,11 @@ interface ParsedFile {
   connectionId: number;
   host: string;
   repo: string;
+  /** The stack layer the file belongs to; -1 for the combined view. */
+  position: number;
+  /** The tree segment naming the layer, for stacked review sets. */
+  layer?: string;
+  combined: boolean;
   path: string;
   fileDiff: FileDiffMetadata;
 }
@@ -41,20 +46,40 @@ interface Draft {
   itemId: string;
   connectionId: number;
   repo: string;
+  position: number;
   path: string;
   line: number;
   side: 'additions' | 'deletions';
 }
 
-function parseFiles(pr: PrStatus): ParsedFile[] {
+/** The tree label of a stack layer, e.g. "Layer 2 · feature/part-2". */
+function layerLabel(repo: RepoStatus): string | undefined {
+  if (repo.position < 0) return undefined;
+  return `Layer ${repo.position + 1} · ${repo.branch}`;
+}
+
+function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
   const parsed: ParsedFile[] = [];
-  for (const repo of pr.repos) {
+  const entries = view === 'combined' ? (pr.combined ?? []) : pr.repos;
+  const stacked = Boolean(pr.combined);
+  for (const repo of entries) {
+    const layer = stacked && repo.position >= 0 ? layerLabel(repo) : undefined;
     for (const file of repo.files ?? []) {
       if (!file.patch) continue;
-      const id = fileItemId(repo.connectionId, repo.repo, file.path);
+      const id = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
       const fileDiff = processFile(file.patch, { cacheKey: id });
       if (fileDiff) {
-        parsed.push({ id, connectionId: repo.connectionId, host: repo.host, repo: repo.repo, path: file.path, fileDiff });
+        parsed.push({
+          id,
+          connectionId: repo.connectionId,
+          host: repo.host,
+          repo: repo.repo,
+          position: repo.position,
+          layer,
+          combined: repo.position < 0,
+          path: file.path,
+          fileDiff,
+        });
       }
     }
   }
@@ -78,9 +103,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
   const [reviewed, setReviewedItems] = useState<Set<string>>(
-    () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path))),
+    () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.position, mark.path))),
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const [view, setView] = useState<'layers' | 'combined'>('layers');
   const [checks, setChecks] = useState<RepoChecks[]>([]);
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>(
     () => (window.localStorage.getItem('mureview:diff-style') === 'split' ? 'split' : 'unified'),
@@ -106,7 +132,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
   useEffect(
-    () => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path)))),
+    () => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.position, mark.path)))),
     [pr.reviewed],
   );
   useEffect(() => {
@@ -188,7 +214,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     [],
   );
 
-  const parsed = useMemo(() => parseFiles(pr), [pr]);
+  const parsed = useMemo(() => parseFiles(pr, view), [pr, view]);
   // Match the file tree's order (directories first, then files, alphabetical).
   const ordered = useMemo(
     () =>
@@ -196,7 +222,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         parsed.map((entry) => ({
           ...entry,
           itemId: entry.id,
-          segments: fileSegments(entry.host, entry.repo, entry.path),
+          segments: fileSegments(entry.host, entry.repo, entry.path, entry.layer),
         })),
       ),
     [parsed],
@@ -228,6 +254,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
             threadKey: `${entry.id}:draft`,
             connectionId: entry.connectionId,
             repo: entry.repo,
+            position: entry.position,
             path: entry.path,
             side: draft.side,
             line: draft.line,
@@ -252,11 +279,12 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       layout: { paddingTop: 8, paddingBottom: 24, gap: 8 },
       onGutterUtilityClick: (range, context) => {
         const entry = parsedRef.current.get(context.item.id);
-        if (!entry) return;
+        if (!entry || entry.combined) return;
         setDraft({
           itemId: entry.id,
           connectionId: entry.connectionId,
           repo: entry.repo,
+          position: entry.position,
           path: entry.path,
           line: range.start,
           side: range.side ?? 'additions',
@@ -268,11 +296,12 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         if (!window.matchMedia('(pointer: coarse)').matches) return;
         if (!('annotationSide' in props)) return;
         const entry = parsedRef.current.get(context.item.id);
-        if (!entry) return;
+        if (!entry || entry.combined) return;
         setDraft({
           itemId: entry.id,
           connectionId: entry.connectionId,
           repo: entry.repo,
+          position: entry.position,
           path: entry.path,
           line: props.lineNumber,
           side: props.annotationSide,
@@ -290,7 +319,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         return (
           <CommentComposer
             prId={pr.prId ?? 0}
-            anchor={{ connectionId: meta.connectionId, repo: meta.repo, path: meta.path, line: meta.line, side: meta.side }}
+            anchor={{ connectionId: meta.connectionId, repo: meta.repo, position: meta.position, path: meta.path, line: meta.line, side: meta.side }}
             autoFocus
             onCancel={() => setDraft(null)}
             onDone={(comment) => {
@@ -333,7 +362,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       try {
         await put(`/prs/${pr.prId}/reviewed`, {
           reviewed: value,
-          files: files.map((file) => ({ connectionId: file.connectionId, repo: file.repo, path: file.path })),
+          files: files.map((file) => ({ connectionId: file.connectionId, repo: file.repo, position: file.position, path: file.path })),
         });
       } catch (error) {
         apply(!value);
@@ -383,7 +412,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const checksByRepo = useMemo(() => new Map(checks.map((entry) => [`${entry.connectionId}:${entry.repo}`, entry.checks])), [checks]);
   const checksFailing = checks.some((entry) => entry.checks.state === 'failure');
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
-  const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest);
+  const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest && repo.position >= 0);
 
   const openPanel = (next: 'files' | 'commits' | 'conversation') => {
     setTab(next);
@@ -397,6 +426,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       hasFiles ? (
         <FileTreePanel
           pr={pr}
+          entries={view === 'combined' ? (pr.combined ?? []) : pr.repos}
+          stacked={Boolean(pr.combined)}
           reviewedItems={reviewed}
           visibleItems={visibleItems}
           onSelectItem={(itemId) => {
@@ -482,6 +513,22 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           </>
         )}
         <div className="pr-main">
+          {pr.combined ? (
+            <div className="stack-view-toggle">
+              <span className="stack-view-label">Stack view</span>
+              <Button size="small" variant={view === 'layers' ? 'primary' : 'invisible'} onClick={() => setView('layers')}>
+                Layer by layer
+              </Button>
+              <Button size="small" variant={view === 'combined' ? 'primary' : 'invisible'} onClick={() => setView('combined')}>
+                All together
+              </Button>
+              <span className="stack-view-hint">
+                {view === 'combined'
+                  ? `The whole stack against ${reviewSet.targetBranch}. Comments belong to layers, so switch back to Layer by layer to write them.`
+                  : 'Every layer against the branch below it. Merging happens bottom-up.'}
+              </span>
+            </div>
+          ) : null}
           <div className="pr-diffs">
             {hasFiles ? (
               <CodeView
@@ -564,7 +611,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                           </span>
                         </span>
                         <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
-                          {repo.branch} → {reviewSet.targetBranch}
+                          {repo.branch} → {repo.target || reviewSet.targetBranch}
                         </span>
                       </div>
                       <Button
@@ -613,7 +660,9 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                       {repo.host}/{repo.repo}
                       {repo.branch ? ` · ${repo.branch}` : ''}
                     </span>
-                    <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>{repoStatusText(repo)}</span>
+                    <span style={{ color: repo.prError ? 'var(--fgColor-danger)' : 'var(--fgColor-muted)', fontSize: 12 }}>
+                      {repo.prError ?? repoStatusText(repo)}
+                    </span>
                   </div>
                 ))}
               </div>

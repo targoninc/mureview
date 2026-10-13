@@ -100,19 +100,35 @@ export function PrHeader({
               </span>
             ) : openRepos.length > 0 ? (
               <>
-                Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'}{' '}
-                {reviewSet.mode === 'per-repo' ? (
-                  'into their target branches'
+                {reviewSet.mode === 'stack' ? (
+                  <>
+                    {openRepos.length} {openRepos.length === 1 ? 'layer' : 'layers'} across{' '}
+                    {new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size}{' '}
+                    {new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size === 1 ? 'stack' : 'stacks'}, merging
+                    bottom-up into <span className="mono">{reviewSet.targetBranch}</span>
+                  </>
                 ) : (
                   <>
-                    into <span className="mono">{reviewSet.targetBranch}</span>
+                    Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'}{' '}
+                    {reviewSet.mode === 'per-repo' ? (
+                      'into their target branches'
+                    ) : (
+                      <>
+                        into <span className="mono">{reviewSet.targetBranch}</span>
+                      </>
+                    )}
                   </>
                 )}{' '}
                 · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
               </>
             ) : (
               <>
-                {reviewSet.mode === 'per-repo' ? (
+                {reviewSet.mode === 'stack' ? (
+                  <>
+                    Watching the stacks of every repository, merging bottom-up into{' '}
+                    <span className="mono">{reviewSet.targetBranch}</span>
+                  </>
+                ) : reviewSet.mode === 'per-repo' ? (
                   'Watching the selected branch of every repository'
                 ) : (
                   <>

@@ -49,8 +49,10 @@ export function ReviewSetPage() {
 
   const merged = useMemo(() => {
     if (!detail) return null;
-    const pullsByRepo = new Map((discussion?.pullRequests ?? []).map((pull) => [`${pull.connectionId}:${pull.repo}`, pull]));
-    const commitsByRepo = new Map((commits ?? []).map((bundle) => [`${bundle.connectionId}:${bundle.repo}`, bundle.commits]));
+    const keyOf = (entry: { connectionId: number; repo: string; position: number }) =>
+      `${entry.connectionId}:${entry.repo}:${entry.position}`;
+    const pullsByRepo = new Map((discussion?.pullRequests ?? []).map((pull) => [keyOf(pull), pull]));
+    const commitsByRepo = new Map((commits ?? []).map((bundle) => [keyOf(bundle), bundle.commits]));
     return {
       reviewSet: detail.reviewSet,
       owned: detail.owned,
@@ -60,7 +62,7 @@ export function ReviewSetPage() {
         comments: discussion?.comments ?? detail.pr.comments,
         reviewed: discussion?.reviewed ?? detail.pr.reviewed,
         repos: detail.pr.repos.map((repo) => {
-          const key = `${repo.connectionId}:${repo.repo}`;
+          const key = keyOf(repo);
           const pull = pullsByRepo.get(key);
           return {
             ...repo,

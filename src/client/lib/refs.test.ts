@@ -12,6 +12,7 @@ const repo = (overrides: Partial<RepoStatus>): RepoStatus => ({
   matches: [],
   branch: null,
   target: 'main',
+  position: 0,
   targetExists: true,
   state: 'open',
   ...overrides,

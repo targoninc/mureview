@@ -51,6 +51,8 @@ export interface CompareResult {
   files: CompareFile[];
   commits: CommitInfo[];
   truncated: boolean;
+  /** The common ancestor of the compared revisions, when the forge reports it. */
+  mergeBase?: string;
 }
 
 export interface TreeBlob {

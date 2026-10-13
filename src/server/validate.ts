@@ -101,6 +101,7 @@ export function emptyRepoStatus(repo: ReviewSetRepo, error?: string, defaultTarg
     matches: [],
     branch: null,
     target: repo.target ?? defaultTarget,
+    position: repo.position,
     targetExists: false,
     state: error ? 'error' : 'no-match',
   };
@@ -125,6 +126,8 @@ export interface InspectOptions {
   perRepo?: boolean;
   /** The target branch to fall back to when a repository has none. */
   defaultTarget?: string;
+  /** In stack mode every repository has an ordered list of branches. */
+  stack?: boolean;
   fresh?: boolean;
 }
 
@@ -134,45 +137,106 @@ export async function inspectRepos(
   options: InspectOptions,
   onPhase?: (repo: ReviewSetRepo, phase: 'checking' | 'done' | 'error') => void,
 ): Promise<LocatedRepo[]> {
-  const { patterns, perRepo = false, defaultTarget = '', fresh = false } = options;
-  return mapLimit(repos, 4, async (repo): Promise<LocatedRepo> => {
-    const client = clients.get(repo.connectionId);
+  const { patterns, perRepo = false, defaultTarget = '', stack = false, fresh = false } = options;
+
+  // Layers of one repository share a branch listing and an access check.
+  const groups = new Map<string, ReviewSetRepo[]>();
+  for (const repo of repos) {
+    const key = `${repo.connectionId}:${repo.repo}`;
+    const group = groups.get(key) ?? [];
+    group.push(repo);
+    groups.set(key, group);
+  }
+
+  const inspected = await mapLimit([...groups.values()], 4, async (group): Promise<LocatedRepo[]> => {
+    const first = group[0];
+    const client = clients.get(first.connectionId);
     if (!client) {
-      onPhase?.(repo, 'error');
-      return { status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`, defaultTarget), sha: null };
+      for (const repo of group) onPhase?.(repo, 'error');
+      return group.map((repo) => ({ status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`, defaultTarget), sha: null }));
     }
-    onPhase?.(repo, 'checking');
+    onPhase?.(first, 'checking');
     try {
-      await client.ensureRepo(repo.repo, { fresh });
+      await client.ensureRepo(first.repo, { fresh });
     } catch (error) {
-      onPhase?.(repo, 'error');
-      return {
-        status: emptyRepoStatus(repo, `You don't have access to ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
+      for (const repo of group) onPhase?.(repo, 'error');
+      return group.map((repo) => ({
+        status: emptyRepoStatus(repo, `You don't have access to ${first.host}/${first.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
         sha: null,
-      };
+      }));
     }
+    let branches: Awaited<ReturnType<ForgeClient['listBranches']>>;
     try {
-      const branches = await client.listBranches(repo.repo, { fresh });
-      const matches = perRepo
-        ? repo.branch && branches.some((branch) => branch.name === repo.branch)
-          ? [repo.branch]
-          : []
-        : matchingBranches(
-            branches.map((branch) => branch.name),
-            patterns,
-          );
-      const branch = matches.length === 1 ? matches[0] : null;
-      const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
-      if (!sha) onPhase?.(repo, 'done');
-      return { status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true, matches, branch }, sha };
+      branches = await client.listBranches(first.repo, { fresh });
     } catch (error) {
-      onPhase?.(repo, 'error');
-      return {
-        status: emptyRepoStatus(repo, `Could not list branches for ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
+      for (const repo of group) onPhase?.(repo, 'error');
+      return group.map((repo) => ({
+        status: emptyRepoStatus(repo, `Could not list branches for ${first.host}/${first.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
         sha: null,
-      };
+      }));
     }
+
+    if (stack) return inspectStack(group, branches, defaultTarget, onPhase);
+
+    const repo = first;
+    const matches = perRepo
+      ? repo.branch && branches.some((branch) => branch.name === repo.branch)
+        ? [repo.branch]
+        : []
+      : matchingBranches(
+          branches.map((branch) => branch.name),
+          patterns,
+        );
+    const branch = matches.length === 1 ? matches[0] : null;
+    const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
+    if (!sha) onPhase?.(repo, 'done');
+    return [{ status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true, matches, branch }, sha }];
   });
+  return inspected.flat();
+}
+
+/**
+ * Walks a repository's layers bottom-up: each layer is compared against the
+ * one below it (the review set's target branch for the bottom layer). A layer
+ * whose branch is gone is skipped, and the layers above it are compared
+ * against the last branch that does exist.
+ */
+function inspectStack(
+  group: ReviewSetRepo[],
+  branches: Awaited<ReturnType<ForgeClient['listBranches']>>,
+  defaultTarget: string,
+  onPhase?: (repo: ReviewSetRepo, phase: 'checking' | 'done' | 'error') => void,
+): LocatedRepo[] {
+  const ordered = [...group].sort((a, b) => a.position - b.position);
+  const located: LocatedRepo[] = [];
+  let previous: { branch: string; sha: string } | null = null;
+  let skipped: string[] = [];
+
+  for (const repo of ordered) {
+    const found = repo.branch ? branches.find((branch) => branch.name === repo.branch) : null;
+    if (!found) {
+      onPhase?.(repo, 'error');
+      located.push({ status: emptyRepoStatus(repo, `the branch ${repo.branch ?? '(none)'} does not exist`, defaultTarget), sha: null });
+      if (repo.branch) skipped.push(repo.branch);
+      continue;
+    }
+    const base = previous?.branch ?? defaultTarget;
+    const note = skipped.length
+      ? `${skipped.length === 1 ? 'Layer' : 'Layers'} ${skipped.join(', ')} ${skipped.length === 1 ? 'is' : 'are'} missing, so this layer is compared against ${base}.`
+      : undefined;
+    skipped = [];
+    const status: RepoStatus = {
+      ...emptyRepoStatus(repo, undefined, base),
+      accessible: true,
+      matches: [found.name],
+      branch: found.name,
+      note,
+    };
+    located.push({ status, sha: found.sha });
+    previous = { branch: found.name, sha: found.sha };
+    onPhase?.(repo, 'done');
+  }
+  return located;
 }
 
 export { parseRepoList };

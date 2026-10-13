@@ -22,6 +22,7 @@ function normalizeDate(value: string): string {
 export interface SyncTarget {
   connectionId: number;
   repo: string;
+  position: number;
   pullRequestRef: string;
 }
 
@@ -43,7 +44,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
   await mapLimit(targets, 3, async (target) => {
     const client = clients.get(target.connectionId);
     if (!client) return;
-    const repo = { connectionId: target.connectionId, repo: target.repo };
+    const repo = { connectionId: target.connectionId, repo: target.repo, position: target.position };
 
     let forgeComments: ForgeComment[];
     try {
@@ -54,10 +55,10 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
     }
 
     const existing = db
-      .query<ExistingRow, [number, number, string]>(
-        'SELECT id, forge_comment_id, body, path, line, author_name, author_avatar, resolved FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ?',
+      .query<ExistingRow, [number, number, string, number]>(
+        'SELECT id, forge_comment_id, body, path, line, author_name, author_avatar, resolved FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ? AND position = ?',
       )
-      .all(prId, repo.connectionId, repo.repo);
+      .all(prId, repo.connectionId, repo.repo, repo.position);
 
     // Comments imported from the forge that are no longer listed there were
     // deleted on the forge; drop them here as well. mureview-only comments
@@ -133,14 +134,15 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
       const parent = comment.replyToId ? byForgeId.get(comment.replyToId) : undefined;
 
       const inserted = db.run(
-        `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, parent_id, resolved, source, created_at)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, 'forge', ?)`,
+        `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, position, path, line, side, body, synced_at, forge_comment_id, parent_id, resolved, source, created_at)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, 'forge', ?)`,
         [
           prId,
           comment.author.name,
           comment.author.avatarUrl,
           repo.connectionId,
           repo.repo,
+          repo.position,
           anchor?.path ?? null,
           anchor?.line ?? null,
           anchor?.side ?? null,

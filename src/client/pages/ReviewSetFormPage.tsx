@@ -57,7 +57,7 @@ export function ReviewSetFormPage() {
   };
 
   useEffect(() => {
-    if (form.mode !== 'per-repo') return;
+    if (form.mode === 'pattern') return;
     for (const item of form.selected) {
       if (!branches[branchKey(item.connectionId, item.repo)]) loadBranches(item.connectionId, item.repo);
     }
@@ -108,7 +108,16 @@ export function ReviewSetFormPage() {
     update({
       selected: [
         ...form.selected,
-        { connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host, org: repo.org, branch: null, target: null },
+        {
+          connectionId: repo.connectionId,
+          repo: repo.repo,
+          kind: repo.kind,
+          host: repo.host,
+          org: repo.org,
+          branch: null,
+          target: null,
+          position: 0,
+        },
       ],
     });
     setSearch('');
@@ -123,6 +132,7 @@ export function ReviewSetFormPage() {
       org: repo.org,
       branch: null,
       target: null,
+      position: 0,
     }));
     update({ selected: [...form.selected, ...additions] });
     setSearch('');
@@ -141,10 +151,44 @@ export function ReviewSetFormPage() {
     update({ selected: form.selected.filter((item) => !(item.connectionId === connectionId && item.repo === repo)) });
   };
 
-  const setRepoBranches = (connectionId: number, repo: string, patch: { branch?: string; target?: string }) => {
+  /** The layers of one repository, bottom (position 0) first. */
+  const stackOf = (connectionId: number, repo: string): ReviewSetRepo[] =>
+    form.selected
+      .filter((item) => item.connectionId === connectionId && item.repo === repo)
+      .sort((a, b) => a.position - b.position);
+
+  /** The distinct repositories in selection order. */
+  const stacks = useMemo(() => {
+    const seen = new Map<string, ReviewSetRepo>();
+    for (const item of form.selected) {
+      const key = `${item.connectionId}:${item.repo}`;
+      if (!seen.has(key)) seen.set(key, item);
+    }
+    return [...seen.values()];
+  }, [form.selected]);
+
+  const addLayer = (item: ReviewSetRepo) => {
+    const layers = stackOf(item.connectionId, item.repo);
+    update({
+      selected: [
+        ...form.selected,
+        { ...item, branch: null, target: null, position: layers.length },
+      ],
+    });
+  };
+
+  const removeLayer = (connectionId: number, repo: string, position: number) => {
+    const remaining = stackOf(connectionId, repo).filter((layer) => layer.position !== position);
+    const renumbered = remaining.map((layer, index) => ({ ...layer, position: index }));
+    update({
+      selected: [...form.selected.filter((item) => !(item.connectionId === connectionId && item.repo === repo)), ...renumbered],
+    });
+  };
+
+  const setRepoBranches = (connectionId: number, repo: string, patch: { branch?: string; target?: string }, position = 0) => {
     update({
       selected: form.selected.map((item) =>
-        item.connectionId === connectionId && item.repo === repo ? { ...item, ...patch } : item,
+        item.connectionId === connectionId && item.repo === repo && item.position === position ? { ...item, ...patch } : item,
       ),
     });
   };
@@ -166,6 +210,7 @@ export function ReviewSetFormPage() {
         repo: item.repo,
         branch: item.branch,
         target: item.target,
+        position: item.position,
       })),
       branchRegex: form.branchRegex,
       targetBranch: form.targetBranch,
@@ -283,11 +328,20 @@ export function ReviewSetFormPage() {
             >
               Per-repo
             </Button>
+            <Button
+              size="small"
+              variant={form.mode === 'stack' ? 'primary' : 'invisible'}
+              onClick={() => update({ mode: 'stack' })}
+            >
+              Stacked branches
+            </Button>
           </div>
           <FormControl.Caption>
             {form.mode === 'per-repo'
               ? 'Pick a source and target branch for every repository below. Repositories without a source branch are skipped.'
-              : 'Branches are matched with the patterns configured further down.'}
+              : form.mode === 'stack'
+                ? 'Each repository gets a stack: an ordered chain of branches. Every layer is reviewed on its own against the layer below it, and the stack merges bottom-up. Add layers with “Add layer”.'
+                : 'Branches are matched with the patterns configured further down.'}
           </FormControl.Caption>
           {available === null ? <Spinner size="small" aria-label="Loading repositories" /> : null}
           {available !== null && results.length > 0 ? (
@@ -335,87 +389,159 @@ export function ReviewSetFormPage() {
         {form.selected.length > 0 ? (
           <div className="repo-picker-selected">
             <h3 className="repo-picker-selected-title">Included repositories</h3>
-            {form.selected.map((item) => (
-              <div className="repo-picker-selected-item" key={`${item.connectionId}:${item.repo}`}>
-                <div className="repo-picker-selected-head">
-                  <span className="mono">
-                    {item.host}/{item.repo}
-                  </span>
-                  <span className="row" style={{ gap: 8 }}>
-                    {ambiguousHosts.has(item.host) ? (
-                      <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
+            {form.mode === 'stack'
+              ? stacks.map((item) => {
+                  const layers = stackOf(item.connectionId, item.repo);
+                  return (
+                    <div className="repo-picker-selected-item" key={`${item.connectionId}:${item.repo}`}>
+                      <div className="repo-picker-selected-head">
+                        <span className="mono">
+                          {item.host}/{item.repo}
+                        </span>
+                        <span className="row" style={{ gap: 8 }}>
+                          {ambiguousHosts.has(item.host) ? (
+                            <span className="repo-source">
+                              {sources.find((source) => source.connectionId === item.connectionId)?.label}
+                            </span>
+                          ) : null}
+                          <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
+                          <Button
+                            size="small"
+                            variant="danger"
+                            leadingVisual={XIcon}
+                            aria-label={`Remove ${item.repo}`}
+                            onClick={() => removeRepo(item.connectionId, item.repo)}
+                          />
+                        </span>
+                      </div>
+                      <div className="stack-chain">
+                        <span className="stack-node stack-node-base" title="The review set's target branch">
+                          {form.targetBranch || 'main'}
+                        </span>
+                        {layers.map((layer, index) => (
+                          <span className="row" style={{ gap: 6 }} key={`${layer.position}`}>
+                            <span className="stack-arrow" aria-hidden="true">
+                              →
+                            </span>
+                            <span className="stack-node">
+                              <span className="stack-layer">Layer {index + 1}</span>
+                              <Select
+                                size="small"
+                                aria-label={`Branch for layer ${index + 1} of ${item.repo}`}
+                                value={layer.branch ?? ''}
+                                onChange={(event) =>
+                                  setRepoBranches(item.connectionId, item.repo, { branch: event.target.value }, layer.position)
+                                }
+                              >
+                                <Select.Option value="">Branch…</Select.Option>
+                                {branchOptions(item, layer.branch).map((branch) => (
+                                  <Select.Option key={branch} value={branch}>
+                                    {branch}
+                                  </Select.Option>
+                                ))}
+                              </Select>
+                              <Button
+                                size="small"
+                                variant="invisible"
+                                leadingVisual={XIcon}
+                                aria-label={`Remove layer ${index + 1} of ${item.repo}`}
+                                onClick={() => removeLayer(item.connectionId, item.repo, layer.position)}
+                              />
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                      <div>
+                        <Button size="small" leadingVisual={PlusIcon} onClick={() => addLayer(item)}>
+                          Add layer
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })
+              : form.selected.map((item) => (
+                  <div className="repo-picker-selected-item" key={`${item.connectionId}:${item.repo}`}>
+                    <div className="repo-picker-selected-head">
+                      <span className="mono">
+                        {item.host}/{item.repo}
+                      </span>
+                      <span className="row" style={{ gap: 8 }}>
+                        {ambiguousHosts.has(item.host) ? (
+                          <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
+                        ) : null}
+                        <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
+                        <Button
+                          size="small"
+                          variant="danger"
+                          leadingVisual={XIcon}
+                          aria-label={`Remove ${item.repo}`}
+                          onClick={() => removeRepo(item.connectionId, item.repo)}
+                        />
+                      </span>
+                    </div>
+                    {form.mode === 'per-repo' ? (
+                      <div className="repo-picker-branches">
+                        <Select
+                          size="small"
+                          aria-label={`Source branch for ${item.repo}`}
+                          value={item.branch ?? ''}
+                          onChange={(event) => setRepoBranches(item.connectionId, item.repo, { branch: event.target.value })}
+                        >
+                          <Select.Option value="">Source branch…</Select.Option>
+                          {branchOptions(item, item.branch).map((branch) => (
+                            <Select.Option key={branch} value={branch}>
+                              {branch}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                        <Select
+                          size="small"
+                          aria-label={`Target branch for ${item.repo}`}
+                          value={item.target ?? ''}
+                          onChange={(event) => setRepoBranches(item.connectionId, item.repo, { target: event.target.value })}
+                        >
+                          <Select.Option value="">Target branch…</Select.Option>
+                          {branchOptions(item, item.target).map((branch) => (
+                            <Select.Option key={branch} value={branch}>
+                              {branch}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </div>
                     ) : null}
-                    <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
-                    <Button
-                      size="small"
-                      variant="danger"
-                      leadingVisual={XIcon}
-                      aria-label={`Remove ${item.repo}`}
-                      onClick={() => removeRepo(item.connectionId, item.repo)}
-                    />
-                  </span>
-                </div>
-                {form.mode === 'per-repo' ? (
-                  <div className="repo-picker-branches">
-                    <Select
-                      size="small"
-                      aria-label={`Source branch for ${item.repo}`}
-                      value={item.branch ?? ''}
-                      onChange={(event) => setRepoBranches(item.connectionId, item.repo, { branch: event.target.value })}
-                    >
-                      <Select.Option value="">Source branch…</Select.Option>
-                      {branchOptions(item, item.branch).map((branch) => (
-                        <Select.Option key={branch} value={branch}>
-                          {branch}
-                        </Select.Option>
-                      ))}
-                    </Select>
-                    <Select
-                      size="small"
-                      aria-label={`Target branch for ${item.repo}`}
-                      value={item.target ?? ''}
-                      onChange={(event) => setRepoBranches(item.connectionId, item.repo, { target: event.target.value })}
-                    >
-                      <Select.Option value="">Target branch…</Select.Option>
-                      {branchOptions(item, item.target).map((branch) => (
-                        <Select.Option key={branch} value={branch}>
-                          {branch}
-                        </Select.Option>
-                      ))}
-                    </Select>
                   </div>
-                ) : null}
-              </div>
-            ))}
+                ))}
           </div>
         ) : (
           <FormControl.Caption>No repositories selected yet.</FormControl.Caption>
         )}
 
         {form.mode === 'pattern' ? (
-          <>
-            <FormControl>
-              <FormControl.Label>Branch pattern</FormControl.Label>
-              <FormControl.Caption>
-                One or more regular expressions separated by commas, for example ^main$, ^release/v2\.\d+. Across all patterns
-                each repository must match at most one branch.
-              </FormControl.Caption>
-              <TextInput
-                block
-                value={form.branchRegex}
-                onChange={(event) => update({ branchRegex: event.target.value })}
-                placeholder="^main$, ^release/v2\\.\\d+"
-              />
-            </FormControl>
+          <FormControl>
+            <FormControl.Label>Branch pattern</FormControl.Label>
+            <FormControl.Caption>
+              One or more regular expressions separated by commas, for example ^main$, ^release/v2\.\d+. Across all patterns
+              each repository must match at most one branch.
+            </FormControl.Caption>
+            <TextInput
+              block
+              value={form.branchRegex}
+              onChange={(event) => update({ branchRegex: event.target.value })}
+              placeholder="^main$, ^release/v2\\.\\d+"
+            />
+          </FormControl>
+        ) : null}
 
-            <FormControl>
-              <FormControl.Label>Target branch</FormControl.Label>
-              <FormControl.Caption>
-                The branch your matched branches are compared against. It is created for repositories where it does not exist yet.
-              </FormControl.Caption>
-              <TextInput block value={form.targetBranch} onChange={(event) => update({ targetBranch: event.target.value })} />
-            </FormControl>
-          </>
+        {form.mode === 'pattern' || form.mode === 'stack' ? (
+          <FormControl>
+            <FormControl.Label>Target branch</FormControl.Label>
+            <FormControl.Caption>
+              {form.mode === 'stack'
+                ? 'The branch the bottom layer is compared against and merged into. It is created for repositories where it does not exist yet.'
+                : 'The branch your matched branches are compared against. It is created for repositories where it does not exist yet.'}
+            </FormControl.Caption>
+            <TextInput block value={form.targetBranch} onChange={(event) => update({ targetBranch: event.target.value })} />
+          </FormControl>
         ) : null}
 
         <div className="form-actions">

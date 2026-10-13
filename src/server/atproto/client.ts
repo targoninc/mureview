@@ -110,6 +110,12 @@ export function atprotoClient(): NodeOAuthClient {
   return client;
 }
 
+/** Whether a stored atproto session exists for a DID. */
+export async function hasAtprotoSession(did: string): Promise<boolean> {
+  const { db } = await import('../db');
+  return Boolean(db.query<{ did: string }, [string]>('SELECT did FROM atproto_sessions WHERE did = ?').get(did));
+}
+
 /**
  * Mints a service-auth JWT for another service through the user's PDS: the
  * PDS signs {iss, aud, lxm, exp} with the account's signing key, and the

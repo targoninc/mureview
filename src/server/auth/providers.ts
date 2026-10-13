@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { AuthProvider, ForgeConnectionInfo, IdentityInfo, MeResponse } from '../../shared/types';
 import { Cache } from '../cache';
 import { config } from '../config';
+import { decrypt } from '../crypto';
 import { type ForgeConnectionRow, db } from '../db';
 import { ForgeError, organizationOf } from '../forges';
 import { AdoClient, normalizeAdoOrganization } from '../forges/ado';
@@ -468,7 +469,7 @@ function manageUrlFor(connection: ForgeConnectionRow): string | null {
 
 function connectionInfo(connection: ForgeConnectionRow): ForgeConnectionInfo {
   const host = new URL(connection.base_url).host;
-  return {
+  const info: ForgeConnectionInfo = {
     id: connection.id,
     kind: connection.kind,
     baseUrl: connection.base_url,
@@ -478,6 +479,13 @@ function connectionInfo(connection: ForgeConnectionRow): ForgeConnectionInfo {
     avatarUrl: connection.avatar_url,
     manageUrl: manageUrlFor(connection),
   };
+  if (connection.kind === 'tangled') {
+    // Writes are minted through the account's atproto session, which only
+    // exists after an atproto sign-in as the same account.
+    const did = connection.access_token ? decrypt(connection.access_token) : '';
+    info.writeReady = did ? Boolean(db.query<{ did: string }, [string]>('SELECT did FROM atproto_sessions WHERE did = ?').get(did)) : false;
+  }
+  return info;
 }
 
 export function me(ctx: Ctx): Response {

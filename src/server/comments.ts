@@ -17,6 +17,7 @@ interface CommentRow {
   author_name: string;
   author_avatar: string;
   repo: string | null;
+  position: number;
   path: string | null;
   line: number | null;
   side: string | null;
@@ -73,6 +74,7 @@ function toComment(row: CommentRow): Comment {
     authorId: row.author_id,
     connectionId: row.connection_id,
     repo: row.repo,
+    position: row.position,
     path: row.path,
     line: row.line,
     side: row.side === 'additions' || row.side === 'deletions' ? row.side : null,
@@ -124,19 +126,20 @@ export async function loadReadablePr(userId: number, id: number): Promise<PrRow>
  * set's repositories, which reference the owner's connections.
  */
 function normalizeAnchor(reviewSetId: number, input: CommentInput) {
-  if (!input.path) return { connectionId: null, repo: null, path: null, line: null, side: null };
+  if (!input.path) return { connectionId: null, repo: null, position: 0, path: null, line: null, side: null };
   const connectionId = Number(input.connectionId);
   if (!Number.isInteger(connectionId)) throw new HttpError(400, 'A valid connection is required for line comments.');
   if (typeof input.repo !== 'string' || !input.repo) throw new HttpError(400, 'A repository is required for line comments.');
+  const position = Number.isInteger(input.position) && (input.position ?? 0) >= 0 ? (input.position as number) : 0;
   const known = db
-    .query<{ repo: string }, [number, number, string]>(
-      'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ?',
+    .query<{ repo: string }, [number, number, string, number]>(
+      'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ? AND position = ?',
     )
-    .get(reviewSetId, connectionId, input.repo);
+    .get(reviewSetId, connectionId, input.repo, position);
   if (!known) throw new HttpError(400, 'That file does not belong to this review set.');
   if (!Number.isInteger(input.line) || (input.line as number) < 1) throw new HttpError(400, 'A line number is required for line comments.');
   if (input.side !== 'additions' && input.side !== 'deletions') throw new HttpError(400, 'A valid diff side is required for line comments.');
-  return { connectionId, repo: input.repo, path: input.path, line: input.line, side: input.side };
+  return { connectionId, repo: input.repo, position, path: input.path, line: input.line, side: input.side };
 }
 
 export async function listCommentsRoute(ctx: Ctx): Promise<Response> {
@@ -167,8 +170,8 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
 
   const anchor = normalizeAnchor(pr.review_set_id, input);
   const inserted = db.run(
-    'INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, parent_id, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    [pr.id, user.id, publicUser(user).name, user.avatar_url, anchor.connectionId, anchor.repo, anchor.path, anchor.line, anchor.side, body, parentId, 'mureview'],
+    'INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, position, path, line, side, body, parent_id, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [pr.id, user.id, publicUser(user).name, user.avatar_url, anchor.connectionId, anchor.repo, anchor.position, anchor.path, anchor.line, anchor.side, body, parentId, 'mureview'],
   );
   const commentId = Number(inserted.lastInsertRowid);
   const row = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
@@ -186,7 +189,7 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
  */
 async function syncCommentToPullRequest(userId: number, prId: number, row: CommentRow): Promise<void> {
   if (!row.path || row.connection_id === null || !row.repo || row.line === null || !row.side) return;
-  const pull = repoPullRequest(prId, row.connection_id, row.repo);
+  const pull = repoPullRequest(prId, row.connection_id, row.repo, row.position);
   if (!pull) return;
   const connection = connectionForComment(userId, row.connection_id);
   if (!connection) return;
@@ -240,8 +243,8 @@ export async function resolveCommentRoute(ctx: Ctx): Promise<Response> {
   if (typeof input.resolved !== 'boolean') throw new HttpError(400, '"resolved" must be a boolean');
 
   const comment = db
-    .query<{ id: number; connection_id: number | null; repo: string | null; pr_id: number; forge_comment_id: string | null }, [number]>(
-      'SELECT id, connection_id, repo, pr_id, forge_comment_id FROM comments WHERE id = ?',
+    .query<{ id: number; connection_id: number | null; repo: string | null; position: number; pr_id: number; forge_comment_id: string | null }, [number]>(
+      'SELECT id, connection_id, repo, position, pr_id, forge_comment_id FROM comments WHERE id = ?',
     )
     .get(Number(ctx.params.id));
   if (!comment) throw new HttpError(404, 'Comment not found');
@@ -250,7 +253,7 @@ export async function resolveCommentRoute(ctx: Ctx): Promise<Response> {
     throw new HttpError(400, 'This comment has no forge thread to resolve.');
   }
 
-  const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo);
+  const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo, comment.position);
   const connection = connectionOrMatching(user.id, comment.connection_id);
   if (!pull || !connection) throw new HttpError(400, 'The forge pull request for this comment is gone.');
 
@@ -283,16 +286,16 @@ export async function deleteCommentRoute(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
   const comment = db
     .query<
-      { id: number; author_id: number | null; connection_id: number | null; repo: string | null; pr_id: number; forge_comment_id: string | null },
+      { id: number; author_id: number | null; connection_id: number | null; repo: string | null; position: number; pr_id: number; forge_comment_id: string | null },
       [number]
-    >('SELECT id, author_id, connection_id, repo, pr_id, forge_comment_id FROM comments WHERE id = ?')
+    >('SELECT id, author_id, connection_id, repo, position, pr_id, forge_comment_id FROM comments WHERE id = ?')
     .get(Number(ctx.params.id));
   if (!comment || comment.author_id === null || comment.author_id !== user.id) {
     throw new HttpError(404, 'Comment not found');
   }
 
   if (comment.forge_comment_id && comment.connection_id !== null && comment.repo) {
-    const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo);
+    const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo, comment.position);
     const connection = pull ? connectionForComment(user.id, comment.connection_id) : null;
     if (pull && connection) {
       try {

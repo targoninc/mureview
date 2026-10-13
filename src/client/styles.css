@@ -344,6 +344,62 @@ svg.checks-pending {
   border-bottom: 1px solid var(--borderColor-muted);
 }
 
+/* Stacked branches: the chain editor in the review set form. */
+.stack-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.stack-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+}
+
+.stack-node-base {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--fgColor-muted);
+}
+
+.stack-layer {
+  font-size: 11px;
+  color: var(--fgColor-muted);
+  white-space: nowrap;
+}
+
+.stack-arrow {
+  color: var(--fgColor-muted);
+}
+
+/* Stacked review sets: the layers/all-together switch above the diffs. */
+.stack-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--borderColor-muted);
+  flex-wrap: wrap;
+}
+
+.stack-view-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+}
+
+.stack-view-hint {
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
 .repo-picker-selected-item {
   display: flex;
   flex-direction: column;

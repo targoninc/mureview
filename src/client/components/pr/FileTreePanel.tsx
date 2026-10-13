@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon } from '@primer/octicons-react';
-import type { FileDiff, FileStatus, ForgeKind, PrStatus } from '../../../shared/types';
+import type { FileDiff, FileStatus, ForgeKind, PrStatus, RepoStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
 import { fileItemId, fileSegments } from '../../lib/format';
 import { ServiceGlyph } from '../ServiceIcon';
@@ -43,6 +43,10 @@ const statusClass: Record<FileStatus, string> = {
 
 interface FileTreePanelProps {
   pr: PrStatus;
+  /** The repository entries to show: layers, or the cumulative diff. */
+  entries: RepoStatus[];
+  /** Whether the entries are layers of stacks. */
+  stacked: boolean;
   reviewedItems: Set<string>;
   visibleItems: Set<string>;
   onSelectItem: (itemId: string) => void;
@@ -50,7 +54,7 @@ interface FileTreePanelProps {
   onSetReviewed?: (itemIds: string[], reviewed: boolean) => void;
 }
 
-export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
+export function FileTreePanel({ pr, entries, stacked, reviewedItems, visibleItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -58,28 +62,29 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
     ensureFileIconSprite();
   }, []);
 
-  const entries = useMemo(() => {
+  const entriesForTree = useMemo(() => {
     const list: Entry[] = [];
-    for (const repo of pr.repos) {
+    for (const repo of entries) {
+      const layer = stacked && repo.position >= 0 ? `Layer ${repo.position + 1} · ${repo.branch}` : undefined;
       for (const file of repo.files ?? []) {
         if (!file.patch) continue;
         list.push({
-          segments: fileSegments(repo.host, repo.repo, file.path),
-          itemId: fileItemId(repo.connectionId, repo.repo, file.path),
+          segments: fileSegments(repo.host, repo.repo, file.path, layer),
+          itemId: fileItemId(repo.connectionId, repo.repo, repo.position, file.path),
           file,
           path: file.path,
         });
       }
     }
     return list;
-  }, [pr]);
+  }, [entries, stacked]);
 
   const repoKinds = useMemo(
-    () => new Map<string, ForgeKind>(pr.repos.map((repo) => [`${repo.host}/${repo.repo}`, repo.kind])),
-    [pr],
+    () => new Map<string, ForgeKind>(entries.map((repo) => [`${repo.host}/${repo.repo}`, repo.kind])),
+    [entries],
   );
 
-  const tree = useMemo(() => buildFileTree(entries), [entries]);
+  const tree = useMemo(() => buildFileTree(entriesForTree), [entriesForTree]);
 
   const toggleDir = (key: string) =>
     setCollapsed((current) => {

@@ -14,13 +14,13 @@ export function timeAgo(iso: string): string {
   return date.toLocaleDateString();
 }
 
-export function fileItemId(connectionId: number, repo: string, path: string): string {
-  return `${connectionId}:${repo}:${path}`;
+export function fileItemId(connectionId: number, repo: string, position: number, path: string): string {
+  return `${connectionId}:${repo}:${position}:${path}`;
 }
 
 /** Tree segments for a changed file, keeping "owner/name" repositories atomic. */
-export function fileSegments(host: string, repo: string, path: string): string[] {
-  return [host, repo, ...path.split('/')];
+export function fileSegments(host: string, repo: string, path: string, layer?: string): string[] {
+  return [host, repo, ...(layer ? [layer] : []), ...path.split('/')];
 }
 
 /**

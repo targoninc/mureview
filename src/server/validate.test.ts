@@ -46,7 +46,7 @@ describe('matchingBranches', () => {
 });
 
 describe('multiMatchError', () => {
-  const repo = { connectionId: 1, repo: 'owner/name', kind: 'github' as const, host: 'github.com', org: null, branch: null, target: null };
+  const repo = { connectionId: 1, repo: 'owner/name', kind: 'github' as const, host: 'github.com', org: null, branch: null, target: null, position: 0 };
 
   test('flags more than one matching branch', () => {
     const status: RepoStatus = { ...emptyRepoStatus(repo), accessible: true, matches: ['a', 'b'], branch: null };

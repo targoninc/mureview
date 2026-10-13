@@ -307,6 +307,7 @@ export class GithubClient implements ForgeClient {
         files,
         commits: (comparison.commits ?? []).map(toCommitInfo),
         truncated: files.length >= 300,
+        mergeBase: comparison.merge_base_commit?.sha,
       };
     });
   }

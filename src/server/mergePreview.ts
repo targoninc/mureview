@@ -69,6 +69,7 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
     kind: repo.kind,
     host: repo.host,
     repo: repo.repo,
+    position: repo.position,
     branch: repo.branch!,
     target,
     targetExists: repo.targetExists,

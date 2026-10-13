@@ -7,6 +7,7 @@ export interface ThreadMeta {
   threadKey: string;
   connectionId: number;
   repo: string;
+  position: number;
   path: string;
   side: Side;
   line: number;
@@ -28,7 +29,7 @@ export function groupThreads(comments: Comment[]): Map<string, ThreadMeta[]> {
   const byItem = new Map<string, Map<string, Comment[]>>();
   for (const comment of comments) {
     if (comment.connectionId === null || !comment.repo || !comment.path || !comment.line || !comment.side) continue;
-    const itemId = fileItemId(comment.connectionId, comment.repo, comment.path);
+    const itemId = fileItemId(comment.connectionId, comment.repo, comment.position, comment.path);
     const threadKey = `${comment.side}:${comment.line}`;
     const threads = byItem.get(itemId) ?? new Map<string, Comment[]>();
     threads.set(threadKey, [...(threads.get(threadKey) ?? []), comment]);
@@ -43,6 +44,7 @@ export function groupThreads(comments: Comment[]): Map<string, ThreadMeta[]> {
         threadKey: `${itemId}:${threadKey}`,
         connectionId: list[0].connectionId!,
         repo: list[0].repo!,
+        position: list[0].position,
         path: list[0].path!,
         side: list[0].side!,
         line: list[0].line!,

@@ -33,13 +33,34 @@ function ErrorList({ errors }: { errors: string[] }) {
 export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: ReviewSet }) {
   if (pr.state === 'loading') return null;
 
-  if (pr.state === 'open') {
-    return pr.errors.length > 0 ? (
+  // Notes explain collapsed or out-of-order stack layers; they are not errors.
+  const notes = pr.repos
+    .filter((repo) => repo.note)
+    .map((repo) => `${repo.host}/${repo.repo}${repo.branch ? ` (${repo.branch})` : ''}: ${repo.note}`);
+  const notesBanner =
+    notes.length > 0 ? (
       <Flash variant="warning">
-        <strong>Some repositories could not be processed</strong>
-        <ErrorList errors={pr.errors} />
+        <strong>Stack notes</strong>
+        <ul className="error-list">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
       </Flash>
     ) : null;
+
+  if (pr.state === 'open') {
+    return (
+      <>
+        {notesBanner}
+        {pr.errors.length > 0 ? (
+          <Flash variant="warning">
+            <strong>Some repositories could not be processed</strong>
+            <ErrorList errors={pr.errors} />
+          </Flash>
+        ) : null}
+      </>
+    );
   }
 
   if (pr.state === 'invalid') {
@@ -56,9 +77,11 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
     return (
       <Flash variant="success">
         <strong>
-          {reviewSet.mode === 'per-repo'
-            ? 'All matched branches are merged into their target branches.'
-            : `All matched branches are merged into ${reviewSet.targetBranch}.`}
+          {reviewSet.mode === 'stack'
+            ? 'Every stack was merged bottom-up.'
+            : reviewSet.mode === 'per-repo'
+              ? 'All matched branches are merged into their target branches.'
+              : `All matched branches are merged into ${reviewSet.targetBranch}.`}
         </strong>{' '}
         The ephemeral pull request was closed and
         its comments were discarded. Configure a new branch pattern or point at new branches to start the next review.
