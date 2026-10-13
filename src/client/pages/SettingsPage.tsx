@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Avatar, Button, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
+import { Avatar, Button, Flash, Heading, Spinner, useConfirm } from '@primer/react';
 import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
 import { AdoForm, AtprotoForm, ForgejoForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
+
+const authProviderNames: Record<AuthProvider, string> = { github: 'GitHub', forgejo: 'Forgejo', atproto: 'atproto', email: 'Email' };
 
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -69,13 +71,15 @@ export function SettingsPage() {
           </Heading>
           <div className="repo-list">
             {me.identities.map((identity) => {
+              const label = authProviderNames[identity.provider];
               return (
                 <div className="repo-list-item" key={identity.id} style={{ cursor: 'default' }}>
                   <div className="row">
-                    {providerVisual(identity.provider)}
+                    <span className="service-icon" role="img" aria-label={label} title={label}>
+                      {providerVisual(identity.provider)}
+                    </span>
                     <span>{identity.displayName}</span>
                   </div>
-                  <Label variant="secondary">{identity.provider}</Label>
                 </div>
               );
             })}
