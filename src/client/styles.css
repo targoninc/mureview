@@ -891,6 +891,11 @@ body.sidebar-resizing {
   border-top: none;
 }
 
+/* Primer's Textarea is monospace; comments read as text, not code. */
+.composer textarea {
+  font-family: var(--font-sans);
+}
+
 .conversation {
   padding: 12px;
   display: flex;
