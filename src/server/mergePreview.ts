@@ -146,10 +146,10 @@ export async function buildMergePreview(
   return {
     target: reviewSet.targetBranch,
     repos,
-    canMerge:
-      repos.length > 0 &&
-      repos.every(
-        (repo) => !repo.error && repo.conflicts !== 'detected' && repo.checks.state !== 'failure' && repo.canComplete !== 'no',
-      ),
+    // Merging happens per repository and per layer, so a blocked layer does
+    // not have to block the layers that can land.
+    canMerge: repos.some(
+      (repo) => !repo.error && repo.conflicts !== 'detected' && repo.checks.state !== 'failure' && repo.canComplete !== 'no',
+    ),
   };
 }

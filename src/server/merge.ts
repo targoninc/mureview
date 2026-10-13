@@ -1,4 +1,4 @@
-import type { MergeResult } from '../shared/types';
+import type { MergeResult, RepoStatus } from '../shared/types';
 import { connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
@@ -79,81 +79,131 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const clients = clientsForActor(user.id, connections);
 
   const current = await buildPrStatus(connections, reviewSet, true, { commits: false, clients, viewerId: user.id });
-  const openRepos = current.repos.filter((repo) => repo.state === 'open' && repo.branch);
-  if (!openRepos.length) {
+  // Layers that still have changes, plus layers already merged (so a stack's
+  // order is known even when its bottom layers landed in an earlier run).
+  const candidates = current.repos.filter(
+    (repo) => repo.branch && repo.position >= 0 && (repo.state === 'open' || repo.state === 'merged'),
+  );
+  if (!candidates.some((repo) => repo.state === 'open')) {
     throw new HttpError(400, 'Nothing to merge: no matched branch has changes against the target branch.');
   }
 
+  // One task per repository; the layers of a stack merge bottom-up.
+  const groups = new Map<string, RepoStatus[]>();
+  for (const repo of candidates) {
+    const key = `${repo.connectionId}:${repo.repo}`;
+    const group = groups.get(key) ?? [];
+    group.push(repo);
+    groups.set(key, group);
+  }
+
   const unsynced = current.prId ? listUnsyncedComments(current.prId) : [];
-  const results = await mapLimit(openRepos, 3, async (repo): Promise<MergeResult> => {
-    const label = `${repo.host}/${repo.repo}`;
-    const target = repo.target || reviewSet.targetBranch;
-    const client = clients.get(repo.connectionId);
-    if (!client) return { connectionId: repo.connectionId, label, ok: false, message: 'the forge connection was removed' };
-    if (client.readOnly) return { connectionId: repo.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet' };
-    try {
-      const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
-      if (!headRef) throw new Error('the matched branch no longer exists');
+  const results = await mapLimit([...groups.values()], 3, async (layers): Promise<MergeResult> => {
+    const first = layers[0];
+    const label = `${first.host}/${first.repo}`;
+    const client = clients.get(first.connectionId);
+    if (!client) return { connectionId: first.connectionId, label, ok: false, message: 'the forge connection was removed' };
+    if (client.readOnly) return { connectionId: first.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet' };
 
-      const checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.ref });
-      if (checks.state === 'failure') {
-        const failing = checks.runs
-          .filter((run) => run.state === 'failure')
-          .map((run) => run.name)
-          .join(', ');
-        return { connectionId: repo.connectionId, label, ok: false, message: `required checks are failing (${failing})` };
+    const ordered = [...layers].sort((a, b) => a.position - b.position);
+    const stacked = ordered.length > 1 || first.position > 0;
+    const messages: string[] = [];
+    let failed = false;
+
+    for (const layer of ordered) {
+      const layerName = stacked ? `layer ${layer.position + 1} (${layer.branch})` : layer.branch!;
+      if (failed) {
+        messages.push(`${layerName} was not merged`);
+        continue;
       }
-
-      if (!repo.targetExists) {
-        await client.createBranch(repo.repo, target, { sha: headRef.sha, branch: repo.branch! });
-        return { connectionId: repo.connectionId, label, ok: true, message: `created ${target} from ${repo.branch}` };
+      if (layer.state === 'error') {
+        messages.push(`${layerName}: ${layer.error ?? 'the branch could not be read'}`);
+        failed = true;
+        continue;
       }
+      if (layer.state === 'merged') {
+        messages.push(`${layerName} was already merged`);
+        continue;
+      }
+      const target = layer.target || reviewSet.targetBranch;
+      try {
+        const headRef = await client.getBranch(layer.repo, layer.branch!, { fresh: true });
+        if (!headRef) throw new Error('the matched branch no longer exists');
 
-      const pullRef =
-        repo.pullRequest?.ref ??
-        (
-          await client.ensurePullRequest(
-            repo.repo,
-            target,
-            repo.branch!,
-            `Merge ${repo.branch} into ${target}`,
-            `Review set: ${reviewSet.name}`,
-            reviewSetUrl(reviewSet.id),
-          )
-        ).ref;
-
-      // Comments are synced as they are written; this catches the ones whose
-      // immediate sync failed.
-      const comments = unsynced.filter((comment) => comment.connectionId === repo.connectionId && comment.repo === repo.repo);
-      let posted = 0;
-      let failed = 0;
-      for (const comment of comments) {
-        try {
-          await client.postReviewComment(repo.repo, pullRef, {
-            body: comment.body,
-            path: comment.path!,
-            line: comment.line!,
-            side: comment.side!,
-            commitId: repo.headSha ?? headRef.sha,
-          });
-          markCommentSynced(comment.id);
-          posted++;
-        } catch {
-          failed++;
+        const checks = await client.checks(layer.repo, headRef.sha, { pullRequest: layer.pullRequest?.ref });
+        if (checks.state === 'failure') {
+          const failing = checks.runs
+            .filter((run) => run.state === 'failure')
+            .map((run) => run.name)
+            .join(', ');
+          messages.push(`${layerName}: required checks are failing (${failing})`);
+          failed = true;
+          continue;
         }
-      }
 
-      const message = await client.mergePullRequest(repo.repo, pullRef, `Merge ${repo.branch} into ${target}`);
-      const commentNote = [
-        posted > 0 ? `${posted} late comment${posted === 1 ? '' : 's'} synced` : '',
-        failed > 0 ? `${failed} comment${failed === 1 ? '' : 's'} could not be synced` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ');
-      return { connectionId: repo.connectionId, label, ok: true, message: `${message}${commentNote ? ` · ${commentNote}` : ''}` };
-    } catch (error) {
-      return { connectionId: repo.connectionId, label, ok: false, message: forgeErrorMessage(error) };
+        if (!layer.targetExists) {
+          await client.createBranch(layer.repo, target, { sha: headRef.sha, branch: layer.branch! });
+          messages.push(`${layerName}: created ${target} from ${layer.branch}`);
+          continue;
+        }
+
+        const pullRef =
+          layer.pullRequest?.ref ??
+          (
+            await client.ensurePullRequest(
+              layer.repo,
+              target,
+              layer.branch!,
+              `Merge ${layer.branch} into ${target}`,
+              `Review set: ${reviewSet.name}`,
+              reviewSetUrl(reviewSet.id),
+            )
+          ).ref;
+
+        // Once the layers below are in, an upper layer's pull request points
+        // at the review set's target so its merge lands there too.
+        if (stacked && layer.position > 0 && target !== reviewSet.targetBranch && client.retargetPullRequest) {
+          await client.retargetPullRequest(layer.repo, pullRef, reviewSet.targetBranch);
+        }
+
+        // Comments are synced as they are written; this catches the ones whose
+        // immediate sync failed.
+        const comments = unsynced.filter(
+          (comment) =>
+            comment.connectionId === layer.connectionId && comment.repo === layer.repo && comment.position === layer.position,
+        );
+        let posted = 0;
+        let commentFailed = 0;
+        for (const comment of comments) {
+          try {
+            await client.postReviewComment(layer.repo, pullRef, {
+              body: comment.body,
+              path: comment.path!,
+              line: comment.line!,
+              side: comment.side!,
+              commitId: layer.headSha ?? headRef.sha,
+            });
+            markCommentSynced(comment.id);
+            posted++;
+          } catch {
+            commentFailed++;
+          }
+        }
+
+        const message = await client.mergePullRequest(layer.repo, pullRef, `Merge ${layer.branch} into ${target}`);
+        const commentNote = [
+          posted > 0 ? `${posted} late comment${posted === 1 ? '' : 's'} synced` : '',
+          commentFailed > 0 ? `${commentFailed} comment${commentFailed === 1 ? '' : 's'} could not be synced` : '',
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        messages.push(`${layerName}: ${message}${commentNote ? ` · ${commentNote}` : ''}`);
+      } catch (error) {
+        messages.push(`${layerName}: ${forgeErrorMessage(error)}`);
+        failed = true;
+      }
     }
+    return { connectionId: first.connectionId, label, ok: !failed, message: messages.join(' · ') };
   });
 
   invalidateForgeCaches();

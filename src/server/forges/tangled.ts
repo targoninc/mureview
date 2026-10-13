@@ -833,6 +833,35 @@ export class TangledClient implements ForgeClient {
     return `merged pull request ${ref}`;
   }
 
+  /** Rewrites the ticket's targetBranch so the patch lands on another branch. */
+  async retargetPullRequest(repo: string, ref: string, base: string): Promise<void> {
+    const target = await this.hosted(repo);
+    let current: { cid?: string; value?: Record<string, unknown> } | null = null;
+    try {
+      current = await knotGet<{ cid?: string; value?: Record<string, unknown> }>(target.knot, 'com.atproto.repo.getRecord', {
+        repo: target.repoDid,
+        collection: 'org.tangled.track.ticket',
+        rkey: ref,
+      });
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 400) throw new ForgeError(404, 'the pull request this layer belongs to is gone');
+      throw error;
+    }
+    if (!current?.value) throw new ForgeError(404, 'the pull request this layer belongs to is gone');
+    await this.authorizedPost(
+      target.knot,
+      'com.atproto.repo.putRecord',
+      {
+        repo: target.repoDid,
+        collection: 'org.tangled.track.ticket',
+        rkey: ref,
+        record: { ...current.value, targetBranch: base },
+        ...(current.cid ? { swapRecord: current.cid } : {}),
+      },
+      target.repoDid,
+    );
+  }
+
   async createBranch(): Promise<void> {
     throw new ForgeError(501, 'mureview cannot create Tangled branches yet');
   }

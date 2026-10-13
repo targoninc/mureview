@@ -34,12 +34,13 @@ interface RepoCardInfo {
   host: string;
   org: string | null;
   repo: string;
+  position: number;
   status?: RepoStatus;
   preview?: MergePreviewRepo;
 }
 
-function cardKey(connectionId: number, repo: string): string {
-  return `${connectionId}:${repo}`;
+function cardKey(entry: { connectionId: number; repo: string; position: number }): string {
+  return `${entry.connectionId}:${entry.repo}:${entry.position}`;
 }
 
 function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone } {
@@ -65,6 +66,7 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             </span>
           </span>
           <span className="mono" style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
+            {repo.position > 0 ? `Layer ${repo.position + 1} · ` : ''}
             {repo.branch} → {repo.target}
           </span>
           {repo.pullRequest ? (
@@ -180,7 +182,7 @@ export function MergePage() {
     setError(null);
 
     const patch = (key: string, update: (card: RepoCardInfo) => RepoCardInfo) =>
-      setCards((current) => current.map((card) => (cardKey(card.connectionId, card.repo) === key ? update(card) : card)));
+      setCards((current) => current.map((card) => (cardKey(card) === key ? update(card) : card)));
 
     const handle = (event: MergeEvent) => {
       if ('target' in event) {
@@ -192,16 +194,17 @@ export function MergePage() {
             host: repo.host,
             org: repo.org,
             repo: repo.repo,
+            position: repo.position,
           })),
         );
       } else if ('status' in event) {
-        const key = cardKey(event.status.connectionId, event.status.repo);
+        const key = cardKey(event.status);
         patch(key, (card) => ({ ...card, status: event.status }));
         setStatusLoaded((current) => current + 1);
       } else if ('checking' in event) {
         setOpenTotal(event.checking);
       } else if ('repo' in event) {
-        const key = cardKey(event.repo.connectionId, event.repo.repo);
+        const key = cardKey(event.repo);
         patch(key, (card) => ({ ...card, preview: event.repo }));
         setMergesLoaded((current) => current + 1);
       } else if ('done' in event) {
@@ -255,6 +258,8 @@ export function MergePage() {
   const checksState = failing > 0 ? 'failure' : pending > 0 ? 'pending' : runs.length > 0 ? 'success' : 'none';
   const conflictCount = previews.filter((repo) => repo.conflicts === 'detected').length;
   const blockedCount = previews.filter((repo) => repo.canComplete === 'no').length;
+  const stacked = previews.some((repo) => repo.position > 0);
+  const stackCount = new Set(previews.map((repo) => `${repo.connectionId}:${repo.repo}`)).size;
   const checksLabel =
     checksState === 'failure'
       ? `${failing} ${failing === 1 ? 'check' : 'checks'} failing`
@@ -288,6 +293,8 @@ export function MergePage() {
               ? 'The merge finished. Review the per-repository results below.'
               : openTotal === 0
                 ? 'Nothing to merge: no matched branch has changes against the target branch.'
+                : stacked
+                ? `${openTotal} ${openTotal === 1 ? 'layer' : 'layers'} across ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'} will be merged bottom-up: each layer's pull request is retargeted onto ${target} and merged in order. Conflicts and checks are evaluated first.`
                 : `${openTotal} ${openTotal === 1 ? 'branch' : 'branches'} will be merged through one pull request per repository. Conflicts and checks are evaluated before merging.`}
           </p>
         ) : null}
@@ -336,7 +343,7 @@ export function MergePage() {
         ) : null}
 
         {cards.map((card) => (
-          <MergeCard key={cardKey(card.connectionId, card.repo)} card={card} />
+          <MergeCard key={cardKey(card)} card={card} />
         ))}
 
         <div className="form-actions">
@@ -353,7 +360,7 @@ export function MergePage() {
             ) : null}
             {results ? null : (
               <Button variant="primary" leadingVisual={GitMergeIcon} disabled={!ready || !canMerge || merging} onClick={runMerge}>
-                {!ready ? 'Checking…' : merging ? 'Merging…' : `Merge ${openTotal} ${openTotal === 1 ? 'branch' : 'branches'}`}
+                {!ready ? 'Checking…' : merging ? 'Merging…' : stacked ? `Merge ${openTotal} ${openTotal === 1 ? 'layer' : 'layers'}` : `Merge ${openTotal} ${openTotal === 1 ? 'branch' : 'branches'}`}
               </Button>
             )}
           </div>
@@ -369,7 +376,7 @@ export function MergePage() {
         >
           <div className="stack" style={{ gap: 20 }}>
             {previews.map((repo) => (
-              <div className="stack" style={{ gap: 8 }} key={cardKey(repo.connectionId, repo.repo)}>
+              <div className="stack" style={{ gap: 8 }} key={cardKey(repo)}>
                 <strong className="mono" style={{ fontSize: 12 }}>
                   {repo.host}/{repo.repo} · {repo.branch}
                 </strong>

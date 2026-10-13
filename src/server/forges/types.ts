@@ -149,6 +149,11 @@ export interface ForgeClient {
    * 'unknown' when the forge cannot tell.
    */
   pullRequestPermission?(repo: string): Promise<'write' | 'read' | 'unknown'>;
+  /**
+   * Points an existing pull request at another base branch; stacked review
+   * sets use it to land every layer on the shared target, bottom-up.
+   */
+  retargetPullRequest?(repo: string, ref: string, base: string): Promise<void>;
   /** Resolves or reactivates the thread a comment belongs to, when supported. */
   setCommentResolved?(repo: string, ref: string, commentId: string, resolved: boolean): Promise<void>;
 }

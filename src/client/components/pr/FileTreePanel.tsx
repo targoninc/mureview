@@ -50,7 +50,7 @@ interface FileTreePanelProps {
   reviewedItems: Set<string>;
   visibleItems: Set<string>;
   onSelectItem: (itemId: string) => void;
-  /** Omitted for review sets owned by other users, which are read-only. */
+  /** Sets the viewed mark; everyone keeps their own marks, also on shared sets. */
   onSetReviewed?: (itemIds: string[], reviewed: boolean) => void;
 }
 

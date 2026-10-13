@@ -432,6 +432,14 @@ export class ForgejoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
+  async retargetPullRequest(repo: string, ref: string, base: string): Promise<void> {
+    await this.request(`/repos/${repo}/pulls/${pullNumber(ref)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base }),
+    });
+  }
+
   async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
     const number = pullNumber(ref);
     if (comment.replyTo && /^\d+$/.test(comment.replyTo)) {

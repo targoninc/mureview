@@ -507,6 +507,13 @@ export class AdoClient implements ForgeClient {
     return `merged pull request #${number}`;
   }
 
+  async retargetPullRequest(repo: string, ref: string, base: string): Promise<void> {
+    await this.request(`${this.repoUrl(repo)}/pullrequests/${pullNumber(ref)}?api-version=7.1`, {
+      method: 'PATCH',
+      json: { targetRefName: `refs/heads/${base}` },
+    });
+  }
+
   async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
     const number = pullNumber(ref);
     const replyTo = comment.replyTo?.match(/^(\d+):(\d+)$/);

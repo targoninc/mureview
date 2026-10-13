@@ -4,8 +4,8 @@ import { mapLimit } from './cache';
 import { type ForgeConnectionRow, type UserRow, db } from './db';
 import { hostOf, organizationOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
-import { buildPrStatus, clientsFor } from './pr';
-import { canManageReviewSet } from './permissions';
+import { buildPrStatus, clientsFor, clientsForActor } from './pr';
+import { canManageRepoList, canManageReviewSet } from './permissions';
 import { listComments } from './comments';
 import { syncForgeComments } from './commentSync';
 import { listReviewed } from './reviewed';
@@ -296,10 +296,18 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const connections = connectionsFor(access.ownerId);
-  const status = await buildPrStatus(connections, access.reviewSet, false, { discussions: false, commits: false, ensurePulls: true });
+  // Creating forge pull requests is a write: only viewers who may merge every
+  // branch trigger it, and they do it with their own credentials.
+  const canManage = await canManageReviewSet(user.id, access.reviewSet, connections);
+  const clients = clientsForActor(user.id, connections);
+  const status = await buildPrStatus(connections, access.reviewSet, false, {
+    discussions: false,
+    commits: false,
+    ensurePulls: canManage,
+    clients,
+  });
 
   if (status.prId && status.state === 'open') {
-    const clients = clientsFor(connections);
     const targets = db
       .query<{ connection_id: number; repo: string; position: number; forge_pr_ref: string }, [number]>(
         'SELECT connection_id, repo, position, forge_pr_ref FROM pull_request_repos WHERE pr_id = ?',
@@ -393,6 +401,9 @@ async function parseForeignInput(
   });
   if (!(await reposAccessible(user.id, repos))) {
     throw new HttpError(403, 'You can only use repositories you can reach with your own connections.');
+  }
+  if (!(await canManageRepoList(user.id, input.repos, ownerConnections))) {
+    throw new HttpError(403, 'You need merge permission on every repository in this review set.');
   }
   return input;
 }
