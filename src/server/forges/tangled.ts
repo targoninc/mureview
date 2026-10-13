@@ -437,8 +437,11 @@ function filePatch(file: KnotFile, path: string, prevPath: string | undefined, t
     body += `@@ -${fragment.OldPosition},${fragment.OldLines} +${fragment.NewPosition},${fragment.NewLines} @@\n`;
     for (const line of fragment.Lines) {
       body += `${line.Op === 1 ? '-' : line.Op === 2 ? '+' : ' '}${line.Line}`;
+      // Lines normally carry their own newline; the last line of a file may
+      // not, and without one two lines would merge and the hunk would no
+      // longer match its header.
+      if (!line.Line.endsWith('\n')) body += '\n';
     }
-    if (!body.endsWith('\n')) body += '\n';
   }
   return header + body;
 }
