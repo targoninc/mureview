@@ -157,16 +157,6 @@ body {
   background-color: var(--bgColor-default);
 }
 
-.forge-link {
-  font-size: 12px;
-  color: var(--fgColor-accent);
-  text-decoration: none;
-}
-
-.forge-link:hover {
-  text-decoration: underline;
-}
-
 .check-row,
 .dialog-row {
   display: flex;

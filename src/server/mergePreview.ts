@@ -1,4 +1,4 @@
-import type { ConflictState, MergePreview, MergePreviewRepo, ReviewSet } from '../shared/types';
+import type { ConflictState, MergePreview, MergePreviewRepo, RepoStatus, ReviewSet } from '../shared/types';
 import { mapLimit } from './cache';
 import { constants } from './config';
 import type { ForgeConnectionRow } from './db';
@@ -63,46 +63,69 @@ async function checkRepo(client: ForgeClient, base: MergePreviewRepo, headSha: s
   return { ...base, conflicts, conflictFiles, checkedFiles: toCheck.length, uncheckedFiles: unchecked };
 }
 
-export async function buildMergePreview(connections: ForgeConnectionRow[], reviewSet: ReviewSet): Promise<MergePreview> {
-  const status = await buildPrStatus(connections, reviewSet, true, { commits: false });
+async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, target: string): Promise<MergePreviewRepo> {
+  const base: MergePreviewRepo = {
+    connectionId: repo.connectionId,
+    kind: repo.kind,
+    host: repo.host,
+    repo: repo.repo,
+    branch: repo.branch!,
+    target,
+    targetExists: repo.targetExists,
+    aheadBy: repo.aheadBy ?? 0,
+    behindBy: repo.behindBy ?? 0,
+    files: repo.files?.length ?? 0,
+    additions: repo.additions ?? 0,
+    deletions: repo.deletions ?? 0,
+    truncated: repo.truncated ?? false,
+    conflicts: 'none',
+    conflictFiles: [],
+    checkedFiles: 0,
+    uncheckedFiles: 0,
+    checks: { state: 'none', runs: [] },
+    pullRequest: repo.pullRequest,
+  };
+  if (!client) return { ...base, conflicts: 'unknown', checks: { state: 'unknown', runs: [] }, error: 'the forge connection was removed' };
+  try {
+    const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
+    if (!headRef) return base;
+    base.checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.number });
+    if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
+    const targetRef = await client.getBranch(repo.repo, target, { fresh: true });
+    if (!targetRef) return base;
+    return await checkRepo(client, base, headRef.sha, targetRef.sha);
+  } catch (error) {
+    return { ...base, conflicts: 'unknown', error: forgeErrorMessage(error) };
+  }
+}
+
+export interface MergePreviewOptions {
+  /** Report the loading status of the review set itself while it loads. */
+  progressUserId?: number;
+  /** The number of repositories that will be checked for conflicts. */
+  onStart?: (total: number) => void;
+  /** Called as soon as a repository's preview card is ready. */
+  onRepo?: (repo: MergePreviewRepo) => void;
+}
+
+export async function buildMergePreview(
+  connections: ForgeConnectionRow[],
+  reviewSet: ReviewSet,
+  options: MergePreviewOptions = {},
+): Promise<MergePreview> {
+  const status = await buildPrStatus(connections, reviewSet, true, {
+    commits: false,
+    progress: options.progressUserId !== undefined,
+    progressUserId: options.progressUserId,
+  });
   const clients = clientsFor(connections);
 
   const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);
+  options.onStart?.(open.length);
   const repos = await mapLimit(open, 3, async (repo): Promise<MergePreviewRepo> => {
-    const client = clients.get(repo.connectionId);
-    const base: MergePreviewRepo = {
-      connectionId: repo.connectionId,
-      kind: repo.kind,
-      host: repo.host,
-      repo: repo.repo,
-      branch: repo.branch!,
-      target: reviewSet.targetBranch,
-      targetExists: repo.targetExists,
-      aheadBy: repo.aheadBy ?? 0,
-      behindBy: repo.behindBy ?? 0,
-      files: repo.files?.length ?? 0,
-      additions: repo.additions ?? 0,
-      deletions: repo.deletions ?? 0,
-      truncated: repo.truncated ?? false,
-      conflicts: 'none',
-      conflictFiles: [],
-      checkedFiles: 0,
-      uncheckedFiles: 0,
-      checks: { state: 'none', runs: [] },
-      pullRequest: repo.pullRequest,
-    };
-    if (!client) return { ...base, conflicts: 'unknown', checks: { state: 'unknown', runs: [] }, error: 'the forge connection was removed' };
-    try {
-      const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
-      if (!headRef) return base;
-      base.checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.number });
-      if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
-      const targetRef = await client.getBranch(repo.repo, reviewSet.targetBranch, { fresh: true });
-      if (!targetRef) return base;
-      return await checkRepo(client, base, headRef.sha, targetRef.sha);
-    } catch (error) {
-      return { ...base, conflicts: 'unknown', error: forgeErrorMessage(error) };
-    }
+    const card = await previewRepo(clients.get(repo.connectionId), repo, reviewSet.targetBranch);
+    options.onRepo?.(card);
+    return card;
   });
 
   return {

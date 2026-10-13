@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
-import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, XCircleFillIcon } from '@primer/octicons-react';
+import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type { CheckInfo, MergePreview, MergePreviewRepo, MergeResult, ReviewSetDetail } from '../../shared/types';
-import { api, post } from '../lib/api';
+import { post } from '../lib/api';
+import { streamJson } from '../lib/ndjson';
 import { MergeResultsFlash } from '../components/pr/merge';
+import { ReviewSetLoading } from '../components/pr/ReviewSetLoading';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
 type ConflictTone = 'success' | 'danger' | 'attention' | 'secondary';
+
+type MergeEvent =
+  | { target: string }
+  | { total: number }
+  | { repo: MergePreviewRepo }
+  | { done: { canMerge: boolean } }
+  | { error: string };
 
 function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone } {
   if (repo.error) return { text: repo.error, tone: 'danger' };
@@ -44,9 +53,17 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             {repo.branch} → {repo.target}
           </span>
           {repo.pullRequest ? (
-            <a className="forge-link" href={repo.pullRequest.url} target="_blank" rel="noreferrer">
-              Pull request #{repo.pullRequest.number}
-            </a>
+            <Button
+              as="a"
+              href={repo.pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+              size="small"
+              leadingVisual={GitPullRequestIcon}
+              style={{ alignSelf: 'flex-start' }}
+            >
+              PR #{repo.pullRequest.number}
+            </Button>
           ) : null}
         </div>
         <div className="row" style={{ gap: 6 }}>
@@ -81,16 +98,46 @@ export function MergePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [preview, setPreview] = useState<MergePreview | null>(null);
+  const [checking, setChecking] = useState<{ loaded: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
   const [results, setResults] = useState<MergeResult[] | null>(null);
   const [checksOpen, setChecksOpen] = useState(false);
 
+  // The preview streams in: the target branch first, one card per repository
+  // as it is checked, then whether everything can be merged.
   useEffect(() => {
     if (!id) return;
-    api<MergePreview>(`/review-sets/${id}/merge`)
-      .then(setPreview)
-      .catch((err: Error) => setError(err.message));
+    const controller = new AbortController();
+    let target = '';
+    let total = 0;
+    const cards: MergePreviewRepo[] = [];
+    setPreview(null);
+    setChecking(null);
+    setError(null);
+
+    const handle = (event: MergeEvent) => {
+      if ('target' in event) target = event.target;
+      else if ('total' in event) {
+        total = event.total;
+        setChecking({ loaded: 0, total });
+      } else if ('repo' in event) {
+        cards.push(event.repo);
+        setChecking({ loaded: cards.length, total });
+        setPreview({ target, repos: [...cards], canMerge: false });
+      } else if ('done' in event) {
+        setPreview({ target, repos: [...cards], canMerge: event.done.canMerge });
+        setChecking(null);
+      } else if ('error' in event) {
+        setError(event.error);
+        setChecking(null);
+      }
+    };
+
+    streamJson<MergeEvent>(`/review-sets/${id}/merge`, handle, controller.signal).catch((err: Error) => {
+      if (err.name !== 'AbortError') setError(err.message);
+    });
+    return () => controller.abort();
   }, [id]);
 
   const runMerge = async () => {
@@ -117,11 +164,7 @@ export function MergePage() {
   }
 
   if (!preview) {
-    return (
-      <div className="centered">
-        <Spinner size="large" aria-label="Checking merge" />
-      </div>
-    );
+    return <ReviewSetLoading id={id} title="Checking what would be merged…" />;
   }
 
   const runs = preview.repos.flatMap((repo) => repo.checks.runs);
@@ -149,6 +192,22 @@ export function MergePage() {
             ? 'The merge finished. Review the per-repository results below.'
             : `${preview.repos.length} ${preview.repos.length === 1 ? 'branch' : 'branches'} will be merged through one pull request per repository. Conflicts and checks are evaluated before merging.`}
         </p>
+
+        {checking && checking.loaded < checking.total ? (
+          <p className="row" style={{ gap: 6, margin: 0, color: 'var(--fgColor-muted)', fontSize: 12 }}>
+            <Spinner size="small" aria-label="Checking repositories" />
+            Checking repository {checking.loaded + 1}/{checking.total}
+            <span
+              className="mini-progress"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={checking.total}
+              aria-valuenow={checking.loaded}
+            >
+              <span className="mini-progress-fill" style={{ width: `${Math.round((checking.loaded / checking.total) * 100)}%` }} />
+            </span>
+          </p>
+        ) : null}
 
         {error ? <Flash variant="danger">{error}</Flash> : null}
         {results ? <MergeResultsFlash results={results} /> : null}
@@ -184,7 +243,7 @@ export function MergePage() {
             ) : null}
             {results ? null : (
               <Button variant="primary" leadingVisual={GitMergeIcon} disabled={!preview.canMerge || merging} onClick={runMerge}>
-                {merging ? 'Merging…' : `Merge ${preview.repos.length} ${preview.repos.length === 1 ? 'branch' : 'branches'}`}
+                {checking ? 'Checking…' : merging ? 'Merging…' : `Merge ${preview.repos.length} ${preview.repos.length === 1 ? 'branch' : 'branches'}`}
               </Button>
             )}
           </div>

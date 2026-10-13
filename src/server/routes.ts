@@ -16,7 +16,7 @@ import {
 import { createCommentRoute, deleteCommentRoute, listCommentsRoute } from './comments';
 import { forgeAvatarRoute } from './avatars';
 import { config } from './config';
-import { getMergePreview, mergeReviewSet } from './merge';
+import { mergeReviewSet, streamMergePreview } from './merge';
 import { listAvailableRepos } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
 import {
@@ -66,7 +66,7 @@ api.get('/api/review-sets/:id/commits', getReviewSetCommits);
 api.get('/api/review-sets/:id/discussion', getReviewSetDiscussion);
 api.put('/api/review-sets/:id', updateReviewSet);
 api.delete('/api/review-sets/:id', deleteReviewSet);
-api.get('/api/review-sets/:id/merge', getMergePreview);
+api.get('/api/review-sets/:id/merge', streamMergePreview);
 api.post('/api/review-sets/:id/merge', mergeReviewSet);
 
 api.get('/api/prs/:id/comments', listCommentsRoute);

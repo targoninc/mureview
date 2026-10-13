@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PrStatus, RepoStatus, ReviewSet, ReviewSetDetail } from '../../shared/types';
-import { ApiError, basePath } from './api';
+import { streamJson } from './ndjson';
 
 interface LoadCount {
   loaded: number;
@@ -78,34 +78,7 @@ export function useDetail(id: string | undefined) {
 
       void (async () => {
         try {
-          const response = await fetch(`${basePath}/api/review-sets/${id}/detail${fresh ? '?fresh=1' : ''}`, {
-            signal: controller.signal,
-            headers: { Accept: 'application/x-ndjson' },
-          });
-          if (!response.ok || !response.body) {
-            let message = response.statusText;
-            try {
-              message = ((await response.json()) as { error?: string }).error ?? message;
-            } catch {
-              // keep the status text
-            }
-            throw new ApiError(response.status, message);
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-          for (;;) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop() ?? '';
-            for (const line of lines) {
-              if (!line.trim()) continue;
-              handle(JSON.parse(line) as StreamEvent);
-            }
-          }
+          await streamJson<StreamEvent>(`/review-sets/${id}/detail${fresh ? '?fresh=1' : ''}`, handle, controller.signal);
         } catch (err) {
           if ((err as Error).name === 'AbortError') return;
           setError((err as Error).message);

@@ -43,7 +43,7 @@ function Progress({ progress }: { progress: LoadProgress }) {
 }
 
 /** Follows the server's review set load so the wait has a face. */
-export function ReviewSetLoading({ id }: { id: string | undefined }) {
+export function ReviewSetLoading({ id, title = 'Loading review set…' }: { id: string | undefined; title?: string }) {
   const [progress, setProgress] = useState<LoadProgress | null>(null);
 
   useEffect(() => {
@@ -68,7 +68,7 @@ export function ReviewSetLoading({ id }: { id: string | undefined }) {
       <div className="load-card">
         <Spinner size="medium" aria-label="Loading review set" />
         <div className="stack load-card-body">
-          <strong>Loading review set…</strong>
+          <strong>{title}</strong>
           {progress ? <Progress progress={progress} /> : <span className="load-meta">Talking to the forges…</span>}
         </div>
       </div>

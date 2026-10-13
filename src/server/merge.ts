@@ -12,10 +12,47 @@ import { buildDetail, loadOwnedReviewSet, requireId } from './reviewSets';
 import type { Ctx } from './router';
 import { forgeErrorMessage } from './validate';
 
-export async function getMergePreview(ctx: Ctx): Promise<Response> {
+/**
+ * Streams the merge preview as newline JSON: `{target}` first, then one
+ * `{repo}` card per repository as it is checked, then `{done: {canMerge}}`.
+ */
+export async function streamMergePreview(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
   const reviewSet = loadOwnedReviewSet(user, requireId(ctx));
-  return json(await buildMergePreview(connectionsFor(user.id), reviewSet));
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          // The client went away.
+        }
+      };
+      try {
+        send({ target: reviewSet.targetBranch });
+        const preview = await buildMergePreview(connectionsFor(user.id), reviewSet, {
+          progressUserId: user.id,
+          onStart: (total) => send({ total }),
+          onRepo: (repo) => send({ repo }),
+        });
+        send({ done: { canMerge: preview.canMerge } });
+      } catch (error) {
+        if (error instanceof HttpError) send({ error: error.message });
+        else {
+          console.error('Could not stream the merge preview:', error);
+          send({ error: 'Could not check the repositories for merging.' });
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
 }
 
 export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
