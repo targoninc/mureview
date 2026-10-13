@@ -31,6 +31,8 @@ function ErrorList({ errors }: { errors: string[] }) {
 }
 
 export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: ReviewSet }) {
+  if (pr.state === 'loading') return null;
+
   if (pr.state === 'open') {
     return pr.errors.length > 0 ? (
       <Flash variant="warning">

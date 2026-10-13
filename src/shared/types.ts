@@ -145,7 +145,7 @@ export interface RepoStatus {
   files?: FileDiff[];
 }
 
-export type PrLifecycle = 'invalid' | 'empty' | 'open' | 'closed';
+export type PrLifecycle = 'loading' | 'invalid' | 'empty' | 'open' | 'closed';
 
 export interface Comment {
   id: number;

@@ -27,6 +27,7 @@ import {
   getReviewSetDiscussion,
   getReviewSetProgress,
   listReviewSets,
+  streamReviewSetDetail,
   updateReviewSet,
 } from './reviewSets';
 import { Router } from './router';
@@ -61,6 +62,7 @@ api.get('/api/repos', (ctx: Ctx) => listAvailableRepos(requireUser(ctx), ctx.url
 api.get('/api/review-sets', listReviewSets);
 api.post('/api/review-sets', createReviewSet);
 api.get('/api/review-sets/:id', getReviewSet);
+api.get('/api/review-sets/:id/detail', streamReviewSetDetail);
 api.get('/api/review-sets/:id/progress', getReviewSetProgress);
 api.get('/api/review-sets/:id/commits', getReviewSetCommits);
 api.get('/api/review-sets/:id/discussion', getReviewSetDiscussion);

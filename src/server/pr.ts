@@ -188,6 +188,8 @@ export interface BuildPrOptions {
   /** Report per-repository progress for the loading screen. */
   progress?: boolean;
   progressUserId?: number;
+  /** Called with each repository as soon as its status is known. */
+  onRepo?: (repo: RepoStatus) => void;
 }
 
 export async function buildPrStatus(
@@ -222,11 +224,16 @@ export async function buildPrStatus(
     );
     const repos = await mapLimit(located, 4, async ({ status, sha }) => {
       const client = clients.get(status.connectionId);
-      if (!status.branch || !sha || !client) return status;
+      if (!status.branch || !sha || !client) {
+        options.onRepo?.(status);
+        return status;
+      }
       const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo);
-      return inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits, knownPull, (value) =>
+      const result = await inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits, knownPull, (value) =>
         phase(status.connectionId, status.repo, value),
       );
+      options.onRepo?.(result);
+      return result;
     });
 
     for (const repo of repos) {

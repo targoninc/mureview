@@ -613,6 +613,50 @@ svg.checks-pending {
   transition: width 300ms ease;
 }
 
+.mini-progress {
+  display: inline-block;
+  width: 90px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--bgColor-neutral-muted);
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--fgColor-accent);
+  transition: width 200ms ease;
+}
+
+.skeleton {
+  display: inline-block;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--bgColor-neutral-muted) 25%,
+    var(--borderColor-muted) 37%,
+    var(--bgColor-neutral-muted) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-diff {
+  width: 74px;
+  height: 12px;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
 .load-meta {
   font-size: 12px;
   color: var(--fgColor-muted);

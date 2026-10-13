@@ -9,7 +9,7 @@ import { useDetail } from '../lib/useDetail';
 
 export function ReviewSetPage() {
   const { id } = useParams();
-  const { detail, error, reload } = useDetail(id);
+  const { detail, error, reload, loading } = useDetail(id);
   const [discussion, setDiscussion] = useState<ReviewSetDiscussion | null>(null);
   const [commits, setCommits] = useState<RepoCommits[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -94,5 +94,5 @@ export function ReviewSetPage() {
     return <ReviewSetLoading id={id} />;
   }
 
-  return <PrView detail={merged} onReload={reloadAll} />;
+  return <PrView detail={merged} onReload={reloadAll} progress={loading} />;
 }

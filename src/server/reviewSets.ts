@@ -141,6 +141,51 @@ export function getReviewSetProgress(ctx: Ctx): Response {
   return json({ progress: readRun(user.id, requireId(ctx)) });
 }
 
+/**
+ * Streams the detail as the repositories finish, so the diff can appear as
+ * soon as the first repository is ready and the rest fill in lazily. Lines:
+ * `{reviewSet, owned, owner}`, `{repo}` per repository, `{done: PrStatus}` or
+ * `{error}`.
+ */
+export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
+  const user = ctx.user!;
+  const access = await loadReadableReviewSet(user, requireId(ctx));
+  const fresh = isFresh(ctx);
+  const encoder = new TextEncoder();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          // The client went away; further writes are pointless but harmless.
+        }
+      };
+      try {
+        send({ reviewSet: access.reviewSet, owned: access.owned, owner: access.owner });
+        const pr = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, fresh, {
+          commits: false,
+          ensurePulls: false,
+          progress: true,
+          progressUserId: user.id,
+          onRepo: (repo) => send({ repo }),
+        });
+        send({ done: pr });
+      } catch (error) {
+        console.error('Could not stream the review set detail:', error);
+        send({ error: 'Could not load the review set.' });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
 export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const access = await loadReadableReviewSet(user, requireId(ctx));

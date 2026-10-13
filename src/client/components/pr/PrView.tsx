@@ -56,9 +56,10 @@ function parseFiles(pr: PrStatus): ParsedFile[] {
 interface PrViewProps {
   detail: ReviewSetDetail;
   onReload: (fresh?: boolean) => void;
+  progress?: { loaded: number; total: number } | null;
 }
 
-export function PrView({ detail, onReload }: PrViewProps) {
+export function PrView({ detail, onReload, progress }: PrViewProps) {
   const { reviewSet, pr } = detail;
   const owned = detail.owned !== false;
   const navigate = useNavigate();
@@ -378,6 +379,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         commitCount={commitCount}
         diffStyle={diffStyle}
         onToggleDiffStyle={toggleDiffStyle}
+        progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}
         onOpenCommits={() => openPanel('commits')}
         onOpenConversation={() => openPanel('conversation')}

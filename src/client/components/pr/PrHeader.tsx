@@ -1,4 +1,4 @@
-import { Button, IconButton, Label } from '@primer/react';
+import { Button, IconButton, Label, Spinner } from '@primer/react';
 import {
   CommentDiscussionIcon,
   ColumnsIcon,
@@ -17,6 +17,8 @@ type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 
 
 function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: string } {
   switch (state) {
+    case 'loading':
+      return { variant: 'secondary', text: 'Loading' };
     case 'open':
       return { variant: 'success', text: 'Open' };
     case 'invalid':
@@ -38,6 +40,7 @@ interface PrHeaderProps {
   commitCount: number;
   diffStyle: 'unified' | 'split';
   onToggleDiffStyle: () => void;
+  progress: { loaded: number; total: number } | null;
   onOpenFiles: () => void;
   onOpenCommits: () => void;
   onOpenConversation: () => void;
@@ -54,6 +57,7 @@ export function PrHeader({
   commitCount,
   diffStyle,
   onToggleDiffStyle,
+  progress,
   onOpenFiles,
   onOpenCommits,
   onOpenConversation,
@@ -66,6 +70,7 @@ export function PrHeader({
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
   const skipped = pr.repos.reduce((count, repo) => count + (repo.files?.filter((file) => !file.patch).length ?? 0), 0);
+  const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
 
   return (
     <div className="pr-header">
@@ -76,7 +81,21 @@ export function PrHeader({
             <Label variant={state.variant}>{state.text}</Label>
           </div>
           <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
-            {openRepos.length > 0 ? (
+            {loadingRepos && progress ? (
+              <span className="row" style={{ gap: 6 }}>
+                <Spinner size="small" aria-label="Loading repositories" />
+                Loading repositories {progress.loaded}/{progress.total}
+                <span
+                  className="mini-progress"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={progress.total}
+                  aria-valuenow={progress.loaded}
+                >
+                  <span className="mini-progress-fill" style={{ width: `${Math.round((progress.loaded / progress.total) * 100)}%` }} />
+                </span>
+              </span>
+            ) : openRepos.length > 0 ? (
               <>
                 Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'} into{' '}
                 <span className="mono">{reviewSet.targetBranch}</span> · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
@@ -141,7 +160,9 @@ export function PrHeader({
             </>
           )}
         </div>
-          {pr.stats.files > 0 ? (
+          {pr.state === 'loading' ? (
+            <span className="skeleton skeleton-diff" role="status" aria-label="Calculating the total diff" />
+          ) : pr.stats.files > 0 ? (
             <span className="pr-header-diff">
               <span className="additions">+{pr.stats.additions}</span>{' '}
               <span className="deletions">−{pr.stats.deletions}</span>
