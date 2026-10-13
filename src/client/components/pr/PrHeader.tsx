@@ -1,5 +1,15 @@
 import { Button, IconButton, Label } from '@primer/react';
-import { CommentDiscussionIcon, FileDiffIcon, GitCommitIcon, GitMergeIcon, GitPullRequestIcon, PencilIcon, SyncIcon } from '@primer/octicons-react';
+import {
+  CommentDiscussionIcon,
+  ColumnsIcon,
+  FileDiffIcon,
+  GitCommitIcon,
+  GitMergeIcon,
+  GitPullRequestIcon,
+  PencilIcon,
+  RowsIcon,
+  SyncIcon,
+} from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, ReviewSetDetail } from '../../../shared/types';
 
@@ -26,6 +36,8 @@ interface PrHeaderProps {
   compact: boolean;
   commentCount: number;
   commitCount: number;
+  diffStyle: 'unified' | 'split';
+  onToggleDiffStyle: () => void;
   onOpenFiles: () => void;
   onOpenCommits: () => void;
   onOpenConversation: () => void;
@@ -40,6 +52,8 @@ export function PrHeader({
   compact,
   commentCount,
   commitCount,
+  diffStyle,
+  onToggleDiffStyle,
   onOpenFiles,
   onOpenCommits,
   onOpenConversation,
@@ -97,6 +111,11 @@ export function PrHeader({
               <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
                 Conversation ({commentCount})
               </Button>
+              <IconButton
+                icon={diffStyle === 'unified' ? ColumnsIcon : RowsIcon}
+                aria-label={diffStyle === 'unified' ? 'Switch to split view' : 'Switch to unified view'}
+                onClick={onToggleDiffStyle}
+              />
               {owned ? (
                 <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
               ) : null}
@@ -104,6 +123,13 @@ export function PrHeader({
             </>
           ) : (
             <>
+              <Button
+                leadingVisual={diffStyle === 'unified' ? ColumnsIcon : RowsIcon}
+                onClick={onToggleDiffStyle}
+                title={diffStyle === 'unified' ? 'Show the diff in two columns' : 'Show the diff in one column'}
+              >
+                {diffStyle === 'unified' ? 'Split view' : 'Unified view'}
+              </Button>
               {owned ? (
                 <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
                   Settings

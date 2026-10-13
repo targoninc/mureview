@@ -70,7 +70,7 @@ export function CommentThread({
             <div className="comment-header">
               <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
               <strong>{comment.author.name}</strong>
-              <span>commented {timeAgo(comment.createdAt)}</span>
+              <span>{timeAgo(comment.createdAt)}</span>
               {comment.source === 'forge' ? (
                 <span title="Written on the forge pull request and imported here">· from forge</span>
               ) : comment.synced && comment.path ? (

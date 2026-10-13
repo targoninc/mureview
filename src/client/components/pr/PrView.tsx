@@ -72,6 +72,16 @@ export function PrView({ detail, onReload }: PrViewProps) {
     () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.path))),
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>(
+    () => (window.localStorage.getItem('mureview:diff-style') === 'split' ? 'split' : 'unified'),
+  );
+  const toggleDiffStyle = useCallback(() => {
+    setDiffStyle((current) => {
+      const next = current === 'unified' ? 'split' : 'unified';
+      window.localStorage.setItem('mureview:diff-style', next);
+      return next;
+    });
+  }, []);
   const sidebarMin = 220;
   const sidebarMax = () => Math.max(sidebarMin, window.innerWidth - 520);
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -204,7 +214,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
     () => ({
       theme: { dark: 'pierre-dark', light: 'pierre-light' },
       themeType: 'dark',
-      diffStyle: 'unified',
+      diffStyle,
       enableGutterUtility: true,
       stickyHeaders: true,
       hunkSeparators: 'line-info',
@@ -239,7 +249,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
         });
       },
     }),
-    [],
+    [diffStyle],
   );
 
   const renderAnnotation = useCallback(
@@ -366,6 +376,8 @@ export function PrView({ detail, onReload }: PrViewProps) {
         compact={isMobile}
         commentCount={comments.length}
         commitCount={commitCount}
+        diffStyle={diffStyle}
+        onToggleDiffStyle={toggleDiffStyle}
         onOpenFiles={() => openPanel('files')}
         onOpenCommits={() => openPanel('commits')}
         onOpenConversation={() => openPanel('conversation')}
