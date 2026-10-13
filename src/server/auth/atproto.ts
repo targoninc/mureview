@@ -102,7 +102,7 @@ export async function atprotoLoginStart(ctx: Ctx): Promise<Response> {
   const headers = new Headers({ Location: url.toString() });
   headers.append(
     'Set-Cookie',
-    setCookie(pendingCookie, encrypt(JSON.stringify({ mode, userId })), {
+    setCookie(pendingCookie, encrypt(JSON.stringify({ mode, userId, handle })), {
       path: cookiePath(),
       httpOnly: true,
       secure: isSecure(),
@@ -112,31 +112,57 @@ export async function atprotoLoginStart(ctx: Ctx): Promise<Response> {
   return new Response(null, { status: 302, headers });
 }
 
-export async function atprotoCallback(ctx: Ctx): Promise<Response> {
+interface PendingAtproto {
+  mode: OAuthMode;
+  userId?: number;
+  handle?: string;
+}
+
+function pendingAuth(ctx: Ctx): PendingAtproto | null {
+  const raw = parseCookies(ctx.req.headers.get('cookie'))[pendingCookie];
+  if (!raw) return null;
   try {
-    return await atprotoCallbackInner(ctx);
-  } catch (error) {
-    return handleAuthError(error);
+    return JSON.parse(decrypt(raw)) as PendingAtproto;
+  } catch {
+    return null;
   }
 }
 
-async function atprotoCallbackInner(ctx: Ctx): Promise<Response> {
+export async function atprotoCallback(ctx: Ctx): Promise<Response> {
+  const pending = pendingAuth(ctx);
+  try {
+    return await atprotoCallbackInner(ctx, pending);
+  } catch (error) {
+    return handleAuthError(error, pending?.mode === 'connect' ? '/settings' : '/');
+  }
+}
+
+async function atprotoCallbackInner(ctx: Ctx, pending: PendingAtproto | null): Promise<Response> {
   if (!ctx.url.searchParams.get('code') || !ctx.url.searchParams.get('state')) {
     throw new HttpError(400, 'The atproto provider did not return a code.');
   }
+  if (!pending) throw new HttpError(400, 'This atproto sign-in expired. Please start again.');
 
-  const pendingRaw = parseCookies(ctx.req.headers.get('cookie'))[pendingCookie];
-  if (!pendingRaw) throw new HttpError(400, 'This atproto sign-in expired. Please start again.');
-  const pending = JSON.parse(decrypt(pendingRaw)) as { mode: OAuthMode; userId?: number };
-
-  let did: string;
+  const target = pending.mode === 'connect' ? '/settings' : '/';
   try {
     const { session } = await atprotoClient().callback(ctx.url.searchParams);
-    did = session.did;
-    const agent = new Agent(session);
-    const profile = await agent.getProfile({ actor: did });
+    const did = session.did;
+
+    // The profile lookup goes through the PDS's AppView proxy, which is not
+    // always available; fall back to the handle that was typed in.
+    let displayName = pending.handle || did;
+    let avatarUrl = '';
+    try {
+      const agent = new Agent(session);
+      const profile = await agent.getProfile({ actor: did });
+      displayName = profile.data.handle || displayName;
+      avatarUrl = profile.data.avatar ?? '';
+    } catch (error) {
+      console.error('atproto profile lookup failed, continuing without it:', error);
+    }
+
     const response = completeAuth(
-      { provider: 'atproto', subject: did, displayName: profile.data.handle, avatarUrl: profile.data.avatar ?? '' },
+      { provider: 'atproto', subject: did, displayName, avatarUrl },
       null,
       { provider: 'atproto', mode: pending.mode, userId: pending.userId ?? null, payload: {} },
     );
@@ -144,6 +170,8 @@ async function atprotoCallbackInner(ctx: Ctx): Promise<Response> {
     return response;
   } catch (error) {
     if (error instanceof HttpError) throw error;
-    throw new HttpError(400, `atproto sign-in failed: ${(error as Error).message}`);
+    const message = `atproto ${pending.mode === 'connect' ? 'connection' : 'sign-in'} failed: ${(error as Error).message}`;
+    console.error(message, error);
+    throw new HttpError(400, message);
   }
 }

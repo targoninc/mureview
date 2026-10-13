@@ -128,12 +128,12 @@ export async function githubLoginStart(ctx: Ctx): Promise<Response> {
   return redirect(url.toString());
 }
 
-export function redirectWithError(message: string): Response {
-  return redirect(`${config.baseUrl}${config.basePath}/?authError=${encodeURIComponent(message)}`);
+export function redirectWithError(message: string, path = '/'): Response {
+  return redirect(`${config.baseUrl}${config.basePath}${path}?authError=${encodeURIComponent(message)}`);
 }
 
-export function handleAuthError(error: unknown): Response {
-  if (error instanceof HttpError) return redirectWithError(error.message);
+export function handleAuthError(error: unknown, path = '/'): Response {
+  if (error instanceof HttpError) return redirectWithError(error.message, path);
   throw error;
 }
 

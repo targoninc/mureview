@@ -30,6 +30,16 @@ export function SettingsPage() {
 
   useEffect(load, [load]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get('authError');
+    if (!authError) return;
+    setError(authError);
+    params.delete('authError');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  }, []);
+
   if (!me) return <div className="centered">{error ? <Flash variant="danger">{error}</Flash> : <Spinner aria-label="Loading" />}</div>;
 
   const removeAllData = async () => {
