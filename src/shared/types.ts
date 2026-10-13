@@ -169,6 +169,8 @@ export interface Comment {
   source: 'mureview' | 'forge';
   forgeCommentId: string | null;
   parentId: number | null;
+  /** Resolved state of the forge thread; null when there is no forge thread. */
+  resolved: boolean | null;
   createdAt: string;
 }
 
@@ -253,6 +255,8 @@ export interface MergePreviewRepo {
   conflictFiles: string[];
   checkedFiles: number;
   uncheckedFiles: number;
+  /** Whether the acting account may complete pull requests in this repository. */
+  canComplete: 'yes' | 'no' | 'unknown';
   checks: ChecksSummary;
   pullRequest?: { number: number; url: string };
   error?: string;

@@ -15,7 +15,7 @@ import {
   passwordLogin,
   register,
 } from './auth/providers';
-import { createCommentRoute, deleteCommentRoute, listCommentsRoute } from './comments';
+import { createCommentRoute, deleteCommentRoute, listCommentsRoute, resolveCommentRoute } from './comments';
 import { forgeAvatarRoute } from './avatars';
 import { resolveReferenceRoute } from './refs';
 import { config } from './config';
@@ -77,6 +77,7 @@ api.post('/api/review-sets/:id/merge', mergeReviewSet);
 api.get('/api/prs/:id/comments', listCommentsRoute);
 api.post('/api/prs/:id/comments', createCommentRoute);
 api.delete('/api/comments/:id', deleteCommentRoute);
+api.post('/api/comments/:id/resolve', resolveCommentRoute);
 api.get('/api/forge-avatar', forgeAvatarRoute);
 api.get('/api/refs', resolveReferenceRoute);
 api.put('/api/prs/:id/reviewed', setReviewedRoute);

@@ -1,6 +1,13 @@
 import { useState } from 'react';
-import { Avatar, Button, Flash, IconButton, Textarea, useConfirm } from '@primer/react';
-import { ChevronDownIcon, ChevronRightIcon, LinkExternalIcon, TrashIcon } from '@primer/octicons-react';
+import { Avatar, Button, Flash, IconButton, Label, Textarea, useConfirm } from '@primer/react';
+import {
+  CheckCircleIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  IssueReopenedIcon,
+  LinkExternalIcon,
+  TrashIcon,
+} from '@primer/octicons-react';
 import type { Comment, RepoStatus } from '../../../shared/types';
 import { del, post } from '../../lib/api';
 import { useAppContext } from '../../lib/appContext';
@@ -76,6 +83,27 @@ export function CommentThread({
   // Replies answer the whole thread: continue the forge thread of the first
   // comment that exists there, otherwise the first comment.
   const parent = comments.find((comment) => comment.forgeCommentId) ?? comments[0];
+  const [resolvedOverride, setResolvedOverride] = useState<boolean | null>(null);
+
+  const parentRepo =
+    repos && parent?.connectionId !== null && parent?.repo
+      ? repos.find((entry) => entry.connectionId === parent.connectionId && entry.repo === parent.repo)
+      : undefined;
+  const canResolve = Boolean(
+    parent?.forgeCommentId && parentRepo && (parentRepo.kind === 'ado' || (parentRepo.kind === 'github' && parent.path)),
+  );
+  const resolved = resolvedOverride ?? parent?.resolved ?? false;
+
+  const toggleResolved = async () => {
+    if (!parent) return;
+    try {
+      await post(`/comments/${parent.id}/resolve`, { resolved: !resolved });
+      setResolvedOverride(!resolved);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
 
   return (
     <div className="comment-thread">
@@ -128,6 +156,18 @@ export function CommentThread({
                 >
                   <LinkExternalIcon size={14} />
                 </a>
+              ) : null}
+              {canResolve && comment.id === parent?.id ? (
+                <>
+                  {resolved ? <Label variant="success">resolved</Label> : null}
+                  <IconButton
+                    icon={resolved ? IssueReopenedIcon : CheckCircleIcon}
+                    aria-label={resolved ? 'Reactivate conversation' : 'Resolve conversation'}
+                    variant="invisible"
+                    size="small"
+                    onClick={toggleResolved}
+                  />
+                </>
               ) : null}
               {canDelete ? (
                 <IconButton

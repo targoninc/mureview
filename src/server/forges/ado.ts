@@ -85,6 +85,7 @@ interface AdoCommentAuthor {
 
 interface AdoThread {
   id: number;
+  status?: string;
   threadContext?: {
     filePath?: string;
     rightFileStart?: { line: number };
@@ -575,6 +576,15 @@ export class AdoClient implements ForgeClient {
     return href || image;
   }
 
+  async setCommentResolved(repo: string, number: number, commentId: string, resolved: boolean): Promise<void> {
+    const match = commentId.match(/^(\d+):/);
+    if (!match) throw new ForgeError(400, 'the comment is not part of a thread');
+    await this.request(`${this.repoUrl(repo)}/pullrequests/${number}/threads/${match[1]}?api-version=7.1`, {
+      method: 'PATCH',
+      json: { status: resolved ? 'fixed' : 'active' },
+    });
+  }
+
   async deleteComment(repo: string, number: number, commentId: string): Promise<void> {
     const match = commentId.match(/^(\d+):(\d+)$/);
     if (!match) return;
@@ -598,6 +608,7 @@ export class AdoClient implements ForgeClient {
       const rightLine = context?.rightFileStart?.line;
       const leftLine = context?.leftFileStart?.line;
       const anchored = Boolean(path) && (rightLine !== undefined || leftLine !== undefined);
+      const resolved = thread.status ? thread.status !== 'active' && thread.status !== 'pending' : undefined;
       for (const comment of thread.comments ?? []) {
         if (comment.isDeleted) continue;
         if (comment.commentType && comment.commentType !== 'text') continue;
@@ -614,6 +625,7 @@ export class AdoClient implements ForgeClient {
           line: anchored ? (rightLine ?? leftLine) : undefined,
           side: anchored && rightLine === undefined ? 'deletions' : anchored ? 'additions' : undefined,
           replyToId: comment.parentCommentId ? `${thread.id}:${comment.parentCommentId}` : undefined,
+          resolved,
         });
       }
     }

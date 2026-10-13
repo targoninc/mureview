@@ -11,6 +11,8 @@ export interface ForgeComment {
   line?: number;
   side?: 'additions' | 'deletions';
   replyToId?: string;
+  /** Whether the comment's thread is resolved on the forge. */
+  resolved?: boolean;
 }
 
 export class ForgeError extends Error {
@@ -137,6 +139,13 @@ export interface ForgeClient {
    * points at, for rendering it as a link or chip.
    */
   resolveReference?(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null>;
+  /**
+   * Whether the connected account may complete pull requests in a repository:
+   * 'unknown' when the forge cannot tell.
+   */
+  pullRequestPermission?(repo: string): Promise<'write' | 'read' | 'unknown'>;
+  /** Resolves or reactivates the thread a comment belongs to, when supported. */
+  setCommentResolved?(repo: string, number: number, commentId: string, resolved: boolean): Promise<void>;
 }
 
 export function hostOf(baseUrl: string): string {

@@ -75,6 +75,8 @@ interface GiteaReviewComment {
   updated_at?: string;
   user?: { login: string; avatar_url: string } | null;
   poster?: { login: string; avatar_url: string } | null;
+  /** Whoever resolved the conversation, when it is resolved. */
+  resolver?: { login: string } | null;
 }
 
 interface GiteaReview {
@@ -454,10 +456,22 @@ export class ForgejoClient implements ForgeClient {
           path: anchored ? comment.path : undefined,
           line: anchored ? (comment.line as number) : undefined,
           side: anchored ? (comment.side === 'LEFT' ? 'deletions' : 'additions') : undefined,
+          resolved: comment.resolver ? true : undefined,
         });
       }
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async pullRequestPermission(repo: string): Promise<'write' | 'read' | 'unknown'> {
+    try {
+      const data = await this.request<{ permissions?: { admin?: boolean; push?: boolean } | null }>(`/repos/${repo}`);
+      const permissions = data.permissions;
+      if (!permissions) return 'unknown';
+      return permissions.admin || permissions.push ? 'write' : 'read';
+    } catch {
+      return 'unknown';
+    }
   }
 
   async resolveReference(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null> {

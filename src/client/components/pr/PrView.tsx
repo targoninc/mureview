@@ -61,7 +61,6 @@ interface PrViewProps {
 
 export function PrView({ detail, onReload, progress }: PrViewProps) {
   const { reviewSet, pr } = detail;
-  const owned = detail.owned !== false;
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<'files' | 'commits' | 'conversation'>('files');
@@ -317,7 +316,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const renderHeaderMetadata = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
       const entry = parsedRef.current.get(item.id);
-      if (!entry || !pr.prId || !owned) return null;
+      if (!entry || !pr.prId) return null;
       return (
         <label className="viewed-toggle" title="Mark this file as reviewed">
           <Checkbox checked={reviewed.has(entry.id)} onChange={() => applyReviewed([entry.id], !reviewed.has(entry.id))} />
@@ -325,7 +324,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         </label>
       );
     },
-    [owned, reviewed, applyReviewed, pr.prId],
+    [reviewed, applyReviewed, pr.prId],
   );
 
   const hasFiles = parsed.length > 0;
@@ -352,7 +351,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
             codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });
             if (isMobile) setPanel(null);
           }}
-          onSetReviewed={owned ? applyReviewed : undefined}
+          onSetReviewed={applyReviewed}
         />
       ) : (
         <div className="empty-state">No text diffs to show.</div>

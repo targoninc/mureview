@@ -82,11 +82,16 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
     conflictFiles: [],
     checkedFiles: 0,
     uncheckedFiles: 0,
+    canComplete: 'unknown',
     checks: { state: 'none', runs: [] },
     pullRequest: repo.pullRequest,
   };
   if (!client) return { ...base, conflicts: 'unknown', checks: { state: 'unknown', runs: [] }, error: 'the forge connection was removed' };
   try {
+    if (client.pullRequestPermission) {
+      const permission = await client.pullRequestPermission(repo.repo);
+      base.canComplete = permission === 'write' ? 'yes' : permission === 'read' ? 'no' : 'unknown';
+    }
     const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
     if (!headRef) return base;
     base.checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.number });
@@ -102,6 +107,10 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
 export interface MergePreviewOptions {
   /** Report the loading status of the review set itself while it loads. */
   progressUserId?: number;
+  /** Whose viewed marks to include while inspecting the review set. */
+  viewerId?: number;
+  /** Act with these clients (keyed like the review set's connections). */
+  clients?: Map<number, ForgeClient>;
   /** Called with every repository's status as the review set is inspected. */
   onStatus?: (repo: RepoStatus) => void;
   /** The number of repositories that will be checked for conflicts. */
@@ -119,9 +128,11 @@ export async function buildMergePreview(
     commits: false,
     progress: options.progressUserId !== undefined,
     progressUserId: options.progressUserId,
+    viewerId: options.viewerId,
+    clients: options.clients,
     onRepo: options.onStatus,
   });
-  const clients = clientsFor(connections);
+  const clients = options.clients ?? clientsFor(connections);
 
   const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);
   options.onStart?.(open.length);
@@ -135,6 +146,9 @@ export async function buildMergePreview(
     target: reviewSet.targetBranch,
     repos,
     canMerge:
-      repos.length > 0 && repos.every((repo) => !repo.error && repo.conflicts !== 'detected' && repo.checks.state !== 'failure'),
+      repos.length > 0 &&
+      repos.every(
+        (repo) => !repo.error && repo.conflicts !== 'detected' && repo.checks.state !== 'failure' && repo.canComplete !== 'no',
+      ),
   };
 }

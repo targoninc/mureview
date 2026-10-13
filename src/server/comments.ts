@@ -24,11 +24,12 @@ interface CommentRow {
   synced_at: string | null;
   forge_comment_id: string | null;
   parent_id: number | null;
+  resolved: number | null;
   source: string;
   created_at: string;
 }
 
-interface PrRow {
+export interface PrRow {
   id: number;
   review_set_id: number;
   closed_at: string | null;
@@ -80,6 +81,7 @@ function toComment(row: CommentRow): Comment {
     source: row.source === 'forge' ? 'forge' : 'mureview',
     forgeCommentId: row.forge_comment_id,
     parentId: row.parent_id,
+    resolved: row.resolved === null ? null : row.resolved === 1,
     createdAt: row.created_at,
   };
 }
@@ -109,7 +111,7 @@ export function loadOwnedPr(userId: number, id: number): PrRow {
 }
 
 /** Loads a pull request the user may read: their own or a shared review set's. */
-async function loadReadablePr(userId: number, id: number): Promise<PrRow> {
+export async function loadReadablePr(userId: number, id: number): Promise<PrRow> {
   const pr = db.query<PrRow, [number]>('SELECT id, review_set_id, closed_at FROM pull_requests WHERE id = ?').get(id);
   if (!pr) throw new HttpError(404, 'Pull request not found');
   const access = await loadReadableReviewSetRow(userId, pr.review_set_id);
@@ -228,6 +230,55 @@ function connectionForComment(userId: number, ownerConnectionId: number): ForgeC
  * forge first: when that fails nothing changes locally, otherwise a later
  * sync would simply import the comment again (without its author).
  */
+/**
+ * Resolves or reactivates the forge thread a comment belongs to. The acting
+ * user's own connection is used, so the forge decides whether they may.
+ */
+export async function resolveCommentRoute(ctx: Ctx): Promise<Response> {
+  const user = requireUser(ctx);
+  const input = await readJson<{ resolved?: unknown }>(ctx.req);
+  if (typeof input.resolved !== 'boolean') throw new HttpError(400, '"resolved" must be a boolean');
+
+  const comment = db
+    .query<{ id: number; connection_id: number | null; repo: string | null; pr_id: number; forge_comment_id: string | null }, [number]>(
+      'SELECT id, connection_id, repo, pr_id, forge_comment_id FROM comments WHERE id = ?',
+    )
+    .get(Number(ctx.params.id));
+  if (!comment) throw new HttpError(404, 'Comment not found');
+  await loadReadablePr(user.id, comment.pr_id);
+  if (!comment.forge_comment_id || comment.connection_id === null || !comment.repo) {
+    throw new HttpError(400, 'This comment has no forge thread to resolve.');
+  }
+
+  const pull = repoPullRequest(comment.pr_id, comment.connection_id, comment.repo);
+  const connection = connectionOrMatching(user.id, comment.connection_id);
+  if (!pull || !connection) throw new HttpError(400, 'The forge pull request for this comment is gone.');
+
+  const client = clientFor(connection);
+  if (!client.setCommentResolved) throw new HttpError(400, 'This forge does not support resolving comments.');
+  try {
+    await client.setCommentResolved(comment.repo, pull.forge_pr_number, comment.forge_comment_id, input.resolved);
+  } catch (error) {
+    console.error(`Could not resolve comment ${comment.id} on the forge:`, error);
+    throw new HttpError(502, 'The forge refused to change the resolved state.');
+  }
+
+  const value = input.resolved ? 1 : 0;
+  db.run('UPDATE comments SET resolved = ? WHERE id = ?', [value, comment.id]);
+  if (connection.kind === 'ado') {
+    // All comments of an Azure DevOps thread share its id prefix.
+    const thread = comment.forge_comment_id.split(':')[0];
+    db.run('UPDATE comments SET resolved = ? WHERE pr_id = ? AND connection_id = ? AND repo = ? AND forge_comment_id LIKE ?', [
+      value,
+      comment.pr_id,
+      comment.connection_id,
+      comment.repo,
+      `${thread}:%`,
+    ]);
+  }
+  return json({ ok: true, resolved: input.resolved });
+}
+
 export async function deleteCommentRoute(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
   const comment = db

@@ -56,14 +56,14 @@ export function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
   return toReviewSet(row);
 }
 
-interface ReadableReviewSet {
+export interface ReadableReviewSet {
   reviewSet: ReviewSet;
   ownerId: number;
   owned: boolean;
   owner: OwnerInfo | null;
 }
 
-async function loadReadableReviewSet(user: UserRow, id: number): Promise<ReadableReviewSet> {
+export async function loadReadableReviewSet(user: UserRow, id: number): Promise<ReadableReviewSet> {
   const access = await loadReadableReviewSetRow(user.id, id);
   return { reviewSet: toReviewSet(access.row), ownerId: access.row.owner_id, owned: access.owned, owner: access.owner };
 }
@@ -131,6 +131,7 @@ export async function buildDetail(user: UserRow, id: number, fresh = false): Pro
     ensurePulls: false,
     progress: true,
     progressUserId: user.id,
+    viewerId: user.id,
   });
   return { reviewSet: access.reviewSet, pr, owned: access.owned, owner: access.owner };
 }
@@ -218,7 +219,7 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
 
   return json({
     comments: status.prId ? listComments(status.prId) : [],
-    reviewed: status.prId ? listReviewed(status.prId) : [],
+    reviewed: status.prId ? listReviewed(status.prId, user.id) : [],
     pullRequests: status.repos
       .filter((repo) => repo.pullRequest)
       .map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, ...repo.pullRequest! })),

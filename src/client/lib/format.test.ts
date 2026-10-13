@@ -17,6 +17,7 @@ const comment = (overrides: Partial<Comment>): Comment => ({
   source: 'forge',
   forgeCommentId: '42',
   parentId: null,
+  resolved: null,
   createdAt: '2026-01-01 00:00:00',
   ...overrides,
 });

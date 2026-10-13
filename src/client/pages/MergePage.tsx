@@ -91,6 +91,7 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
           ) : null}
         </div>
         <div className="row" style={{ gap: 6 }}>
+          {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
           {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}
           <Label variant={badge.tone}>{badge.text}</Label>
         </div>
@@ -262,6 +263,7 @@ export function MergePage() {
   const passing = runs.length - failing - pending;
   const checksState = failing > 0 ? 'failure' : pending > 0 ? 'pending' : runs.length > 0 ? 'success' : 'none';
   const conflictCount = previews.filter((repo) => repo.conflicts === 'detected').length;
+  const blockedCount = previews.filter((repo) => repo.canComplete === 'no').length;
   const checksLabel =
     checksState === 'failure'
       ? `${failing} ${failing === 1 ? 'check' : 'checks'} failing`
@@ -325,6 +327,14 @@ export function MergePage() {
         {checksState === 'failure' && !results ? (
           <Flash variant="danger">
             <strong>Pre-merge checks are failing.</strong> Fix or re-run them, or merge manually on the forge.
+          </Flash>
+        ) : null}
+        {blockedCount > 0 && !results ? (
+          <Flash variant="danger">
+            <strong>
+              You cannot complete pull requests in {blockedCount} {blockedCount === 1 ? 'repository' : 'repositories'}.
+            </strong>{' '}
+            Ask someone with write access to merge, or merge manually on the forge.
           </Flash>
         ) : null}
 

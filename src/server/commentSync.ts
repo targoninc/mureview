@@ -10,6 +10,7 @@ interface ExistingRow {
   line: number | null;
   author_name: string;
   author_avatar: string;
+  resolved: number | null;
 }
 
 function normalizeDate(value: string): string {
@@ -54,7 +55,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
 
     const existing = db
       .query<ExistingRow, [number, number, string]>(
-        'SELECT id, forge_comment_id, body, path, line, author_name, author_avatar FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ?',
+        'SELECT id, forge_comment_id, body, path, line, author_name, author_avatar, resolved FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ?',
       )
       .all(prId, repo.connectionId, repo.repo);
 
@@ -102,10 +103,21 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
       ]);
     };
 
+    // The forge is the truth for thread state.
+    const applyResolved = (row: ExistingRow, comment: ForgeComment) => {
+      if (comment.resolved === undefined) return;
+      const value = comment.resolved ? 1 : 0;
+      if (row.resolved === value) return;
+      db.run('UPDATE comments SET resolved = ? WHERE id = ?', [value, row.id]);
+    };
+
     for (const comment of forgeComments) {
       if (knownIds.has(comment.id)) {
         const known = byForgeId.get(comment.id);
-        if (known) applyForgeAuthor(known, comment);
+        if (known) {
+          applyForgeAuthor(known, comment);
+          applyResolved(known, comment);
+        }
         continue;
       }
       const duplicate = live.find(
@@ -121,8 +133,8 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
       const parent = comment.replyToId ? byForgeId.get(comment.replyToId) : undefined;
 
       const inserted = db.run(
-        `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, parent_id, source, created_at)
-         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, 'forge', ?)`,
+        `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, parent_id, resolved, source, created_at)
+         VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, 'forge', ?)`,
         [
           prId,
           comment.author.name,
@@ -135,6 +147,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
           comment.body,
           comment.id,
           parent?.id ?? null,
+          comment.resolved === undefined ? null : comment.resolved ? 1 : 0,
           normalizeDate(comment.createdAt),
         ],
       );
@@ -146,6 +159,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
         line: comment.line ?? null,
         author_name: comment.author.name,
         author_avatar: comment.author.avatarUrl,
+        resolved: comment.resolved === undefined ? null : comment.resolved ? 1 : 0,
       };
       byForgeId.set(comment.id, row);
     }

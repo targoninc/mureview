@@ -1,15 +1,17 @@
 import type { ReviewMark } from '../shared/types';
-import { connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
-import { loadOwnedPr } from './comments';
+import { loadReadablePr } from './comments';
 import { db } from './db';
 import { HttpError, json, readJson } from './http';
 import type { Ctx } from './router';
 
-export function listReviewed(prId: number): ReviewMark[] {
+/** The files the user marked as viewed; everyone keeps their own marks. */
+export function listReviewed(prId: number, userId: number): ReviewMark[] {
   return db
-    .query<ReviewMark, [number]>('SELECT connection_id AS connectionId, repo, path FROM reviewed_files WHERE pr_id = ? ORDER BY connection_id, repo, path')
-    .all(prId);
+    .query<ReviewMark, [number, number]>(
+      'SELECT connection_id AS connectionId, repo, path FROM reviewed_files WHERE pr_id = ? AND user_id = ? ORDER BY connection_id, repo, path',
+    )
+    .all(prId, userId);
 }
 
 interface ReviewedInput {
@@ -34,7 +36,7 @@ function parseMark(value: unknown): ReviewMark {
 
 export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
-  const pr = loadOwnedPr(user.id, Number(ctx.params.id));
+  const pr = await loadReadablePr(user.id, Number(ctx.params.id));
   if (pr.closed_at) throw new HttpError(400, 'This pull request is closed. Reviewed files only live while it is open.');
 
   const input = await readJson<ReviewedInput>(ctx.req);
@@ -47,23 +49,29 @@ export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
   if (!marks.length) throw new HttpError(400, 'No files given.');
   if (marks.length > maxBatch) throw new HttpError(400, `At most ${maxBatch} files per request.`);
 
-  const connectionIds = new Set(connectionsFor(user.id).map((connection) => connection.id));
   for (const mark of marks) {
-    if (!connectionIds.has(mark.connectionId)) throw new HttpError(400, 'A file references an unknown connection.');
+    const known = db
+      .query<{ repo: string }, [number, number, string]>(
+        'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ?',
+      )
+      .get(pr.review_set_id, mark.connectionId, mark.repo);
+    if (!known) throw new HttpError(400, 'A file does not belong to this review set.');
   }
 
   const apply = db.transaction((entries: ReviewMark[]) => {
     for (const entry of entries) {
       if (reviewed) {
-        db.run('INSERT OR IGNORE INTO reviewed_files (pr_id, connection_id, repo, path) VALUES (?, ?, ?, ?)', [
+        db.run('INSERT OR IGNORE INTO reviewed_files (pr_id, user_id, connection_id, repo, path) VALUES (?, ?, ?, ?, ?)', [
           pr.id,
+          user.id,
           entry.connectionId,
           entry.repo,
           entry.path,
         ]);
       } else {
-        db.run('DELETE FROM reviewed_files WHERE pr_id = ? AND connection_id = ? AND repo = ? AND path = ?', [
+        db.run('DELETE FROM reviewed_files WHERE pr_id = ? AND user_id = ? AND connection_id = ? AND repo = ? AND path = ?', [
           pr.id,
+          user.id,
           entry.connectionId,
           entry.repo,
           entry.path,

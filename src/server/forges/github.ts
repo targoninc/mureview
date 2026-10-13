@@ -357,9 +357,70 @@ export class GithubClient implements ForgeClient {
     }
   }
 
+  /**
+   * GitHub only exposes resolved review threads through GraphQL; this maps
+   * every review comment id of the pull request to its thread's state.
+   */
+  private async reviewThreads(
+    repo: string,
+    number: number,
+  ): Promise<{ id: string; isResolved: boolean; commentIds: string[] }[]> {
+    const [owner, name] = repo.split('/');
+    const data = await this.request<{
+      data?: {
+        repository?: {
+          pullRequest?: {
+            reviewThreads?: {
+              nodes?: { id: string; isResolved: boolean; comments?: { nodes?: { databaseId: number }[] } }[];
+            };
+          };
+        };
+      };
+      errors?: { message?: string }[];
+    }>('/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query:
+          'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}',
+        variables: { owner, name, number },
+      }),
+    });
+    if (data.errors?.length) throw new ForgeError(400, data.errors[0]?.message ?? 'the graphql query failed');
+    return (data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []).map((thread) => ({
+      id: thread.id,
+      isResolved: thread.isResolved,
+      commentIds: (thread.comments?.nodes ?? []).map((comment) => String(comment.databaseId)),
+    }));
+  }
+
+  async setCommentResolved(repo: string, number: number, commentId: string, resolved: boolean): Promise<void> {
+    const threads = await this.reviewThreads(repo, number);
+    const thread = threads.find((entry) => entry.commentIds.includes(commentId));
+    if (!thread) throw new ForgeError(404, 'the review thread was not found');
+    const mutation = resolved ? 'resolveReviewThread' : 'unresolveReviewThread';
+    const data = await this.request<{ errors?: { message?: string }[] }>('/graphql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `mutation($id:ID!){${mutation}(input:{threadId:$id}){thread{isResolved}}}`,
+        variables: { id: thread.id },
+      }),
+    });
+    if (data.errors?.length) throw new ForgeError(400, data.errors[0]?.message ?? 'the graphql mutation failed');
+  }
+
   async listComments(repo: string, number: number): Promise<ForgeComment[]> {
     const reviewComments = await this.paginate<GithubReviewComment>(`/repos/${repo}/pulls/${number}/comments`);
     const issueComments = await this.paginate<GithubIssueComment>(`/repos/${repo}/issues/${number}/comments`);
+    const resolvedByComment = new Map<string, boolean>();
+    try {
+      for (const thread of await this.reviewThreads(repo, number)) {
+        for (const id of thread.commentIds) resolvedByComment.set(id, thread.isResolved);
+      }
+    } catch (error) {
+      console.error(`Could not read the review thread states for ${repo}#${number}:`, error);
+    }
     const comments: ForgeComment[] = [];
 
     for (const comment of reviewComments) {
@@ -374,6 +435,7 @@ export class GithubClient implements ForgeClient {
         line: anchored ? (line as number) : undefined,
         side: anchored ? (comment.side === 'LEFT' ? 'deletions' : 'additions') : undefined,
         replyToId: comment.in_reply_to_id ? String(comment.in_reply_to_id) : undefined,
+        resolved: resolvedByComment.get(String(comment.id)),
       });
     }
     for (const comment of issueComments) {
@@ -385,6 +447,17 @@ export class GithubClient implements ForgeClient {
       });
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async pullRequestPermission(repo: string): Promise<'write' | 'read' | 'unknown'> {
+    try {
+      const data = await this.request<{ permissions?: { admin?: boolean; maintain?: boolean; push?: boolean } | null }>(`/repos/${repo}`);
+      const permissions = data.permissions;
+      if (!permissions) return 'unknown';
+      return permissions.admin || permissions.maintain || permissions.push ? 'write' : 'read';
+    } catch {
+      return 'unknown';
+    }
   }
 
   async resolveReference(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null> {

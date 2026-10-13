@@ -374,7 +374,38 @@ if (userVersion() < 6) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
-db.exec('PRAGMA user_version = 6;');
+if (userVersion() < 7) {
+  // Viewed marks become per user (shared review sets), and forge comment
+  // threads remember whether they are resolved.
+  db.exec('PRAGMA foreign_keys = OFF;');
+  const run = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE reviewed_files_v7 (
+        pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        connection_id INTEGER NOT NULL,
+        repo TEXT NOT NULL,
+        path TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (pr_id, user_id, connection_id, repo, path)
+      );
+      INSERT INTO reviewed_files_v7 (pr_id, user_id, connection_id, repo, path, created_at)
+        SELECT rf.pr_id, r.owner_id, rf.connection_id, rf.repo, rf.path, rf.created_at
+        FROM reviewed_files rf
+        JOIN pull_requests p ON p.id = rf.pr_id
+        JOIN review_sets r ON r.id = p.review_set_id;
+      DROP TABLE reviewed_files;
+      ALTER TABLE reviewed_files_v7 RENAME TO reviewed_files;
+    `);
+    const columns = db.query<{ name: string }, []>('PRAGMA table_info(comments)').all();
+    if (!columns.some((column) => column.name === 'resolved')) {
+      db.exec('ALTER TABLE comments ADD COLUMN resolved INTEGER');
+    }
+  });
+  run();
+  db.exec('PRAGMA foreign_keys = ON;');
+}
+db.exec('PRAGMA user_version = 7;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

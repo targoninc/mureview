@@ -1,4 +1,5 @@
 import type { CommitInfo, FileDiff, LoadPhase, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import { connectionOrMatching } from './auth/identities';
 import { Cache, cached, mapLimit } from './cache';
 import { listComments } from './comments';
 import { constants } from './config';
@@ -23,6 +24,19 @@ const commitsCache = new Cache<CommitInfo[]>(200, 60_000);
 
 export function clientsFor(connections: ForgeConnectionRow[]): Map<number, ForgeClient> {
   return new Map(connections.map((connection) => [connection.id, clientFor(connection)]));
+}
+
+/**
+ * Clients for acting on someone else's review set: the acting user's own
+ * matching connections, keyed like the review set's connections.
+ */
+export function clientsForActor(actorId: number, connections: ForgeConnectionRow[]): Map<number, ForgeClient> {
+  const clients = new Map<number, ForgeClient>();
+  for (const connection of connections) {
+    const actorConnection = connectionOrMatching(actorId, connection.id);
+    if (actorConnection) clients.set(connection.id, clientFor(actorConnection));
+  }
+  return clients;
 }
 
 function toFileDiff(file: CompareFile): FileDiff {
@@ -190,6 +204,10 @@ export interface BuildPrOptions {
   progressUserId?: number;
   /** Called with each repository as soon as its status is known. */
   onRepo?: (repo: RepoStatus) => void;
+  /** Whose viewed marks to include (they are per user). */
+  viewerId?: number;
+  /** Use these clients instead of building them from the connections. */
+  clients?: Map<number, ForgeClient>;
 }
 
 export async function buildPrStatus(
@@ -202,7 +220,7 @@ export async function buildPrStatus(
   const includeCommits = options.commits ?? true;
   const ensurePulls = options.ensurePulls ?? true;
   const errors: string[] = [];
-  const clients = clientsFor(connections);
+  const clients = options.clients ?? clientsFor(connections);
   const compiled = compilePatterns(reviewSet.branchRegex);
   if (compiled.error) errors.push(compiled.error);
 
@@ -268,7 +286,7 @@ export async function buildPrStatus(
         repos,
         prId: lifecycle.prId,
         comments: includeDiscussions && lifecycle.prId ? listComments(lifecycle.prId) : [],
-        reviewed: includeDiscussions && lifecycle.prId ? listReviewed(lifecycle.prId) : [],
+        reviewed: includeDiscussions && lifecycle.prId && options.viewerId ? listReviewed(lifecycle.prId, options.viewerId) : [],
         stats,
       };
     }
