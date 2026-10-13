@@ -77,7 +77,7 @@ export function PrHeader({
           </span>
         </div>
         <div className="row pr-header-actions">
-          <Button size="small" leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
+          <Button leadingVisual={GitPullRequestIcon} onClick={onShowPullRequests}>
             {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
           </Button>
           {pr.state === 'open' ? (
