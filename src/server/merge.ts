@@ -6,6 +6,7 @@ import { listUnsyncedComments } from './comments';
 import { invalidateForgeCaches } from './forges';
 import { HttpError, json } from './http';
 import { buildMergePreview } from './mergePreview';
+import { canManageReviewSet } from './permissions';
 import { buildPrStatus, clientsForActor } from './pr';
 import { markCommentSynced, reviewSetUrl } from './pullRequests';
 import { buildDetail, loadReadableReviewSet, requireId } from './reviewSets';
@@ -22,6 +23,9 @@ export async function streamMergePreview(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const connections = connectionsFor(access.ownerId);
+  if (!(await canManageReviewSet(user.id, access.reviewSet, connections))) {
+    throw new HttpError(403, 'You need merge permission on every repository in this review set.');
+  }
   const clients = clientsForActor(user.id, connections);
   const encoder = new TextEncoder();
 
@@ -67,6 +71,9 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const reviewSet = access.reviewSet;
   const connections = connectionsFor(access.ownerId);
+  if (!(await canManageReviewSet(user.id, reviewSet, connections))) {
+    throw new HttpError(403, 'You need merge permission on every repository in this review set.');
+  }
   // Merge with the acting user's own credentials: they may be merging a
   // shared review set, and the review set's creator may lack the rights.
   const clients = clientsForActor(user.id, connections);

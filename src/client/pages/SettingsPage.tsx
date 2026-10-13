@@ -69,7 +69,7 @@ export function SettingsPage() {
       : []),
     { key: 'forgejo', name: 'Forgejo', detail: 'Sign-in and forge connection', icon: <ServiceGlyph kind="forgejo" /> },
     { key: 'ado', name: 'Azure DevOps', detail: 'Forge connection only (personal access token)', icon: <ServiceGlyph kind="ado" /> },
-    { key: 'tangled', name: 'Tangled', detail: 'Forge connection only — read-only for now', icon: <ServiceGlyph kind="tangled" /> },
+    { key: 'tangled', name: 'Tangled', detail: 'Forge connection only (pull requests need an atproto sign-in)', icon: <ServiceGlyph kind="tangled" /> },
     ...(me.providers.includes('entra')
       ? [{ key: 'entra' as const, name: 'Entra ID', detail: 'Sign-in only', icon: providerVisual('entra') }]
       : []),
@@ -161,6 +161,12 @@ export function SettingsPage() {
                       {connection.host}/{connection.login}
                     </span>
                   </div>
+                  {connection.kind === 'tangled' && connection.writeReady === false ? (
+                    <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                      Pull requests and comments on Tangled are written with your atproto account, so sign in with atproto as{' '}
+                      <span className="mono">{connection.login}</span> to use them.
+                    </span>
+                  ) : null}
                   <div className="row">
                     {connection.manageUrl ? (
                       <Button

@@ -48,20 +48,34 @@ export function ReviewSetFormPage() {
 
   const branchKey = (connectionId: number, repo: string) => `${connectionId}:${repo}`;
 
-  const loadBranches = (connectionId: number, repo: string) => {
+  // A foreign review set's repositories reference the owner's connections; act
+  // on them with the viewer's own matching connection.
+  const actorConnectionId = (item: ReviewSetRepo): number => {
+    if (!detail || detail.owned) return item.connectionId;
+    if (sources.some((source) => source.connectionId === item.connectionId)) return item.connectionId;
+    return (
+      sources.find(
+        (source) => source.kind === item.kind && source.host === item.host && (item.kind !== 'ado' || source.org === item.org),
+      )?.connectionId ?? item.connectionId
+    );
+  };
+
+  const loadBranches = (connectionId: number, repo: string, fetchConnectionId = connectionId) => {
     const key = branchKey(connectionId, repo);
     setBranches((current) => (current[key] ? current : { ...current, [key]: { state: 'loading' } }));
-    api<{ branches: string[] }>(`/repos/branches?connectionId=${connectionId}&repo=${encodeURIComponent(repo)}`)
+    api<{ branches: string[] }>(`/repos/branches?connectionId=${fetchConnectionId}&repo=${encodeURIComponent(repo)}`)
       .then((result) => setBranches((current) => ({ ...current, [key]: { state: 'ready', branches: result.branches } })))
       .catch(() => setBranches((current) => ({ ...current, [key]: { state: 'error' } })));
   };
 
   useEffect(() => {
-    if (form.mode === 'pattern') return;
+    if (form.mode === 'pattern' || !sources.length) return;
     for (const item of form.selected) {
-      if (!branches[branchKey(item.connectionId, item.repo)]) loadBranches(item.connectionId, item.repo);
+      if (!branches[branchKey(item.connectionId, item.repo)]) {
+        loadBranches(item.connectionId, item.repo, actorConnectionId(item));
+      }
     }
-  }, [form.mode, form.selected]);
+  }, [form.mode, form.selected, sources, detail]);
 
   useEffect(() => {
     api<{ repos: AvailableRepo[]; sources: RepoSource[]; errors: { connectionId: number; message: string }[] }>('/repos')
@@ -99,7 +113,15 @@ export function ReviewSetFormPage() {
     const needle = search.trim().toLowerCase();
     return available
       .filter((repo) => !hiddenSources.has(repo.connectionId))
-      .filter((repo) => !form.selected.some((item) => item.connectionId === repo.connectionId && item.repo === repo.repo))
+      .filter(
+        (repo) =>
+          !form.selected.some(
+            (item) =>
+              item.repo === repo.repo &&
+              (item.connectionId === repo.connectionId ||
+                (item.kind === repo.kind && item.host === repo.host && (repo.kind !== 'ado' || item.org === repo.org))),
+          ),
+      )
       .filter((repo) => !needle || `${repo.host}/${repo.repo}`.toLowerCase().includes(needle))
       .slice(0, 100);
   }, [available, form.selected, search, hiddenSources]);
@@ -241,6 +263,24 @@ export function ReviewSetFormPage() {
     return (
       <div className="centered">
         <Spinner aria-label="Loading" />
+      </div>
+    );
+  }
+
+  if (editing && detail && !detail.canManage) {
+    return (
+      <div className="page-scroll">
+        <div className="page-inner" style={{ maxWidth: 760 }}>
+          <Heading as="h1" variant="medium">
+            Review set settings
+          </Heading>
+          <Flash variant="danger">
+            You need merge permission on every repository in this review set to change its settings.
+          </Flash>
+          <div className="form-actions">
+            <Button onClick={() => navigate(`/review-sets/${id}`)}>Back to the review set</Button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -401,7 +441,7 @@ export function ReviewSetFormPage() {
                         <span className="row" style={{ gap: 8 }}>
                           {ambiguousHosts.has(item.host) ? (
                             <span className="repo-source">
-                              {sources.find((source) => source.connectionId === item.connectionId)?.label}
+                              {sources.find((source) => source.connectionId === actorConnectionId(item))?.label}
                             </span>
                           ) : null}
                           <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
@@ -467,7 +507,7 @@ export function ReviewSetFormPage() {
                       </span>
                       <span className="row" style={{ gap: 8 }}>
                         {ambiguousHosts.has(item.host) ? (
-                          <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
+                            <span className="repo-source">{sources.find((source) => source.connectionId === actorConnectionId(item))?.label}</span>
                         ) : null}
                         <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
                         <Button
@@ -545,7 +585,7 @@ export function ReviewSetFormPage() {
         ) : null}
 
         <div className="form-actions">
-          {editing ? (
+          {editing && detail?.owned ? (
             <Button variant="danger" leadingVisual={TrashIcon} onClick={remove}>
               Delete
             </Button>

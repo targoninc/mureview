@@ -9,6 +9,7 @@ interface LoadCount {
 
 type StreamEvent =
   | { reviewSet: ReviewSet; owned: boolean; owner: ReviewSetDetail['owner'] }
+  | { canManage: boolean }
   | { repo: RepoStatus }
   | { done: PrStatus }
   | { error: string };
@@ -45,11 +46,14 @@ export function useDetail(id: string | undefined) {
       let reviewSet: ReviewSet | null = null;
       let owned = true;
       let owner: ReviewSetDetail['owner'] = null;
+      let canManage = false;
+      let currentPr: PrStatus | null = null;
       const repoEvents: RepoStatus[] = [];
 
       const commit = (pr: PrStatus) => {
         if (!reviewSet) return;
-        setDetail({ reviewSet, owned, owner, pr });
+        currentPr = pr;
+        setDetail({ reviewSet, owned, owner, canManage, pr });
       };
 
       const handle = (event: StreamEvent) => {
@@ -60,6 +64,9 @@ export function useDetail(id: string | undefined) {
           setLoading({ loaded: 0, total: event.reviewSet.repos.length });
           // A review set without repositories never produces a repo event.
           if (event.reviewSet.repos.length === 0) commit(loadingPr());
+        } else if ('canManage' in event) {
+          canManage = event.canManage;
+          if (currentPr) commit(currentPr);
         } else if ('repo' in event) {
           repoEvents.push(event.repo);
           setLoading({ loaded: repoEvents.length, total: reviewSet?.repos.length ?? repoEvents.length });

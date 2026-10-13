@@ -122,7 +122,12 @@ export async function hasAtprotoSession(did: string): Promise<boolean> {
  * target verifies it against the account's DID document.
  */
 export async function mintAtprotoServiceAuth(did: string, options: { aud: string; lxm: string; expiresInSeconds?: number }): Promise<string> {
-  const oauth = atprotoClient();
+  let oauth: NodeOAuthClient;
+  try {
+    oauth = atprotoClient();
+  } catch (error) {
+    throw new Error(`no atproto session for this account — sign in with atproto first (${(error as Error).message})`);
+  }
   const session = await oauth.restore(did).catch(() => {
     throw new Error('no atproto session for this account — sign in with atproto first');
   });

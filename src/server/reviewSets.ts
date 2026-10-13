@@ -1,10 +1,11 @@
 import type { ForgeKind, ReviewSet, ReviewSetDetail, ReviewSetInput, ReviewSetRepo } from '../shared/types';
 import { loadReadableReviewSetRow, ownerInfo, reposAccessible, reviewSetRow, type OwnerInfo, type ReviewSetRow } from './access';
 import { mapLimit } from './cache';
-import { type UserRow, db } from './db';
+import { type ForgeConnectionRow, type UserRow, db } from './db';
 import { hostOf, organizationOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
 import { buildPrStatus, clientsFor } from './pr';
+import { canManageReviewSet } from './permissions';
 import { listComments } from './comments';
 import { syncForgeComments } from './commentSync';
 import { listReviewed } from './reviewed';
@@ -81,20 +82,25 @@ export function requireId(ctx: Ctx): number {
   return id;
 }
 
-function parseInput(user: UserRow, body: unknown): ReviewSetInput {
+/** Maps a submitted connection id to the connection to store, or null when it is unknown. */
+type ConnectionResolver = (connectionId: number) => number | null;
+
+function parseInput(user: UserRow, body: unknown, resolveConnection?: ConnectionResolver): ReviewSetInput {
   const record = (body ?? {}) as Record<string, unknown>;
   const name = requireString(record.name, 'name', 200);
   const mode: ReviewSetInput['mode'] = record.mode === 'per-repo' || record.mode === 'stack' ? record.mode : 'pattern';
 
   const raw = Array.isArray(record.repos) ? record.repos : [];
-  const connections = new Set(connectionsFor(user.id).map((connection) => connection.id));
+  const own = new Set(connectionsFor(user.id).map((connection) => connection.id));
+  const resolve = resolveConnection ?? ((connectionId: number) => (own.has(connectionId) ? connectionId : null));
   const repos: ReviewSetInput['repos'] = [];
   const seen = new Set<string>();
 
   for (const entry of raw) {
     const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown; branch?: unknown; target?: unknown; position?: unknown };
-    const connectionId = Number(item.connectionId);
-    if (!Number.isInteger(connectionId) || !connections.has(connectionId)) {
+    const submitted = Number(item.connectionId);
+    const connectionId = Number.isInteger(submitted) ? resolve(submitted) : null;
+    if (connectionId === null) {
       throw new HttpError(400, 'Every repository must reference one of your forge connections.');
     }
     const repo = typeof item.repo === 'string' ? normalizeRepo(item.repo) : null;
@@ -175,14 +181,18 @@ function isFresh(ctx: Ctx): boolean {
  */
 export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const access = await loadReadableReviewSet(user, id);
-  const pr = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, fresh, {
-    commits: false,
-    ensurePulls: false,
-    progress: true,
-    progressUserId: user.id,
-    viewerId: user.id,
-  });
-  return { reviewSet: access.reviewSet, pr, owned: access.owned, owner: access.owner };
+  const connections = connectionsFor(access.ownerId);
+  const [pr, canManage] = await Promise.all([
+    buildPrStatus(connections, access.reviewSet, fresh, {
+      commits: false,
+      ensurePulls: false,
+      progress: true,
+      progressUserId: user.id,
+      viewerId: user.id,
+    }),
+    canManageReviewSet(user.id, access.reviewSet, connections),
+  ]);
+  return { reviewSet: access.reviewSet, pr, owned: access.owned, owner: access.owner, canManage };
 }
 
 /** What the review set load is doing right now, for the loading screen. */
@@ -194,13 +204,17 @@ export function getReviewSetProgress(ctx: Ctx): Response {
 /**
  * Streams the detail as the repositories finish, so the diff can appear as
  * soon as the first repository is ready and the rest fill in lazily. Lines:
- * `{reviewSet, owned, owner}`, `{repo}` per repository, `{done: PrStatus}` or
- * `{error}`.
+ * `{reviewSet, owned, owner}`, `{canManage}`, `{repo}` per repository,
+ * `{done: PrStatus}` or `{error}`.
  */
 export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const fresh = isFresh(ctx);
+  const connections = connectionsFor(access.ownerId);
+  if (fresh && !(await canManageReviewSet(user.id, access.reviewSet, connections))) {
+    throw new HttpError(403, 'You need merge permission on every repository in this review set to refresh it.');
+  }
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
@@ -214,7 +228,10 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
       };
       try {
         send({ reviewSet: access.reviewSet, owned: access.owned, owner: access.owner });
-        const pr = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, fresh, {
+        const permission = canManageReviewSet(user.id, access.reviewSet, connections)
+          .then((canManage) => send({ canManage }))
+          .catch(() => send({ canManage: false }));
+        const pr = await buildPrStatus(connections, access.reviewSet, fresh, {
           commits: false,
           ensurePulls: false,
           progress: true,
@@ -222,6 +239,7 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
           onRepo: (repo) => send({ repo }),
         });
         send({ done: pr });
+        await permission;
       } catch (error) {
         console.error('Could not stream the review set detail:', error);
         send({ error: 'Could not load the review set.' });
@@ -296,7 +314,11 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
     reviewed: status.prId ? listReviewed(status.prId, user.id) : [],
     pullRequests: status.repos
       .filter((repo) => repo.pullRequest)
-      .map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, ...repo.pullRequest! })),
+      .map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, position: repo.position, ...repo.pullRequest! })),
+    // Why creating a forge pull request failed, so the review page can say it.
+    prErrors: status.repos
+      .filter((repo) => repo.prError)
+      .map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, position: repo.position, message: repo.prError! })),
   });
 }
 
@@ -336,11 +358,55 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
   return json({ detail: await buildDetail(user, id) }, 201);
 }
 
+/**
+ * Repositories a non-owner submits are resolved to the owner's connections so
+ * the review set stays bound to its owner. Repositories the editor adds must
+ * still be reachable with their own connections.
+ */
+async function parseForeignInput(
+  user: UserRow,
+  reviewSet: ReviewSet,
+  ownerConnections: ForgeConnectionRow[],
+  body: unknown,
+): Promise<ReviewSetInput> {
+  const ownerById = new Map(ownerConnections.map((connection) => [connection.id, connection]));
+  const own = connectionsFor(user.id);
+  const usedBySet = new Set(reviewSet.repos.map((repo) => repo.connectionId));
+  const input = parseInput(user, body, (submitted) => {
+    const owner = ownerById.get(submitted);
+    if (owner) return owner.id;
+    const actor = own.find((connection) => connection.id === submitted);
+    if (!actor) return null;
+    const candidates = ownerConnections.filter(
+      (connection) =>
+        connection.kind === actor.kind &&
+        hostOf(connection.base_url) === hostOf(actor.base_url) &&
+        (actor.kind !== 'ado' || organizationOf(connection.base_url) === organizationOf(actor.base_url)),
+    );
+    const preferred = candidates.find((connection) => usedBySet.has(connection.id)) ?? candidates[0];
+    return preferred?.id ?? null;
+  });
+
+  const repos = input.repos.map((repo) => {
+    const connection = ownerById.get(repo.connectionId)!;
+    return { kind: connection.kind, host: hostOf(connection.base_url), org: organizationOf(connection.base_url), repo: repo.repo };
+  });
+  if (!(await reposAccessible(user.id, repos))) {
+    throw new HttpError(403, 'You can only use repositories you can reach with your own connections.');
+  }
+  return input;
+}
+
 export async function updateReviewSet(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const id = requireId(ctx);
-  loadOwnedReviewSet(user, id);
-  const input = parseInput(user, await readJson(ctx.req));
+  const access = await loadReadableReviewSet(user, id);
+  const connections = connectionsFor(access.ownerId);
+  if (!(await canManageReviewSet(user.id, access.reviewSet, connections))) {
+    throw new HttpError(403, 'You need merge permission on every repository in this review set to change its settings.');
+  }
+  const body = await readJson(ctx.req);
+  const input = access.owned ? parseInput(user, body) : await parseForeignInput(user, access.reviewSet, connections, body);
   db.run('UPDATE review_sets SET name = ?, mode = ?, branch_regex = ?, target_branch = ? WHERE id = ?', [
     input.name,
     input.mode,

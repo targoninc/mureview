@@ -52,11 +52,13 @@ export function ReviewSetPage() {
     const keyOf = (entry: { connectionId: number; repo: string; position: number }) =>
       `${entry.connectionId}:${entry.repo}:${entry.position}`;
     const pullsByRepo = new Map((discussion?.pullRequests ?? []).map((pull) => [keyOf(pull), pull]));
+    const prErrors = new Map((discussion?.prErrors ?? []).map((entry) => [keyOf(entry), entry.message]));
     const commitsByRepo = new Map((commits ?? []).map((bundle) => [keyOf(bundle), bundle.commits]));
     return {
       reviewSet: detail.reviewSet,
       owned: detail.owned,
       owner: detail.owner,
+      canManage: detail.canManage,
       pr: {
         ...detail.pr,
         comments: discussion?.comments ?? detail.pr.comments,
@@ -67,6 +69,7 @@ export function ReviewSetPage() {
           return {
             ...repo,
             pullRequest: repo.pullRequest ?? (pull ? { ref: pull.ref, url: pull.url } : undefined),
+            prError: prErrors.get(key) ?? repo.prError,
             commits: commitsByRepo.get(key) ?? repo.commits,
           };
         }),

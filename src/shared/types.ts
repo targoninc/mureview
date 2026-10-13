@@ -248,6 +248,8 @@ export interface ReviewSetDetail {
   /** False when the review set belongs to another user and is only readable. */
   owned: boolean;
   owner: { name: string; avatarUrl: string } | null;
+  /** Whether the viewer may merge every branch, and so change settings or refresh. */
+  canManage: boolean;
 }
 
 export interface MergeResult {
@@ -302,6 +304,8 @@ export interface ReviewSetDiscussion {
   comments: Comment[];
   reviewed: ReviewMark[];
   pullRequests: { connectionId: number; repo: string; position: number; ref: string; url: string }[];
+  /** Pull request creation failures, surfaced on the review page. */
+  prErrors?: { connectionId: number; repo: string; position: number; message: string }[];
 }
 
 export interface RepoCommits {

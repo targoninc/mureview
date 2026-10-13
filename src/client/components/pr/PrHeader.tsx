@@ -69,6 +69,7 @@ export function PrHeader({
   const navigate = useNavigate();
   const { reviewSet, pr } = detail;
   const owned = detail.owned !== false;
+  const canManage = detail.canManage;
   const state = stateVariant(pr.state);
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
@@ -150,7 +151,7 @@ export function PrHeader({
             >
               {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
             </Button>
-            {pr.state === 'open' && owned ? (
+            {pr.state === 'open' && canManage ? (
               <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
                 Merge
               </Button>
@@ -166,19 +167,19 @@ export function PrHeader({
                 <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
                   Conversation ({commentCount})
                 </Button>
-                {owned ? (
+                {canManage ? (
                   <IconButton icon={GearIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
                 ) : null}
-                <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
+                {canManage ? <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} /> : null}
               </>
             ) : (
               <>
-                {owned ? (
+                {canManage ? (
                   <Button leadingVisual={GearIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
                     Settings
                   </Button>
                 ) : null}
-                <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
+                {canManage ? <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} /> : null}
               </>
             )}
           </div>

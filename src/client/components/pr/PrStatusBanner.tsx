@@ -49,9 +49,27 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
       </Flash>
     ) : null;
 
+  // Comments and merging need a real pull request per branch; when creating
+  // one fails the review still works, but the reason must be visible.
+  const prErrors = pr.repos
+    .filter((repo) => repo.prError)
+    .map((repo) => `${repo.host}/${repo.repo}${repo.branch ? ` (${repo.branch})` : ''}: ${repo.prError}`);
+  const prErrorsBanner =
+    prErrors.length > 0 ? (
+      <Flash variant="warning">
+        <strong>No forge pull request yet</strong>
+        <ul className="error-list">
+          {prErrors.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      </Flash>
+    ) : null;
+
   if (pr.state === 'open') {
     return (
       <>
+        {prErrorsBanner}
         {notesBanner}
         {pr.errors.length > 0 ? (
           <Flash variant="warning">
