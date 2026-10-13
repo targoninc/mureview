@@ -40,7 +40,7 @@ export async function ensureRepoPullRequests(
         repo.repo,
         reviewSet.targetBranch,
         repo.branch!,
-        `mureview: merge ${repo.branch} into ${reviewSet.targetBranch}`,
+        `Merge ${repo.branch} into ${reviewSet.targetBranch}`,
         `Review set: ${reviewSet.name}`,
       );
       db.run(

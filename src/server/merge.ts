@@ -56,7 +56,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
 
       const pullNumber =
         repo.pullRequest?.number ??
-        (await client.ensurePullRequest(repo.repo, target, repo.branch!, `mureview: merge ${repo.branch} into ${target}`)).number;
+        (await client.ensurePullRequest(repo.repo, target, repo.branch!, `Merge ${repo.branch} into ${target}`)).number;
 
       // Comments are synced as they are written; this catches the ones whose
       // immediate sync failed.
@@ -79,7 +79,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         }
       }
 
-      const message = await client.mergePullRequest(repo.repo, pullNumber, `mureview: merge ${repo.branch} into ${target}`);
+      const message = await client.mergePullRequest(repo.repo, pullNumber, `Merge ${repo.branch} into ${target}`);
       const commentNote = [
         posted > 0 ? `${posted} late comment${posted === 1 ? '' : 's'} synced` : '',
         failed > 0 ? `${failed} comment${failed === 1 ? '' : 's'} could not be synced` : '',
