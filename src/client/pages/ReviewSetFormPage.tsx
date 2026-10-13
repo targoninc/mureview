@@ -178,7 +178,7 @@ export function ReviewSetFormPage() {
               open={filterOpen}
               onOpen={() => setFilterOpen(true)}
               onClose={() => setFilterOpen(false)}
-              width="medium"
+              width="auto"
               renderAnchor={(anchorProps) => (
                 <IconButton
                   {...anchorProps}
@@ -188,12 +188,12 @@ export function ReviewSetFormPage() {
                 />
               )}
             >
-              <div className="stack" style={{ padding: 12, gap: 8 }}>
+              <div className="stack sources-menu" style={{ padding: 12, gap: 8 }}>
                 <strong style={{ fontSize: 12 }}>Sources</strong>
                 {sources.map((source) => (
                   <label key={source.connectionId} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
                     <Checkbox checked={!hiddenSources.has(source.connectionId)} onChange={() => toggleSource(source.connectionId)} />
-                    {source.kind === 'ado' ? `azure devops · ${source.label}` : source.label}
+                    <span className="source-label">{source.kind === 'ado' ? `azure devops · ${source.label}` : source.label}</span>
                   </label>
                 ))}
                 {sources.length === 0 ? <span style={{ fontSize: 12 }}>No forges connected.</span> : null}
