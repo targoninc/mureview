@@ -7,7 +7,7 @@ import {
   GitCommitIcon,
   GitMergeIcon,
   GitPullRequestIcon,
-  PencilIcon,
+  GearIcon,
   RowsIcon,
   SyncIcon,
 } from '@primer/octicons-react';
@@ -151,20 +151,18 @@ export function PrHeader({
                   Conversation ({commentCount})
                 </Button>
                 {owned ? (
-                  <IconButton icon={PencilIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
+                  <IconButton icon={GearIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
                 ) : null}
                 <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
               </>
             ) : (
               <>
                 {owned ? (
-                  <Button leadingVisual={PencilIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
+                  <Button leadingVisual={GearIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
                     Settings
                   </Button>
                 ) : null}
-                <Button leadingVisual={SyncIcon} onClick={() => onReload(true)}>
-                  Refresh
-                </Button>
+                <IconButton icon={SyncIcon} aria-label="Refresh" onClick={() => onReload(true)} />
               </>
             )}
           </div>
