@@ -784,6 +784,16 @@ body.sidebar-resizing {
   font-size: 14px;
 }
 
+.comment-ref {
+  color: var(--fgColor-accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.comment-ref:hover {
+  text-decoration: underline;
+}
+
 .composer {
   padding: 12px;
   display: flex;

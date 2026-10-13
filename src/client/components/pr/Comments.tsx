@@ -6,6 +6,7 @@ import { del, post } from '../../lib/api';
 import { useAppContext } from '../../lib/appContext';
 import { forgeCommentLink, timeAgo } from '../../lib/format';
 import { serviceNames } from '../ServiceIcon';
+import { CommentBody } from './CommentBody';
 import type { Side } from './annotations';
 
 export interface CommentAnchor {
@@ -106,7 +107,9 @@ export function CommentThread({
                 />
               ) : null}
             </div>
-            <div className="comment-body">{comment.body}</div>
+            <div className="comment-body">
+              <CommentBody body={comment.body} repos={repos} repo={comment} />
+            </div>
           </div>
         );
       })}
