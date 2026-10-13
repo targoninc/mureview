@@ -581,6 +581,86 @@ svg.checks-pending {
   transition: background-color 120ms ease;
 }
 
+.load-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: min(560px, 90vw);
+  padding: 20px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 8px;
+  background-color: var(--bgColor-default);
+  box-shadow: var(--shadow-resting-medium);
+}
+
+.load-card-body {
+  flex: 1;
+  min-width: 0;
+  gap: 10px;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background-color: var(--bgColor-muted);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--fgColor-accent);
+  transition: width 300ms ease;
+}
+
+.load-meta {
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}
+
+.load-repos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.load-repos li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.load-phase {
+  flex: none;
+  width: 116px;
+  color: var(--fgColor-muted);
+}
+
+.load-phase-checking,
+.load-phase-diffing {
+  color: var(--fgColor-accent);
+}
+
+.load-phase-done {
+  color: var(--fgColor-success);
+}
+
+.load-phase-error {
+  color: var(--fgColor-danger);
+}
+
+.load-repo-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-resizer:hover,
 body.sidebar-resizing .sidebar-resizer {
   background-color: var(--fgColor-accent);

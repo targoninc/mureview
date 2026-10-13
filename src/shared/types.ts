@@ -42,6 +42,20 @@ export interface TokenWarning {
   daysLeft: number;
 }
 
+export type LoadPhase = 'pending' | 'checking' | 'diffing' | 'done' | 'error';
+
+export interface LoadProgressRepo {
+  label: string;
+  phase: LoadPhase;
+}
+
+export interface LoadProgress {
+  repos: LoadProgressRepo[];
+  done: number;
+  total: number;
+  finished: boolean;
+}
+
 export interface ReviewSetRepo {
   connectionId: number;
   repo: string;

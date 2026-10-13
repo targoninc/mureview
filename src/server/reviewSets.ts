@@ -8,6 +8,7 @@ import { buildPrStatus, clientsFor } from './pr';
 import { listComments } from './comments';
 import { syncForgeComments } from './commentSync';
 import { listReviewed } from './reviewed';
+import { readRun } from './progress';
 import { normalizeRepo } from './repos';
 import { connectionsFor } from './auth/identities';
 import type { Ctx } from './router';
@@ -125,8 +126,19 @@ function isFresh(ctx: Ctx): boolean {
  */
 export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const access = await loadReadableReviewSet(user, id);
-  const pr = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, fresh, { commits: false, ensurePulls: false });
+  const pr = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, fresh, {
+    commits: false,
+    ensurePulls: false,
+    progress: true,
+    progressUserId: user.id,
+  });
   return { reviewSet: access.reviewSet, pr, owned: access.owned, owner: access.owner };
+}
+
+/** What the review set load is doing right now, for the loading screen. */
+export function getReviewSetProgress(ctx: Ctx): Response {
+  const user = ctx.user!;
+  return json({ progress: readRun(user.id, requireId(ctx)) });
 }
 
 export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {

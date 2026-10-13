@@ -122,13 +122,19 @@ export async function inspectRepos(
   repos: ReviewSetRepo[],
   patterns: RegExp[],
   fresh = false,
+  onPhase?: (repo: ReviewSetRepo, phase: 'checking' | 'done' | 'error') => void,
 ): Promise<LocatedRepo[]> {
   return mapLimit(repos, 4, async (repo): Promise<LocatedRepo> => {
     const client = clients.get(repo.connectionId);
-    if (!client) return { status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`), sha: null };
+    if (!client) {
+      onPhase?.(repo, 'error');
+      return { status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`), sha: null };
+    }
+    onPhase?.(repo, 'checking');
     try {
       await client.ensureRepo(repo.repo, { fresh });
     } catch (error) {
+      onPhase?.(repo, 'error');
       return {
         status: emptyRepoStatus(repo, `You don't have access to ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`),
         sha: null,
@@ -142,8 +148,10 @@ export async function inspectRepos(
       );
       const branch = matches.length === 1 ? matches[0] : null;
       const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
+      if (!sha) onPhase?.(repo, 'done');
       return { status: { ...emptyRepoStatus(repo), accessible: true, matches, branch }, sha };
     } catch (error) {
+      onPhase?.(repo, 'error');
       return { status: emptyRepoStatus(repo, `Could not list branches for ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`), sha: null };
     }
   });

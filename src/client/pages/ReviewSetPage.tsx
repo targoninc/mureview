@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Flash, Spinner } from '@primer/react';
+import { Flash } from '@primer/react';
 import type { RepoCommits, ReviewSetDiscussion } from '../../shared/types';
 import { PrView } from '../components/pr/PrView';
+import { ReviewSetLoading } from '../components/pr/ReviewSetLoading';
 import { api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
 
@@ -90,11 +91,7 @@ export function ReviewSetPage() {
   }
 
   if (!merged) {
-    return (
-      <div className="centered">
-        <Spinner size="large" aria-label="Loading review set" />
-      </div>
-    );
+    return <ReviewSetLoading id={id} />;
   }
 
   return <PrView detail={merged} onReload={reloadAll} />;

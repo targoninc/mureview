@@ -1,10 +1,11 @@
-import type { CommitInfo, FileDiff, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import type { CommitInfo, FileDiff, LoadPhase, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
 import { Cache, cached, mapLimit } from './cache';
 import { listComments } from './comments';
 import { constants } from './config';
 import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
+import { beginRun, finishRun, setPhase } from './progress';
 import { attachKnownPullRequests, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
 import { listReviewed } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
@@ -89,12 +90,15 @@ async function inspectBranch(
   fresh: boolean,
   includeCommits: boolean,
   knownPull: number | null = null,
+  onPhase?: (phase: 'diffing' | 'done' | 'error') => void,
 ): Promise<RepoStatus> {
   const repo = status.repo;
+  onPhase?.('diffing');
   try {
     const targetRef = await client.getBranch(repo, target, { fresh });
     if (!targetRef) {
       const diff = await targetlessDiff(client, repo, branchSha);
+      onPhase?.('done');
       return {
         ...status,
         targetExists: false,
@@ -111,6 +115,7 @@ async function inspectBranch(
 
     const comparison = await client.compare(repo, targetRef.sha, branchSha);
     if (comparison.merged) {
+      onPhase?.('done');
       return {
         ...status,
         targetExists: true,
@@ -127,6 +132,7 @@ async function inspectBranch(
     const commits = includeCommits
       ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull ?? undefined)
       : undefined;
+    onPhase?.('done');
     return {
       ...status,
       targetExists: true,
@@ -142,6 +148,7 @@ async function inspectBranch(
       files,
     };
   } catch (error) {
+    onPhase?.('error');
     return { ...status, error: `Could not build the diff for ${status.host}/${repo} (${forgeErrorMessage(error)}).`, state: 'error' };
   }
 }
@@ -178,6 +185,9 @@ export interface BuildPrOptions {
   commits?: boolean;
   /** Create missing forge pull requests for open repositories. */
   ensurePulls?: boolean;
+  /** Report per-repository progress for the loading screen. */
+  progress?: boolean;
+  progressUserId?: number;
 }
 
 export async function buildPrStatus(
@@ -194,51 +204,71 @@ export async function buildPrStatus(
   const compiled = compilePatterns(reviewSet.branchRegex);
   if (compiled.error) errors.push(compiled.error);
 
-  const located = await inspectRepos(clients, reviewSet.repos, compiled.patterns, fresh);
-  const repos = await mapLimit(located, 4, async ({ status, sha }) => {
-    const client = clients.get(status.connectionId);
-    if (!status.branch || !sha || !client) return status;
-    const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo);
-    return inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits, knownPull);
-  });
-
-  for (const repo of repos) {
-    const error = repo.error ?? multiMatchError(repo);
-    if (error) errors.push(error);
+  const reporting = options.progress === true && options.progressUserId !== undefined;
+  if (reporting) {
+    beginRun(
+      options.progressUserId!,
+      reviewSet.id,
+      reviewSet.repos.map((repo) => ({ key: `${repo.connectionId}:${repo.repo}`, label: `${repo.host}/${repo.repo}` })),
+    );
   }
+  const phase = (connectionId: number, repo: string, value: LoadPhase) => {
+    if (reporting) setPhase(reviewSet.id, `${connectionId}:${repo}`, value);
+  };
 
-  const openRepos = repos.filter((repo) => repo.state === 'open');
-  const matchedOk = repos.filter((repo) => repo.branch && repo.state !== 'error');
-  const hasRepoErrors = repos.some((repo) => repo.state === 'error');
+  try {
+    const located = await inspectRepos(clients, reviewSet.repos, compiled.patterns, fresh, (repo, value) =>
+      phase(repo.connectionId, repo.repo, value),
+    );
+    const repos = await mapLimit(located, 4, async ({ status, sha }) => {
+      const client = clients.get(status.connectionId);
+      if (!status.branch || !sha || !client) return status;
+      const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo);
+      return inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits, knownPull, (value) =>
+        phase(status.connectionId, status.repo, value),
+      );
+    });
 
-  const hasOpen = openRepos.length > 0;
-  const lifecycle = hasOpen ? ensurePrLifecycle(reviewSet.id, true) : hasRepoErrors ? null : ensurePrLifecycle(reviewSet.id, false);
+    for (const repo of repos) {
+      const error = repo.error ?? multiMatchError(repo);
+      if (error) errors.push(error);
+    }
 
-  const stats = openRepos.reduce(
-    (acc, repo) => ({
-      repos: acc.repos + 1,
-      files: acc.files + (repo.files?.length ?? 0),
-      additions: acc.additions + (repo.additions ?? 0),
-      deletions: acc.deletions + (repo.deletions ?? 0),
-    }),
-    zeroStats(),
-  );
+    const openRepos = repos.filter((repo) => repo.state === 'open');
+    const matchedOk = repos.filter((repo) => repo.branch && repo.state !== 'error');
+    const hasRepoErrors = repos.some((repo) => repo.state === 'error');
 
-  const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
-  if (hasOpen && lifecycle) {
-    if (lifecycle.prId && ensurePulls) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
-    else attachKnownPullRequests(clients, repos, lifecycle.prId);
-    return {
-      state: 'open',
-      errors,
-      repos,
-      prId: lifecycle.prId,
-      comments: includeDiscussions && lifecycle.prId ? listComments(lifecycle.prId) : [],
-      reviewed: includeDiscussions && lifecycle.prId ? listReviewed(lifecycle.prId) : [],
-      stats,
-    };
+    const hasOpen = openRepos.length > 0;
+    const lifecycle = hasOpen ? ensurePrLifecycle(reviewSet.id, true) : hasRepoErrors ? null : ensurePrLifecycle(reviewSet.id, false);
+
+    const stats = openRepos.reduce(
+      (acc, repo) => ({
+        repos: acc.repos + 1,
+        files: acc.files + (repo.files?.length ?? 0),
+        additions: acc.additions + (repo.additions ?? 0),
+        deletions: acc.deletions + (repo.deletions ?? 0),
+      }),
+      zeroStats(),
+    );
+
+    const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
+    if (hasOpen && lifecycle) {
+      if (lifecycle.prId && ensurePulls) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
+      else attachKnownPullRequests(clients, repos, lifecycle.prId);
+      return {
+        state: 'open',
+        errors,
+        repos,
+        prId: lifecycle.prId,
+        comments: includeDiscussions && lifecycle.prId ? listComments(lifecycle.prId) : [],
+        reviewed: includeDiscussions && lifecycle.prId ? listReviewed(lifecycle.prId) : [],
+        stats,
+      };
+    }
+    if (matchedOk.length > 0) return { state: 'closed', errors, repos, ...empty };
+    if (errors.length > 0) return { state: 'invalid', errors, repos, ...empty };
+    return { state: 'empty', errors, repos, ...empty };
+  } finally {
+    if (reporting) finishRun(reviewSet.id);
   }
-  if (matchedOk.length > 0) return { state: 'closed', errors, repos, ...empty };
-  if (errors.length > 0) return { state: 'invalid', errors, repos, ...empty };
-  return { state: 'empty', errors, repos, ...empty };
 }
