@@ -564,6 +564,9 @@ svg.checks-pending {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* Never let status banners squeeze the diff out of the viewport. */
+  max-height: 30vh;
+  overflow: auto;
 }
 
 .pr-banners:empty {

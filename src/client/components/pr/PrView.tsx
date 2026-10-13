@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
-import { CodeView, type CodeViewHandle, type CodeViewReactOptions } from '@pierre/diffs/react';
+import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
 import { Button, Checkbox, Dialog, IconButton, Label } from '@primer/react';
 import {
   ChevronDownIcon,
@@ -129,6 +129,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const visibleFrame = useRef<number | null>(null);
   const visibleTrailing = useRef<number | null>(null);
   const restoredFromUrl = useRef(false);
+  const urlItem = useRef<string | null>(null);
+  const urlAt = useRef(0);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
   useEffect(
@@ -164,26 +166,39 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     [sidebarWidth],
   );
 
-  const computeVisibleItems = useCallback(() => {
+  const computeVisibleItems = useCallback((withUrl: boolean) => {
     const viewer = codeViewRef.current?.getInstance();
     const scroll = scrollRef.current;
     if (!viewer || !scroll) return;
     const bounds = scroll.getBoundingClientRect();
-    const next = new Set<string>();
+    const topEdge = bounds.top + 1;
+    const bottomEdge = bounds.bottom - 1;
+
+    // One layout read per rendered item; measuring inside a sort comparator
+    // forces a reflow per comparison and makes scrolling large diffs janky.
+    const measured: { id: string; top: number; bottom: number }[] = [];
     for (const rendered of viewer.getRenderedItems()) {
       const rect = rendered.element.getBoundingClientRect();
-      if (rect.bottom > bounds.top + 1 && rect.top < bounds.bottom - 1) next.add(rendered.id);
+      measured.push({ id: rendered.id, top: rect.top, bottom: rect.bottom });
+    }
+
+    const next = new Set<string>();
+    let top: { id: string; top: number } | null = null;
+    for (const item of measured) {
+      if (item.bottom <= topEdge || item.top >= bottomEdge) continue;
+      next.add(item.id);
+      if (!top || item.top < top.top) top = { id: item.id, top: item.top };
     }
     setVisibleItems((current) => (current.size === next.size && [...next].every((id) => current.has(id)) ? current : next));
 
     // Keep the file being read (and the offset inside it) in the URL, so a
-    // reload lands back at the same scroll position.
-    const top = viewer
-      .getRenderedItems()
-      .filter((rendered) => rendered.element.getBoundingClientRect().bottom > bounds.top + 1)
-      .sort((a, b) => a.element.getBoundingClientRect().top - b.element.getBoundingClientRect().top)[0];
-    if (top) {
-      const within = Math.max(0, Math.round(bounds.top - top.element.getBoundingClientRect().top));
+    // reload lands back at the same scroll position. Browsers throttle
+    // history updates, so only rewrite it when the top file moved and a moment
+    // has passed since the last write.
+    if (withUrl && top && (top.id !== urlItem.current || performance.now() - urlAt.current > 500)) {
+      urlItem.current = top.id;
+      urlAt.current = performance.now();
+      const within = Math.max(0, Math.round(bounds.top - top.top));
       const hash = `#file=${encodeURIComponent(top.id)}${within > 0 ? `&y=${within}` : ''}`;
       if (window.location.hash !== hash) {
         window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${hash}`);
@@ -195,14 +210,14 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     if (visibleFrame.current === null) {
       visibleFrame.current = requestAnimationFrame(() => {
         visibleFrame.current = null;
-        computeVisibleItems();
+        computeVisibleItems(false);
       });
     }
     // Virtualized items mount after the scroll event, so check again once settled.
     if (visibleTrailing.current !== null) clearTimeout(visibleTrailing.current);
     visibleTrailing.current = window.setTimeout(() => {
       visibleTrailing.current = null;
-      computeVisibleItems();
+      computeVisibleItems(true);
     }, 150);
   }, [computeVisibleItems]);
 
@@ -451,6 +466,16 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     );
 
   return (
+    <WorkerPoolContextProvider
+      poolOptions={{
+        // Highlighting runs in workers; on the main thread it re-tokenizes
+        // items as they enter the virtual window and scrolling large diffs
+        // stutters.
+        workerFactory: () => new Worker(new URL('@pierre/diffs/worker/worker.js', import.meta.url), { type: 'module' }),
+        poolSize: 2,
+      }}
+      highlighterOptions={{ theme: { dark: 'pierre-dark', light: 'pierre-light' } }}
+    >
     <div className="pr-page">
       <PrHeader
         detail={detail}
@@ -672,5 +697,6 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         </Dialog>
       ) : null}
     </div>
+    </WorkerPoolContextProvider>
   );
 }

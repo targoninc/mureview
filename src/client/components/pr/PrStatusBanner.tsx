@@ -1,7 +1,28 @@
-import { Flash } from '@primer/react';
-import { basePath } from '../../lib/api';
+import { useState } from 'react';
+import { Button, Flash } from '@primer/react';
 import type { PrStatus, ReviewSet } from '../../../shared/types';
+import { basePath } from '../../lib/api';
 import { useAppContext } from '../../lib/appContext';
+
+/** Long lists of messages are collapsed so they don't push the diff out of view. */
+function MessageList({ messages }: { messages: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? messages : messages.slice(0, 1);
+  return (
+    <>
+      <ul className="error-list">
+        {shown.map((message) => (
+          <li key={message}>{message}</li>
+        ))}
+      </ul>
+      {messages.length > shown.length ? (
+        <Button size="small" variant="invisible" onClick={() => setExpanded(true)}>
+          Show {messages.length - shown.length} more
+        </Button>
+      ) : null}
+    </>
+  );
+}
 
 function AccessHint() {
   const { githubOAuthAppUrl } = useAppContext();
@@ -21,11 +42,7 @@ function AccessHint() {
 function ErrorList({ errors }: { errors: string[] }) {
   return (
     <>
-      <ul className="error-list">
-        {errors.map((message) => (
-          <li key={message}>{message}</li>
-        ))}
-      </ul>
+      <MessageList messages={errors} />
       <AccessHint />
     </>
   );
@@ -42,11 +59,7 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
     notes.length > 0 ? (
       <Flash variant="warning">
         <strong>Stack notes</strong>
-        <ul className="error-list">
-          {notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
+        <MessageList messages={notes} />
       </Flash>
     ) : null;
 
@@ -59,11 +72,7 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
     prErrors.length > 0 ? (
       <Flash variant="warning">
         <strong>No forge pull request yet</strong>
-        <ul className="error-list">
-          {prErrors.map((message) => (
-            <li key={message}>{message}</li>
-          ))}
-        </ul>
+        <MessageList messages={prErrors} />
         {prErrors.some((message) => /atproto/i.test(message)) ? (
           <p style={{ margin: '8px 0 0' }}>
             <a href={`${basePath}/settings`}>Open settings</a> to sign in with atproto, then reload this review set.

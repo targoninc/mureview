@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon } from '@primer/octicons-react';
@@ -94,6 +94,14 @@ export function FileTreePanel({ pr, entries, stacked, reviewedItems, visibleItem
       return next;
     });
 
+  const selectItem = useCallback(
+    (itemId: string) => {
+      setSelected(itemId);
+      onSelectItem(itemId);
+    },
+    [onSelectItem],
+  );
+
   const renderNodes = (nodes: TreeNode<Entry>[], depth: number): ReactNode[] =>
     nodes.flatMap((node) => {
       const indent = { paddingLeft: depth * 12 + 8 };
@@ -126,44 +134,83 @@ export function FileTreePanel({ pr, entries, stacked, reviewedItems, visibleItem
         ];
       }
 
-      const { file } = node.entry;
-      const isReviewed = reviewedItems.has(node.entry.itemId);
+      const entry = node.entry;
       return [
-        <div
+        <TreeFileRow
           key={node.key}
-          className={`tree-row tree-file${visibleItems.has(node.entry.itemId) ? ' visible' : ''}${selected === node.entry.itemId ? ' selected' : ''}`}
-          style={indent}
-          onClick={() => {
-            setSelected(node.entry.itemId);
-            onSelectItem(node.entry.itemId);
-          }}
-        >
-          <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
-            {onSetReviewed ? (
-              <Checkbox
-                checked={isReviewed}
-                onChange={() => onSetReviewed([node.entry.itemId], !isReviewed)}
-                aria-label={`Mark ${node.name} as reviewed`}
-              />
-            ) : null}
-          </span>
-          <span className="tree-chevron" />
-            <span className="tree-icon">
-              <FileIcon path={node.entry.path} />
-            </span>
-          <span className="tree-name" title={node.entry.path}>
-            {node.name}
-          </span>
-          <span className="tree-stats">
-            {file.additions > 0 ? <span className="additions">+{file.additions}</span> : null}
-            {file.deletions > 0 ? <span className="deletions">−{file.deletions}</span> : null}
-            <span className={statusClass[file.type]} title={`${file.type} file`}>
-              {statusLetter[file.type]}
-            </span>
-          </span>
-        </div>,
+          itemId={entry.itemId}
+          name={node.name}
+          path={entry.path}
+          file={entry.file}
+          depth={depth}
+          reviewed={reviewedItems.has(entry.itemId)}
+          visible={visibleItems.has(entry.itemId)}
+          selected={selected === entry.itemId}
+          canReview={Boolean(onSetReviewed)}
+          onSelect={selectItem}
+          onReviewed={onSetReviewed}
+        />,
       ];
     });
 
   return <div className="tree">{renderNodes(tree, 0)}</div>;
 }
+
+/**
+ * A file row is memoized: the visible set changes on every scroll frame while
+ * a diff is read, and re-rendering every row of a large tree each time is what
+ * made scrolling feel laggy.
+ */
+const TreeFileRow = memo(function TreeFileRow({
+  itemId,
+  name,
+  path,
+  file,
+  depth,
+  reviewed,
+  visible,
+  selected,
+  canReview,
+  onSelect,
+  onReviewed,
+}: {
+  itemId: string;
+  name: string;
+  path: string;
+  file: FileDiff;
+  depth: number;
+  reviewed: boolean;
+  visible: boolean;
+  selected: boolean;
+  canReview: boolean;
+  onSelect: (itemId: string) => void;
+  onReviewed?: (itemIds: string[], reviewed: boolean) => void;
+}) {
+  return (
+    <div
+      className={`tree-row tree-file${visible ? ' visible' : ''}${selected ? ' selected' : ''}`}
+      style={{ paddingLeft: depth * 12 + 8 }}
+      onClick={() => onSelect(itemId)}
+    >
+      <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
+        {canReview && onReviewed ? (
+          <Checkbox checked={reviewed} onChange={() => onReviewed([itemId], !reviewed)} aria-label={`Mark ${name} as reviewed`} />
+        ) : null}
+      </span>
+      <span className="tree-chevron" />
+      <span className="tree-icon">
+        <FileIcon path={path} />
+      </span>
+      <span className="tree-name" title={path}>
+        {name}
+      </span>
+      <span className="tree-stats">
+        {file.additions > 0 ? <span className="additions">+{file.additions}</span> : null}
+        {file.deletions > 0 ? <span className="deletions">−{file.deletions}</span> : null}
+        <span className={statusClass[file.type]} title={`${file.type} file`}>
+          {statusLetter[file.type]}
+        </span>
+      </span>
+    </div>
+  );
+});
