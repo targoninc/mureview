@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon } from '@primer/octicons-react';
@@ -6,11 +6,21 @@ import type { FileDiff, FileStatus, ForgeKind, PrStatus } from '../../../shared/
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
 import { fileItemId, fileSegments } from '../../lib/format';
 import { ServiceGlyph } from '../ServiceIcon';
-import { FileTypeIcon } from './FileTypeIcon';
+import { fileIconFor, ensureFileIconSprite } from '../../lib/fileIcons';
 
 interface Entry extends TreeEntry {
   file: FileDiff;
   path: string;
+}
+
+/** The file's icon from the colored Pierre set (the one T3 Code uses). */
+function FileIcon({ path, size = 14 }: { path: string; size?: number }) {
+  const icon = fileIconFor(path);
+  return (
+    <svg width={size} height={size} fill="currentColor" style={{ color: icon.color }} aria-hidden="true">
+      <use href={`#${icon.name}`} />
+    </svg>
+  );
 }
 
 const statusLetter: Record<FileStatus, string> = {
@@ -43,6 +53,10 @@ interface FileTreePanelProps {
 export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
+
+  useEffect(() => {
+    ensureFileIconSprite();
+  }, []);
 
   const entries = useMemo(() => {
     const list: Entry[] = [];
@@ -129,9 +143,9 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
             ) : null}
           </span>
           <span className="tree-chevron" />
-          <span className="tree-icon">
-            <FileTypeIcon name={node.name} path={node.entry.path} size={14} />
-          </span>
+            <span className="tree-icon">
+              <FileIcon path={node.entry.path} />
+            </span>
           <span className="tree-name" title={node.entry.path}>
             {node.name}
           </span>

@@ -18,14 +18,14 @@
     "@atproto/api": "^0.25.0",
     "@atproto/oauth-client-node": "^0.5.9",
     "@pierre/diffs": "^1.5.2",
+    "@pierre/trees": "1.0.0-beta.6",
     "@primer/octicons-react": "^19.40.0",
     "@primer/react": "^38.40.1",
     "diff": "^9.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-is": "^19.3.0",
-    "react-router-dom": "^7.18.4",
-    "simple-icons": "^16.35.0"
+    "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
     "@types/bun": "^1.4.3",
