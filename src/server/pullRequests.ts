@@ -18,6 +18,19 @@ export function repoPullRequest(prId: number, connectionId: number, repo: string
   );
 }
 
+/** The forge pull request number tracked for a repository of a review set. */
+export function reviewSetPullRequest(reviewSetId: number, connectionId: number, repo: string): number | null {
+  const row = db
+    .query<{ forge_pr_number: number }, [number, number, string]>(
+      `SELECT rp.forge_pr_number FROM pull_request_repos rp
+       JOIN pull_requests p ON p.id = rp.pr_id
+       WHERE p.review_set_id = ? AND p.closed_at IS NULL AND rp.connection_id = ? AND rp.repo = ?
+       ORDER BY rp.pr_id DESC LIMIT 1`,
+    )
+    .get(reviewSetId, connectionId, repo);
+  return row?.forge_pr_number ?? null;
+}
+
 /**
  * Every open repository gets a real pull request as soon as the review set has
  * one, so comments can be synced to the forge right away instead of waiting

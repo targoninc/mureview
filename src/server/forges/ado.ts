@@ -101,6 +101,16 @@ interface AdoCommit {
   remoteUrl?: string;
 }
 
+function toCommitInfo(commit: AdoCommit): CommitInfo {
+  return {
+    sha: commit.commitId,
+    message: commit.comment.split('\n')[0],
+    author: commit.author?.name ?? 'unknown',
+    date: commit.author?.date ?? '',
+    url: commit.remoteUrl,
+  };
+}
+
 interface AdoEvaluation {
   status: 'queued' | 'running' | 'approved' | 'rejected' | 'notApplicable' | 'broken' | string;
   context?: { buildId?: number };
@@ -513,8 +523,43 @@ export class AdoClient implements ForgeClient {
     return fetchImage(url, this.headers('image/*'));
   }
 
-  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
+  /** The commits of a pull request, exactly as the Azure DevOps UI lists them. */
+  private async pullRequestCommits(repo: string, number: number, limit: number): Promise<CommitInfo[] | null> {
+    try {
+      const commits: AdoCommit[] = [];
+      const seen = new Set<string>();
+      let continuation: string | null = null;
+      for (let page = 0; page < 6 && commits.length < limit; page++) {
+        const paging = continuation ? `&continuationToken=${encodeURIComponent(continuation)}` : `&$skip=${page * 100}`;
+        const response = await this.fetchResponse(`${this.repoUrl(repo)}/pullrequests/${number}/commits?$top=100${paging}&api-version=7.1`);
+        const data = (await response.json()) as AdoCommit[] | { value?: AdoCommit[] };
+        const batch = Array.isArray(data) ? data : (data.value ?? []);
+        for (const commit of batch) {
+          if (seen.has(commit.commitId)) continue;
+          seen.add(commit.commitId);
+          commits.push(commit);
+        }
+        continuation = response.headers.get('x-ms-continuationtoken');
+        if (!continuation && batch.length < 100) break;
+      }
+      return commits
+        .slice(0, limit)
+        .map(toCommitInfo)
+        .sort((a, b) => a.date.localeCompare(b.date));
+    } catch (error) {
+      if (!(error instanceof ForgeError)) throw error;
+      return null;
+    }
+  }
+
+  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]> {
     const limit = Math.min(options.limit ?? 300, 500);
+    // The pull request endpoint matches what the Azure DevOps UI shows; the
+    // branch comparison below is the fallback when no pull request is known.
+    if (options.pullRequest) {
+      const fromPullRequest = await this.pullRequestCommits(repo, options.pullRequest, limit);
+      if (fromPullRequest) return fromPullRequest;
+    }
     const compare = options.baseSha
       ? `&searchCriteria.compareVersion.version=${encodeURIComponent(options.baseSha)}&searchCriteria.compareVersion.versionType=commit`
       : '';
@@ -540,16 +585,7 @@ export class AdoClient implements ForgeClient {
       continuation = response.headers.get('x-ms-continuationtoken');
       if (!continuation && batch.length < 100) break;
     }
-    return commits
-      .slice(0, limit)
-      .map((commit) => ({
-        sha: commit.commitId,
-        message: commit.comment.split('\n')[0],
-        author: commit.author?.name ?? 'unknown',
-        date: commit.author?.date ?? '',
-        url: commit.remoteUrl,
-      }))
-      .reverse();
+    return commits.slice(0, limit).map(toCommitInfo).reverse();
   }
 
   /**

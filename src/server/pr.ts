@@ -5,7 +5,7 @@ import { constants } from './config';
 import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
-import { attachKnownPullRequests, ensureRepoPullRequests } from './pullRequests';
+import { attachKnownPullRequests, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
 import { listReviewed } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
@@ -69,10 +69,11 @@ async function loadCommits(
   repo: string,
   headSha: string,
   baseSha?: string,
+  pullRequest?: number,
 ): Promise<CommitInfo[] | undefined> {
   try {
-    return await cached(commitsCache, `${connectionId}:${repo}:${baseSha ?? ''}:${headSha}`, () =>
-      client.listCommits(repo, { headSha, baseSha, limit: 300 }),
+    return await cached(commitsCache, `${connectionId}:${repo}:${pullRequest ?? baseSha ?? ''}:${headSha}`, () =>
+      client.listCommits(repo, { headSha, baseSha, limit: 300, pullRequest }),
     );
   } catch (error) {
     console.error(`Could not list commits for ${repo}:`, error);
@@ -87,6 +88,7 @@ async function inspectBranch(
   target: string,
   fresh: boolean,
   includeCommits: boolean,
+  knownPull: number | null = null,
 ): Promise<RepoStatus> {
   const repo = status.repo;
   try {
@@ -102,7 +104,7 @@ async function inspectBranch(
         additions: diff.additions,
         deletions: 0,
         truncated: diff.truncated,
-        commits: includeCommits ? await loadCommits(client, status.connectionId, repo, branchSha) : undefined,
+        commits: includeCommits ? await loadCommits(client, status.connectionId, repo, branchSha, undefined, knownPull ?? undefined) : undefined,
         files: diff.files,
       };
     }
@@ -122,7 +124,9 @@ async function inspectBranch(
 
     const files = comparison.files.map(toFileDiff);
     const totals = summarize(files);
-    const commits = includeCommits ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha) : undefined;
+    const commits = includeCommits
+      ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull ?? undefined)
+      : undefined;
     return {
       ...status,
       targetExists: true,
@@ -193,7 +197,9 @@ export async function buildPrStatus(
   const located = await inspectRepos(clients, reviewSet.repos, compiled.patterns, fresh);
   const repos = await mapLimit(located, 4, async ({ status, sha }) => {
     const client = clients.get(status.connectionId);
-    return status.branch && sha && client ? inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits) : status;
+    if (!status.branch || !sha || !client) return status;
+    const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo);
+    return inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits, knownPull);
   });
 
   for (const repo of repos) {

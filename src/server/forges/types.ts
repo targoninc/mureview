@@ -99,7 +99,7 @@ export interface ForgeClient {
   postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }>;
   listComments(repo: string, number: number): Promise<ForgeComment[]>;
   fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null>;
-  listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]>;
+  listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: number }): Promise<CommitInfo[]>;
   checks(repo: string, sha: string, options?: { pullRequest?: number }): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
 }

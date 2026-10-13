@@ -117,7 +117,7 @@ export function PrHeader({
         </div>
           {pr.stats.files > 0 ? (
             <span className="pr-header-diff">
-              total <span className="additions">+{pr.stats.additions}</span>{' '}
+              <span className="additions">+{pr.stats.additions}</span>{' '}
               <span className="deletions">−{pr.stats.deletions}</span>
             </span>
           ) : null}
