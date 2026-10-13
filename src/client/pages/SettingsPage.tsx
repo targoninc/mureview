@@ -154,12 +154,12 @@ export function SettingsPage() {
             Add a connection
           </Heading>
           <div className="row">
-            {me.providers.includes('github') && me.connections.every((connection) => connection.kind !== 'github') ? (
+            {me.providers.includes('github') ? (
               <Button
                 leadingVisual={<ServiceGlyph kind="github" />}
                 onClick={() => (window.location.href = `${basePath}/api/auth/login/github?mode=connect`)}
               >
-                Connect GitHub
+                {me.connections.some((connection) => connection.kind === 'github') ? 'Reconnect GitHub' : 'Connect GitHub'}
               </Button>
             ) : null}
             <Button leadingVisual={<ServiceGlyph kind="forgejo" />} onClick={() => setAdding(adding === 'forgejo' ? null : 'forgejo')}>

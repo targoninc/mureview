@@ -17,6 +17,7 @@ export interface ConnectionInput {
   clientId?: string;
   clientSecret?: string;
   accessToken: string;
+  refreshToken?: string;
   login: string;
   avatarUrl?: string;
 }
@@ -86,20 +87,21 @@ export function upsertConnection(userId: number, input: ConnectionInput): ForgeC
     input.clientId ?? existing?.client_id ?? '',
     input.clientSecret ? encrypt(input.clientSecret) : (existing?.client_secret ?? ''),
     encrypt(input.accessToken),
+    input.refreshToken ? encrypt(input.refreshToken) : (existing?.refresh_token ?? ''),
     input.login,
     input.avatarUrl ?? existing?.avatar_url ?? '',
   ];
 
   if (existing) {
-    db.run('UPDATE forge_connections SET client_id = ?, client_secret = ?, access_token = ?, login = ?, avatar_url = ? WHERE id = ?', [
-      ...values,
-      existing.id,
-    ]);
+    db.run(
+      'UPDATE forge_connections SET client_id = ?, client_secret = ?, access_token = ?, refresh_token = ?, login = ?, avatar_url = ? WHERE id = ?',
+      [...values, existing.id],
+    );
     return db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(existing.id)!;
   }
 
   const inserted = db.run(
-    'INSERT INTO forge_connections (user_id, kind, base_url, client_id, client_secret, access_token, login, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO forge_connections (user_id, kind, base_url, client_id, client_secret, access_token, refresh_token, login, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     [userId, input.kind, baseUrl, ...values],
   );
   return db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(Number(inserted.lastInsertRowid))!;

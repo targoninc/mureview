@@ -110,11 +110,12 @@ async function githubCredentialsValid(): Promise<boolean> {
 
 export async function githubLoginStart(ctx: Ctx): Promise<Response> {
   if (!config.githubClientId || !config.githubClientSecret) {
-    return redirectWithError('GitHub sign-in is not configured on this server.');
+    return redirectWithError('GitHub sign-in is not configured on this server.', ctx.user ? '/settings' : '/');
   }
   if (!(await githubCredentialsValid())) {
     return redirectWithError(
       'The configured GitHub OAuth app credentials were rejected by GitHub. Check GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.',
+      ctx.user ? '/settings' : '/',
     );
   }
   const mode: OAuthMode = ctx.url.searchParams.get('mode') === 'connect' ? 'connect' : 'login';
@@ -133,8 +134,12 @@ export function redirectWithError(message: string, path = '/'): Response {
   return redirect(`${config.baseUrl}${config.basePath}${path}?authError=${encodeURIComponent(message)}`);
 }
 
-export function handleAuthError(error: unknown, path = '/'): Response {
-  if (error instanceof HttpError) return redirectWithError(error.message, path);
+/**
+ * Failed sign-ins land on the login page; failed connections belong to a
+ * signed-in user, who sees errors on the settings page.
+ */
+export function handleAuthError(ctx: Ctx, error: unknown): Response {
+  if (error instanceof HttpError) return redirectWithError(error.message, ctx.user ? '/settings' : '/');
   throw error;
 }
 
@@ -142,7 +147,7 @@ export async function githubCallback(ctx: Ctx): Promise<Response> {
   try {
     return await githubCallbackInner(ctx);
   } catch (error) {
-    return handleAuthError(error);
+    return handleAuthError(ctx, error);
   }
 }
 
@@ -167,7 +172,7 @@ async function githubCallbackInner(ctx: Ctx): Promise<Response> {
       redirect_uri: githubRedirectUri(),
     }),
   });
-  const body = (await response.json()) as { access_token?: string; error_description?: string };
+  const body = (await response.json()) as { access_token?: string; refresh_token?: string; error_description?: string };
   if (!body.access_token) throw new HttpError(400, body.error_description ?? 'GitHub did not return an access token.');
 
   const ghUser = await getGithubUser(body.access_token);
@@ -181,6 +186,7 @@ async function githubCallbackInner(ctx: Ctx): Promise<Response> {
     kind: 'github',
     baseUrl: 'https://github.com',
     accessToken: body.access_token,
+    refreshToken: body.refresh_token,
     login: ghUser.login,
     avatarUrl: ghUser.avatar_url,
   };
@@ -201,7 +207,7 @@ const entraScopes = 'openid profile email User.Read';
 
 export function entraLoginStart(ctx: Ctx): Response {
   if (!config.entraClientId || !config.entraClientSecret) {
-    return redirectWithError('Entra ID sign-in is not configured on this server.');
+    return redirectWithError('Entra ID sign-in is not configured on this server.', ctx.user ? '/settings' : '/');
   }
   const mode: OAuthMode = ctx.url.searchParams.get('mode') === 'connect' ? 'connect' : 'login';
   const user = mode === 'connect' ? requireUser(ctx) : null;
@@ -221,7 +227,7 @@ export async function entraCallback(ctx: Ctx): Promise<Response> {
   try {
     return await entraCallbackInner(ctx);
   } catch (error) {
-    return handleAuthError(error);
+    return handleAuthError(ctx, error);
   }
 }
 
@@ -323,7 +329,7 @@ export async function forgejoCallback(ctx: Ctx): Promise<Response> {
   try {
     return await forgejoCallbackInner(ctx);
   } catch (error) {
-    return handleAuthError(error);
+    return handleAuthError(ctx, error);
   }
 }
 
@@ -351,7 +357,12 @@ async function forgejoCallbackInner(ctx: Ctx): Promise<Response> {
       code_verifier: verifier,
     }),
   });
-  const tokenBody = (await tokenResponse.json().catch(() => ({}))) as { access_token?: string; error_description?: string; error?: string };
+  const tokenBody = (await tokenResponse.json().catch(() => ({}))) as {
+    access_token?: string;
+    refresh_token?: string;
+    error_description?: string;
+    error?: string;
+  };
   if (!tokenBody.access_token) {
     throw new HttpError(400, tokenBody.error_description ?? tokenBody.error ?? 'The forge did not return an access token.');
   }
@@ -375,6 +386,7 @@ async function forgejoCallbackInner(ctx: Ctx): Promise<Response> {
     clientId,
     clientSecret,
     accessToken: tokenBody.access_token,
+    refreshToken: tokenBody.refresh_token,
     login: forgeUser.login,
     avatarUrl: absoluteAvatar(baseUrl, forgeUser.avatar_url),
   };

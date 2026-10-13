@@ -1,5 +1,8 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
+import { config } from '../config';
+import { decrypt, encrypt } from '../crypto';
+import { type ForgeConnectionRow, db } from '../db';
 import { withPatchHeader } from '../patch';
 import {
   type BranchInfo,
@@ -26,6 +29,61 @@ import {
 } from './types';
 
 const API = 'https://api.github.com';
+
+export interface GithubAuth {
+  /** Exchanges the stored refresh token for a new access token. */
+  refresh: () => Promise<string>;
+}
+
+const refreshing = new Map<number, Promise<string>>();
+
+/**
+ * Exchanges a GitHub OAuth refresh token. GitHub rotates refresh tokens on
+ * every exchange, so the caller must store the returned one.
+ */
+export async function exchangeGithubRefreshToken(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const response = await fetch('https://github.com/login/oauth/access_token', {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: config.githubClientId,
+      client_secret: config.githubClientSecret,
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    access_token?: string;
+    refresh_token?: string;
+    error?: string;
+    error_description?: string;
+  };
+  if (!body.access_token) {
+    throw new ForgeError(401, body.error_description ?? body.error ?? 'could not refresh the GitHub token — reconnect GitHub under Settings');
+  }
+  return { accessToken: body.access_token, refreshToken: body.refresh_token ?? refreshToken };
+}
+
+/** Refreshes a connection's GitHub token, sharing one exchange per connection. */
+export function refreshGithubToken(connectionId: number): Promise<string> {
+  const pending = refreshing.get(connectionId);
+  if (pending) return pending;
+  const task = (async () => {
+    const connection = db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(connectionId);
+    if (!connection) throw new ForgeError(401, 'the GitHub connection was removed');
+    const refreshToken = connection.refresh_token ? decrypt(connection.refresh_token) : '';
+    if (!refreshToken) throw new ForgeError(401, 'the GitHub token expired — reconnect GitHub under Settings');
+    const tokens = await exchangeGithubRefreshToken(refreshToken);
+    db.run('UPDATE forge_connections SET access_token = ?, refresh_token = ? WHERE id = ?', [
+      encrypt(tokens.accessToken),
+      encrypt(tokens.refreshToken),
+      connectionId,
+    ]);
+    return tokens.accessToken;
+  })().finally(() => refreshing.delete(connectionId));
+  refreshing.set(connectionId, task);
+  return task;
+}
 
 function authorOf(user?: GithubUser | null): { name: string; avatarUrl: string } | undefined {
   return user ? { name: user.login, avatarUrl: user.avatar_url ?? '' } : undefined;
@@ -128,29 +186,44 @@ export class GithubClient implements ForgeClient {
   readonly baseUrl = 'https://github.com';
   readonly host = 'github.com';
 
-  constructor(private token: string) {}
+  constructor(private token: string, private auth?: GithubAuth) {}
+
+  /** Refreshes an expired token once per request before giving up. */
+  private async retryOnExpiry<T>(send: () => Promise<Response>, read: (response: Response) => Promise<T>): Promise<T> {
+    let response = await send();
+    if (response.status === 401 && this.auth) {
+      this.token = await this.auth.refresh();
+      response = await send();
+    }
+    return read(response);
+  }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(API + path, {
-      ...init,
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${this.token}`,
-        'User-Agent': 'mureview',
-        'X-GitHub-Api-Version': '2022-11-28',
-        ...init.headers,
+    return this.retryOnExpiry(
+      () =>
+        fetch(API + path, {
+          ...init,
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${this.token}`,
+            'User-Agent': 'mureview',
+            'X-GitHub-Api-Version': '2022-11-28',
+            ...init.headers,
+          },
+        }),
+      async (response) => {
+        if (!response.ok) {
+          let message = response.statusText;
+          try {
+            message = ((await response.json()) as { message?: string }).message ?? message;
+          } catch {
+            // keep status text
+          }
+          throw new ForgeError(response.status, message);
+        }
+        return (await response.json()) as T;
       },
-    });
-    if (!response.ok) {
-      let message = response.statusText;
-      try {
-        message = ((await response.json()) as { message?: string }).message ?? message;
-      } catch {
-        // keep status text
-      }
-      throw new ForgeError(response.status, message);
-    }
-    return (await response.json()) as T;
+    );
   }
 
   private async paginate<T>(path: string, maxPages = 10): Promise<T[]> {
@@ -247,9 +320,13 @@ export class GithubClient implements ForgeClient {
     const key = `${repo}#${sha}`;
     const hit = blobCache.get(key);
     if (hit !== undefined) return hit;
-    const response = await fetch(`${API}/repos/${repo}/git/blobs/${sha}`, {
-      headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github.raw', 'User-Agent': 'mureview' },
-    });
+    const response = await this.retryOnExpiry(
+      () =>
+        fetch(`${API}/repos/${repo}/git/blobs/${sha}`, {
+          headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github.raw', 'User-Agent': 'mureview' },
+        }),
+      async (result) => result,
+    );
     if (!response.ok) return null;
     const value = decodeText(Buffer.from(await response.arrayBuffer()));
     if (value !== null) blobCache.set(key, value);

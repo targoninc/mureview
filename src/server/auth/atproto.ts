@@ -133,7 +133,7 @@ export async function atprotoCallback(ctx: Ctx): Promise<Response> {
   try {
     return await atprotoCallbackInner(ctx, pending);
   } catch (error) {
-    return handleAuthError(error, pending?.mode === 'connect' ? '/settings' : '/');
+    return handleAuthError(ctx, error);
   }
 }
 

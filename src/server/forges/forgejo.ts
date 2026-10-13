@@ -1,5 +1,7 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
+import { decrypt, encrypt } from '../crypto';
+import { type ForgeConnectionRow, db } from '../db';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch } from '../patch';
 import {
   type BranchInfo,
@@ -101,6 +103,70 @@ interface GiteaPull {
 const maxFileBytes = 200_000;
 const maxFiles = 300;
 
+export interface ForgejoAuth {
+  /** Exchanges the stored refresh token for a new access token. */
+  refresh: () => Promise<string>;
+}
+
+const refreshing = new Map<number, Promise<string>>();
+
+/**
+ * Exchanges a Forgejo (Gitea) OAuth2 refresh token. Gitea rotates refresh
+ * tokens on every exchange, so the caller must store the returned one.
+ */
+export async function exchangeForgejoRefreshToken(
+  baseUrl: string,
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string }> {
+  const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/login/oauth/access_token`, {
+    method: 'POST',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+    }),
+  });
+  const body = (await response.json().catch(() => ({}))) as {
+    access_token?: string;
+    refresh_token?: string;
+    error?: string;
+    error_description?: string;
+  };
+  if (!body.access_token) {
+    throw new ForgeError(401, body.error_description ?? body.error ?? 'could not refresh the Forgejo token — reconnect this forge under Settings');
+  }
+  return { accessToken: body.access_token, refreshToken: body.refresh_token ?? refreshToken };
+}
+
+/** Refreshes a connection's Forgejo token, sharing one exchange per connection. */
+export function refreshForgejoToken(connectionId: number): Promise<string> {
+  const pending = refreshing.get(connectionId);
+  if (pending) return pending;
+  const task = (async () => {
+    const connection = db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(connectionId);
+    if (!connection) throw new ForgeError(401, 'the Forgejo connection was removed');
+    const refreshToken = connection.refresh_token ? decrypt(connection.refresh_token) : '';
+    const clientId = connection.client_id;
+    const clientSecret = connection.client_secret ? decrypt(connection.client_secret) : '';
+    if (!refreshToken || !clientId || !clientSecret) {
+      throw new ForgeError(401, 'the Forgejo token expired — reconnect this forge under Settings');
+    }
+    const tokens = await exchangeForgejoRefreshToken(connection.base_url, clientId, clientSecret, refreshToken);
+    db.run('UPDATE forge_connections SET access_token = ?, refresh_token = ? WHERE id = ?', [
+      encrypt(tokens.accessToken),
+      encrypt(tokens.refreshToken),
+      connectionId,
+    ]);
+    return tokens.accessToken;
+  })().finally(() => refreshing.delete(connectionId));
+  refreshing.set(connectionId, task);
+  return task;
+}
+
 const repoCache = new Cache<void>(200, 5 * 60_000);
 const branchListCache = new Cache<BranchInfo[]>(100, 45_000);
 const branchCache = new Cache<BranchInfo | null>(300, 45_000);
@@ -119,13 +185,13 @@ export class ForgejoClient implements ForgeClient {
   readonly host: string;
   private api: string;
 
-  constructor(baseUrl: string, private token: string) {
+  constructor(baseUrl: string, private token: string, private auth?: ForgejoAuth) {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.host = new URL(this.baseUrl).host;
     this.api = `${this.baseUrl}/api/v1`;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, init: RequestInit = {}, retried = false): Promise<T> {
     const response = await fetch(`${this.api}${path}`, {
       ...init,
       headers: {
@@ -135,6 +201,10 @@ export class ForgejoClient implements ForgeClient {
         ...init.headers,
       },
     });
+    if (response.status === 401 && this.auth && !retried) {
+      this.token = await this.auth.refresh();
+      return this.request<T>(path, init, true);
+    }
     if (!response.ok) {
       let message = response.statusText;
       try {

@@ -36,6 +36,8 @@ export interface ForgeConnectionRow {
   client_id: string;
   client_secret: string;
   access_token: string;
+  /** Encrypted OAuth refresh token, when the forge expires access tokens. */
+  refresh_token: string;
   login: string;
   avatar_url: string;
 }
@@ -68,6 +70,7 @@ const SCHEMA_V2 = `
     client_id TEXT NOT NULL DEFAULT '',
     client_secret TEXT NOT NULL DEFAULT '',
     access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL DEFAULT '',
     login TEXT NOT NULL,
     avatar_url TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -419,7 +422,15 @@ if (userVersion() < 8) {
     db.exec('ALTER TABLE review_set_repos ADD COLUMN target_branch TEXT');
   }
 }
-db.exec('PRAGMA user_version = 8;');
+if (userVersion() < 9) {
+  // Forges with expiring access tokens (GitHub's OAuth apps by default) hand
+  // out refresh tokens; keep them so connections stay alive.
+  const connectionColumns = db.query<{ name: string }, []>('PRAGMA table_info(forge_connections)').all();
+  if (!connectionColumns.some((column) => column.name === 'refresh_token')) {
+    db.exec("ALTER TABLE forge_connections ADD COLUMN refresh_token TEXT NOT NULL DEFAULT ''");
+  }
+}
+db.exec('PRAGMA user_version = 9;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);
