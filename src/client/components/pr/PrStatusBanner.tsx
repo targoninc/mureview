@@ -1,4 +1,5 @@
 import { Flash } from '@primer/react';
+import { basePath } from '../../lib/api';
 import type { PrStatus, ReviewSet } from '../../../shared/types';
 import { useAppContext } from '../../lib/appContext';
 
@@ -63,6 +64,11 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
             <li key={message}>{message}</li>
           ))}
         </ul>
+        {prErrors.some((message) => /atproto/i.test(message)) ? (
+          <p style={{ margin: '8px 0 0' }}>
+            <a href={`${basePath}/settings`}>Open settings</a> to sign in with atproto, then reload this review set.
+          </p>
+        ) : null}
       </Flash>
     ) : null;
 

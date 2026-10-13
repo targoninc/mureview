@@ -78,9 +78,10 @@ export function forgeErrorMessage(error: unknown): string {
   if (error instanceof ForgeError) {
     const detail = error.message?.trim();
     const rateLimited = /rate limit|too many requests|secondary rate/i.test(detail ?? '');
-    // Errors that already tell the user what to do (like Tangled asking for an
-    // atproto sign-in) are more useful than the generic advice.
-    if (error.status === 401 && detail && /sign in with atproto/i.test(detail)) return detail;
+    // Errors that already tell the user what to do (Tangled asking for an
+    // atproto sign-in, a failed token mint, a knot rejecting the write) are
+    // more useful than the generic advice.
+    if (error.status === 401 && detail && /atproto|service token|knot rejected/i.test(detail)) return detail;
     if (error.status === 401) return 'authentication failed — reconnect this forge under Settings';
     if (error.status === 403) {
       if (rateLimited) return `rate limit reached (${detail})`;

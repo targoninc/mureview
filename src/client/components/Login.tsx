@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Flash, FormControl, TextInput } from '@primer/react';
 import { FileDiffIcon, MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon } from '@primer/octicons-react';
 import { ServiceGlyph } from './ServiceIcon';
-import type { AuthProvider } from '../../shared/types';
+import type { AuthProvider, ForgeConnectionInfo } from '../../shared/types';
 import { basePath, post } from '../lib/api';
 
 interface LoginProps {
@@ -253,7 +253,7 @@ export function AdoForm({ onDone, onBack }: { onDone: () => void; onBack?: () =>
   );
 }
 
-export function TangledForm({ onDone, onBack }: { onDone: () => void; onBack?: () => void }) {
+export function TangledForm({ onDone, onBack }: { onDone: (connection: ForgeConnectionInfo) => void; onBack?: () => void }) {
   const [handle, setHandle] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -262,8 +262,8 @@ export function TangledForm({ onDone, onBack }: { onDone: () => void; onBack?: (
     setBusy(true);
     setError(null);
     try {
-      await post('/connections/tangled', { handle });
-      onDone();
+      const result = await post<{ connection: ForgeConnectionInfo }>('/connections/tangled', { handle });
+      onDone(result.connection);
     } catch (err) {
       setError((err as Error).message);
     } finally {

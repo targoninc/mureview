@@ -726,7 +726,16 @@ export class TangledClient implements ForgeClient {
       },
       body: JSON.stringify(body),
     });
-    if (!response.ok) throw new ForgeError(response.status, await responseMessage(response));
+    if (!response.ok) {
+      const message = await responseMessage(response);
+      if (response.status === 401 || response.status === 403) {
+        throw new ForgeError(
+          response.status,
+          `the knot rejected this write (${message}) — check that ${this.login} is a member of ${new URL(knot).host} with push access`,
+        );
+      }
+      throw new ForgeError(response.status, message);
+    }
     try {
       return (await response.json()) as T;
     } catch {

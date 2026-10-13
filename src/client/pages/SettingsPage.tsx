@@ -232,7 +232,19 @@ export function SettingsPage() {
                     {option.key === 'forgejo' ? <ForgejoForm mode="connect" /> : null}
                     {option.key === 'atproto' ? <AtprotoForm mode="connect" /> : null}
                     {option.key === 'ado' ? <AdoForm onDone={() => finishConnect('Azure DevOps')} /> : null}
-                    {option.key === 'tangled' ? <TangledForm onDone={() => finishConnect('Tangled')} /> : null}
+                    {option.key === 'tangled' ? (
+                      <TangledForm
+                        onDone={(connection) => {
+                          setAdding(null);
+                          setNotice(
+                            connection.writeReady === false
+                              ? `Tangled connected. Sign in with atproto as ${connection.login} (below) so mureview can create pull requests and comments.`
+                              : 'Tangled connected.',
+                          );
+                          load();
+                        }}
+                      />
+                    ) : null}
                   </div>
                 ) : null}
               </Fragment>
