@@ -570,6 +570,22 @@ svg.checks-pending {
   color: var(--fgColor-default);
 }
 
+.comment-forge-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--fgColor-muted);
+}
+
+.comment-forge-link:hover {
+  background-color: var(--bgColor-neutral-muted);
+  color: var(--fgColor-default);
+  text-decoration: none;
+}
+
 .comment-body {
   padding: 12px;
   white-space: pre-wrap;

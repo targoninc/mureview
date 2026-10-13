@@ -1,4 +1,4 @@
-import type { RepoStatus } from '../../shared/types';
+import type { Comment, ForgeKind, RepoStatus } from '../../shared/types';
 
 export function timeAgo(iso: string): string {
   const normalized = iso.includes('T') || iso.endsWith('Z') ? iso : `${iso.replace(' ', 'T')}Z`;
@@ -33,4 +33,18 @@ export function repoStatusText(status: RepoStatus): string {
   if (status.matches.length > 1) return `${status.matches.length} matching branches`;
   if (status.branch) return 'merged';
   return 'no matching branch';
+}
+
+/** Deep link to a comment on its forge pull request, when one exists. */
+export function forgeCommentLink(repos: RepoStatus[], comment: Comment): { url: string; kind: ForgeKind } | null {
+  const id = comment.forgeCommentId;
+  if (!id || comment.connectionId === null || !comment.repo) return null;
+  const repo = repos.find((entry) => entry.connectionId === comment.connectionId && entry.repo === comment.repo);
+  const pull = repo?.pullRequest;
+  if (!repo || !pull) return null;
+  const anchored = comment.path !== null;
+  if (repo.kind === 'github') return { url: `${pull.url}#${anchored ? 'discussion_r' : 'issuecomment-'}${id}`, kind: repo.kind };
+  if (repo.kind === 'forgejo') return { url: `${pull.url}${anchored ? '/files' : ''}#issuecomment-${id}`, kind: repo.kind };
+  const threadId = id.split(':')[0];
+  return { url: `${pull.url}?discussionId=${threadId}&_a=${anchored ? 'files' : 'discussion'}`, kind: repo.kind };
 }

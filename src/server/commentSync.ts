@@ -8,6 +8,8 @@ interface ExistingRow {
   body: string;
   path: string | null;
   line: number | null;
+  author_name: string;
+  author_avatar: string;
 }
 
 function normalizeDate(value: string): string {
@@ -52,21 +54,41 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
 
     const existing = db
       .query<ExistingRow, [number, number, string]>(
-        'SELECT id, forge_comment_id, body, path, line FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ?',
+        'SELECT id, forge_comment_id, body, path, line, author_name, author_avatar FROM comments WHERE pr_id = ? AND connection_id = ? AND repo = ?',
       )
       .all(prId, repo.connectionId, repo.repo);
     const knownIds = new Set(existing.map((row) => row.forge_comment_id).filter((id): id is string => Boolean(id)));
+    const byForgeId = new Map(existing.filter((row) => row.forge_comment_id).map((row) => [row.forge_comment_id!, row]));
     const anchors = new Map<string, { path: string; line: number; side: 'additions' | 'deletions' }>();
     for (const comment of forgeComments) {
       if (comment.path && comment.line) anchors.set(comment.id, { path: comment.path, line: comment.line, side: comment.side ?? 'additions' });
     }
 
+    // Comments that already exist may have been imported before their author
+    // details were available; fill in an avatar (and name) once the forge
+    // reports one.
+    const fillAuthor = (row: ExistingRow, comment: ForgeComment) => {
+      if (row.author_avatar || !comment.author.avatarUrl) return;
+      db.run('UPDATE comments SET author_avatar = ?, author_name = COALESCE(NULLIF(author_name, \'\'), ?) WHERE id = ?', [
+        comment.author.avatarUrl,
+        comment.author.name,
+        row.id,
+      ]);
+    };
+
     for (const comment of forgeComments) {
-      if (knownIds.has(comment.id)) continue;
+      if (knownIds.has(comment.id)) {
+        const known = byForgeId.get(comment.id);
+        if (known) fillAuthor(known, comment);
+        continue;
+      }
       const duplicate = existing.find(
         (row) => row.path === (comment.path ?? null) && row.line === (comment.line ?? null) && row.body.trim() === comment.body.trim(),
       );
-      if (duplicate) continue;
+      if (duplicate) {
+        fillAuthor(duplicate, comment);
+        continue;
+      }
 
       let anchor = comment.path && comment.line ? { path: comment.path, line: comment.line, side: comment.side ?? 'additions' } : null;
       if (!anchor && comment.replyToId) anchor = anchors.get(comment.replyToId) ?? null;

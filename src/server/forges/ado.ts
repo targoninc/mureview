@@ -17,6 +17,7 @@ import {
   type ReviewComment,
   type TreeListing,
   decodeText,
+  fetchImage,
   statusMap,
   summarizeChecks,
 } from './types';
@@ -69,6 +70,13 @@ interface AdoPull {
   lastMergeSourceCommit?: { commitId: string };
 }
 
+interface AdoCommentAuthor {
+  displayName?: string;
+  /** Deprecated by Azure DevOps in favour of the avatar link below. */
+  imageUrl?: string;
+  _links?: { avatar?: { href?: string } };
+}
+
 interface AdoThread {
   id: number;
   threadContext?: {
@@ -82,7 +90,7 @@ interface AdoThread {
     commentType?: string;
     content?: string;
     publishedDate?: string;
-    author?: { displayName?: string; imageUrl?: string };
+    author?: AdoCommentAuthor;
   }[];
 }
 
@@ -430,6 +438,26 @@ export class AdoClient implements ForgeClient {
     }
   }
 
+  /**
+   * Azure DevOps stores avatars on the organization host; the deprecated
+   * imageUrl field sometimes points elsewhere. Prefer whichever URL our own
+   * host check can serve through the avatar proxy.
+   */
+  private avatarUrl(author?: AdoCommentAuthor): string {
+    const href = author?._links?.avatar?.href ?? '';
+    const image = author?.imageUrl ?? '';
+    const onHost = (url: string) => {
+      try {
+        return new URL(url).host === this.host;
+      } catch {
+        return false;
+      }
+    };
+    if (onHost(href)) return href;
+    if (onHost(image)) return image;
+    return href || image;
+  }
+
   async listComments(repo: string, number: number): Promise<ForgeComment[]> {
     const data = await this.request<{ value: AdoThread[] }>(`${this.repoUrl(repo)}/pullrequests/${number}/threads?api-version=7.1`);
     const comments: ForgeComment[] = [];
@@ -444,7 +472,10 @@ export class AdoClient implements ForgeClient {
         if (!comment.content) continue;
         comments.push({
           id: `${thread.id}:${comment.id}`,
-          author: { name: comment.author?.displayName ?? 'unknown', avatarUrl: comment.author?.imageUrl ?? '' },
+          author: {
+            name: comment.author?.displayName ?? 'unknown',
+            avatarUrl: this.avatarUrl(comment.author),
+          },
           body: anchored ? comment.content : `**${path ?? 'pull request'}**\n\n${comment.content}`,
           createdAt: comment.publishedDate ?? '',
           path: anchored ? path : undefined,
@@ -455,6 +486,10 @@ export class AdoClient implements ForgeClient {
       }
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
+    return fetchImage(url, this.headers('image/*'));
   }
 
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {

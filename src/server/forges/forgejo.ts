@@ -17,6 +17,7 @@ import {
   type ReviewComment,
   type TreeListing,
   decodeText,
+  fetchImage,
   statusMap,
   summarizeChecks,
 } from './types';
@@ -138,6 +139,15 @@ export class ForgejoClient implements ForgeClient {
     }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
+  }
+
+  private absoluteAvatar(url: string | undefined | null): string {
+    if (!url) return '';
+    try {
+      return new URL(url, this.baseUrl).toString();
+    } catch {
+      return '';
+    }
   }
 
   private async paginate<T>(path: string, maxPages = 10): Promise<T[]> {
@@ -363,7 +373,7 @@ export class ForgejoClient implements ForgeClient {
     for (const comment of issueComments) {
       comments.push({
         id: String(comment.id),
-        author: { name: comment.user?.login ?? 'unknown', avatarUrl: comment.user?.avatar_url ?? '' },
+        author: { name: comment.user?.login ?? 'unknown', avatarUrl: this.absoluteAvatar(comment.user?.avatar_url) },
         body: comment.body,
         createdAt: comment.created_at ?? '',
       });
@@ -374,7 +384,7 @@ export class ForgejoClient implements ForgeClient {
         const anchored = Boolean(comment.path) && typeof comment.line === 'number' && comment.line > 0;
         comments.push({
           id: String(comment.id),
-          author: { name: author?.login ?? 'unknown', avatarUrl: author?.avatar_url ?? '' },
+          author: { name: author?.login ?? 'unknown', avatarUrl: this.absoluteAvatar(author?.avatar_url) },
           body: anchored ? comment.body : `**${comment.path ?? 'review'}** (outdated)\n\n${comment.body}`,
           createdAt: comment.created_at ?? comment.updated_at ?? review.submitted_at ?? '',
           path: anchored ? comment.path : undefined,
@@ -384,6 +394,10 @@ export class ForgejoClient implements ForgeClient {
       }
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
+    return fetchImage(url, { 'User-Agent': 'mureview' });
   }
 
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {

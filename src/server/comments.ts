@@ -3,6 +3,7 @@ import { connectionById, connectionsFor } from './auth/identities';
 import { publicUser, requireUser } from './auth/session';
 import { db } from './db';
 import { clientFor } from './forges';
+import { hostOf } from './forges/types';
 import { HttpError, json, readJson } from './http';
 import { markCommentSynced, repoPullRequest } from './pullRequests';
 import type { Ctx } from './router';
@@ -33,11 +34,38 @@ interface PrRow {
 
 const SELECT_COMMENT = `SELECT c.* FROM comments c`;
 
+const connectionHosts = new Map<number, string>();
+
+/**
+ * Avatars hosted on the forge itself (Azure DevOps and some Forgejo setups)
+ * need the connection credentials, so they are served through our own
+ * /api/forge-avatar endpoint. Public avatars on other hosts are left alone.
+ */
+function proxiedAvatar(connectionId: number | null, avatarUrl: string): string {
+  if (!connectionId || !avatarUrl) return avatarUrl;
+  let host = connectionHosts.get(connectionId);
+  if (host === undefined) {
+    const row = db.query<{ base_url: string }, [number]>('SELECT base_url FROM forge_connections WHERE id = ?').get(connectionId);
+    host = row ? hostOf(row.base_url) : '';
+    connectionHosts.set(connectionId, host);
+  }
+  if (!host) return avatarUrl;
+  try {
+    if (new URL(avatarUrl).host !== host) return avatarUrl;
+  } catch {
+    return avatarUrl;
+  }
+  return `/api/forge-avatar?connectionId=${connectionId}&url=${encodeURIComponent(avatarUrl)}`;
+}
+
 function toComment(row: CommentRow): Comment {
   return {
     id: row.id,
     prId: row.pr_id,
-    author: { name: row.author_name, avatarUrl: row.author_avatar },
+    author: {
+      name: row.author_name,
+      avatarUrl: row.source === 'forge' ? proxiedAvatar(row.connection_id, row.author_avatar) : row.author_avatar,
+    },
     connectionId: row.connection_id,
     repo: row.repo,
     path: row.path,
@@ -46,6 +74,7 @@ function toComment(row: CommentRow): Comment {
     body: row.body,
     synced: row.synced_at !== null,
     source: row.source === 'forge' ? 'forge' : 'mureview',
+    forgeCommentId: row.forge_comment_id,
     createdAt: row.created_at,
   };
 }

@@ -230,9 +230,9 @@ export function PrView({ detail, onReload }: PrViewProps) {
           />
         );
       }
-      return <CommentThread comments={meta.comments} onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))} />;
+      return <CommentThread comments={meta.comments} repos={pr.repos} onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))} />;
     },
-    [pr.prId],
+    [pr.prId, pr.repos],
   );
 
   const applyReviewed = useCallback(
@@ -312,6 +312,7 @@ export function PrView({ detail, onReload }: PrViewProps) {
       <ConversationPanel
         prId={pr.prId}
         comments={comments}
+        repos={pr.repos}
         onAdded={(comment) => setComments((current) => [...current, comment])}
         onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
       />

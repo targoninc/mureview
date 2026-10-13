@@ -134,6 +134,7 @@ export interface Comment {
   body: string;
   synced: boolean;
   source: 'mureview' | 'forge';
+  forgeCommentId: string | null;
   createdAt: string;
 }
 

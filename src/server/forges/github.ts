@@ -16,6 +16,7 @@ import {
   type ReviewComment,
   type TreeListing,
   decodeText,
+  fetchImage,
   statusMap,
   summarizeChecks,
 } from './types';
@@ -333,6 +334,10 @@ export class GithubClient implements ForgeClient {
       });
     }
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
+    return fetchImage(url, { 'User-Agent': 'mureview' });
   }
 
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {

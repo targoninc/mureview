@@ -96,6 +96,7 @@ export interface ForgeClient {
   pullRequestUrl(repo: string, number: number): string;
   postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<{ kind: 'line' | 'pull-request'; id?: string }>;
   listComments(repo: string, number: number): Promise<ForgeComment[]>;
+  fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null>;
   listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]>;
   checks(repo: string, sha: string, options?: { pullRequest?: number }): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
@@ -124,6 +125,19 @@ export const statusMap: Record<string, FileStatus> = {
 export function decodeText(buffer: Buffer): string | null {
   if (buffer.includes(0)) return null;
   return buffer.toString('utf8');
+}
+
+const maxAvatarBytes = 2_000_000;
+
+/** Fetches an image, with optional forge credentials, for the avatar proxy. */
+export async function fetchImage(url: string, headers?: HeadersInit): Promise<{ contentType: string; body: Buffer } | null> {
+  const response = await fetch(url, { headers });
+  if (!response.ok) return null;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.startsWith('image/')) return null;
+  const body = Buffer.from(await response.arrayBuffer());
+  if (!body.length || body.length > maxAvatarBytes) return null;
+  return { contentType, body };
 }
 
 export function summarizeChecks(runs: CheckInfo[]): ChecksSummary['state'] {

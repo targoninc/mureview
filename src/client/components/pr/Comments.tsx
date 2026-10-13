@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { Avatar, Button, Flash, IconButton, Textarea, useConfirm } from '@primer/react';
-import { TrashIcon } from '@primer/octicons-react';
-import type { Comment } from '../../../shared/types';
+import { LinkExternalIcon, TrashIcon } from '@primer/octicons-react';
+import type { Comment, RepoStatus } from '../../../shared/types';
 import { del, post } from '../../lib/api';
-import { timeAgo } from '../../lib/format';
+import { forgeCommentLink, timeAgo } from '../../lib/format';
+import { serviceNames } from '../ServiceIcon';
 import type { Side } from './annotations';
 
 export interface CommentAnchor {
@@ -14,7 +15,15 @@ export interface CommentAnchor {
   side: Side | null;
 }
 
-export function CommentThread({ comments, onDeleted }: { comments: Comment[]; onDeleted: (id: number) => void }) {
+export function CommentThread({
+  comments,
+  repos,
+  onDeleted,
+}: {
+  comments: Comment[];
+  repos?: RepoStatus[];
+  onDeleted: (id: number) => void;
+}) {
   const confirm = useConfirm();
 
   const remove = async (id: number) => {
@@ -31,23 +40,38 @@ export function CommentThread({ comments, onDeleted }: { comments: Comment[]; on
 
   return (
     <div className="comment-thread">
-      {comments.map((comment) => (
-        <div className="comment" key={comment.id}>
-          <div className="comment-header">
-            <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
-            <strong>{comment.author.name}</strong>
-            <span>commented {timeAgo(comment.createdAt)}</span>
-            {comment.source === 'forge' ? (
-              <span title="Written on the forge pull request and imported here">· from forge</span>
-            ) : comment.synced && comment.path ? (
-              <span title="Mirrored to the forge pull request for this repository">· synced to forge</span>
-            ) : null}
-            <span style={{ flex: 1 }} />
-            <IconButton icon={TrashIcon} aria-label="Delete comment" variant="invisible" size="small" onClick={() => remove(comment.id)} />
+      {comments.map((comment) => {
+        const link = repos ? forgeCommentLink(repos, comment) : null;
+        return (
+          <div className="comment" key={comment.id}>
+            <div className="comment-header">
+              <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
+              <strong>{comment.author.name}</strong>
+              <span>commented {timeAgo(comment.createdAt)}</span>
+              {comment.source === 'forge' ? (
+                <span title="Written on the forge pull request and imported here">· from forge</span>
+              ) : comment.synced && comment.path ? (
+                <span title="Mirrored to the forge pull request for this repository">· synced to forge</span>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              {link ? (
+                <a
+                  className="comment-forge-link"
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open comment on ${serviceNames[link.kind]}`}
+                  title={`Open comment on ${serviceNames[link.kind]}`}
+                >
+                  <LinkExternalIcon size={14} />
+                </a>
+              ) : null}
+              <IconButton icon={TrashIcon} aria-label="Delete comment" variant="invisible" size="small" onClick={() => remove(comment.id)} />
+            </div>
+            <div className="comment-body">{comment.body}</div>
           </div>
-          <div className="comment-body">{comment.body}</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
