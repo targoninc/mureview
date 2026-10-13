@@ -908,8 +908,10 @@ body.sidebar-resizing {
   border-top: none;
 }
 
-/* Primer's Textarea is monospace; comments read as text, not code. */
-.composer textarea {
+/* Primer's Textarea and buttons are monospace inside the diff; comments
+   read as text, not code. */
+.composer textarea,
+.composer button {
   font-family: var(--font-sans);
 }
 
