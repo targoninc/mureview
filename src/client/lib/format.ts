@@ -1,4 +1,4 @@
-import type { Comment, ForgeKind, RepoStatus } from '../../shared/types';
+import type { Comment, ForgeConnectionInfo, ForgeKind, RepoStatus } from '../../shared/types';
 
 export function timeAgo(iso: string): string {
   const normalized = iso.includes('T') || iso.endsWith('Z') ? iso : `${iso.replace(' ', 'T')}Z`;
@@ -21,6 +21,15 @@ export function fileItemId(connectionId: number, repo: string, path: string): st
 /** Tree segments for a changed file, keeping "owner/name" repositories atomic. */
 export function fileSegments(host: string, repo: string, path: string): string[] {
   return [host, repo, ...path.split('/')];
+}
+
+/**
+ * Avatars on the forge host itself (Azure DevOps) need the connection
+ * credentials, so they load through the avatar proxy.
+ */
+export function connectionAvatarUrl(connection: Pick<ForgeConnectionInfo, 'id' | 'kind' | 'avatarUrl'>): string {
+  if (!connection.avatarUrl || connection.kind !== 'ado') return connection.avatarUrl;
+  return `/api/forge-avatar?connectionId=${connection.id}&url=${encodeURIComponent(connection.avatarUrl)}`;
 }
 
 export function repoStatusText(status: RepoStatus): string {

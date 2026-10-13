@@ -225,15 +225,33 @@ export class AdoClient implements ForgeClient {
    * organization-scoped tokens, which are the default when creating a PAT.
    * connectionData is scoped to the organization and works for both kinds.
    */
-  async currentUser(): Promise<{ id: string; name: string }> {
+  async currentUser(): Promise<{ id: string; name: string; avatarUrl: string }> {
     const data = await this.request<{
-      authenticatedUser?: { id: string; providerDisplayName?: string; customDisplayName?: string };
+      authenticatedUser?: {
+        id: string;
+        providerDisplayName?: string;
+        customDisplayName?: string;
+        /** Deprecated by Azure DevOps in favour of the avatar link below. */
+        imageUrl?: string;
+        _links?: { avatar?: { href?: string } };
+      };
     }>(`${this.baseUrl}/_apis/connectionData?api-version=7.1-preview.1`);
     const user = data.authenticatedUser;
     if (!user?.id || user.providerDisplayName === 'Anonymous') {
       throw new ForgeError(401, 'the personal access token is invalid, expired, or belongs to a different organization');
     }
-    return { id: user.id, name: user.customDisplayName || user.providerDisplayName || 'azure devops' };
+    const onHost = (url: string) => {
+      try {
+        return new URL(url).host === this.host;
+      } catch {
+        return false;
+      }
+    };
+    const href = user._links?.avatar?.href ?? '';
+    const image = user.imageUrl ?? '';
+    const fallback = `${this.baseUrl}/_api/_common/identityImage?id=${user.id}`;
+    const avatarUrl = onHost(href) ? href : onHost(image) ? image : fallback;
+    return { id: user.id, name: user.customDisplayName || user.providerDisplayName || 'azure devops', avatarUrl };
   }
 
   /**

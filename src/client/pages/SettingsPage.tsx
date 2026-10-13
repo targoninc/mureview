@@ -3,6 +3,7 @@ import { Avatar, Button, Flash, Heading, Spinner, useConfirm } from '@primer/rea
 import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
+import { connectionAvatarUrl } from '../lib/format';
 import { AdoForm, AtprotoForm, ForgejoForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
@@ -98,7 +99,7 @@ export function SettingsPage() {
                 <div className="repo-list-item" key={connection.id} style={{ cursor: 'default' }}>
                   <div className="row">
                     <ServiceIcon kind={connection.kind} detail={serviceDetail(connection.kind, connection)} />
-                    <Avatar src={connection.avatarUrl} size={20} alt={connection.login} />
+                    <Avatar src={connectionAvatarUrl(connection)} size={20} alt={connection.login} />
                     <span>
                       {connection.host}/{connection.login}
                     </span>

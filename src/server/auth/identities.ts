@@ -1,7 +1,7 @@
 import type { AuthProvider, ForgeKind } from '../../shared/types';
 import { encrypt } from '../crypto';
 import { type ForgeConnectionRow, type IdentityRow, type UserRow, db } from '../db';
-import { hostOf } from '../forges';
+import { hostOf, organizationOf } from '../forges';
 
 export interface IdentityProfile {
   provider: AuthProvider;
@@ -117,6 +117,23 @@ export function connectionById(userId: number, id: number): ForgeConnectionRow |
 
 export function connectionLabel(connection: ForgeConnectionRow): string {
   return `${hostOf(connection.base_url)}/${connection.login}`;
+}
+
+/**
+ * The user's own connection to the same forge and organization as another
+ * connection (used to act on shared review sets with one's own credentials).
+ */
+export function matchingConnection(userId: number, owner: ForgeConnectionRow): ForgeConnectionRow | null {
+  const host = hostOf(owner.base_url);
+  const org = organizationOf(owner.base_url);
+  return (
+    connectionsFor(userId).find(
+      (candidate) =>
+        candidate.kind === owner.kind &&
+        hostOf(candidate.base_url) === host &&
+        (org === null || organizationOf(candidate.base_url) === org),
+    ) ?? null
+  );
 }
 
 export function mergeUsers(fromId: number, intoId: number): void {

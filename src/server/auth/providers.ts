@@ -384,9 +384,9 @@ export async function connectAdo(ctx: Ctx): Promise<Response> {
   }
 
   const client = new AdoClient(baseUrl, token);
-  let login: string;
+  let account: { id: string; name: string; avatarUrl: string };
   try {
-    login = (await client.currentUser()).name;
+    account = await client.currentUser();
   } catch (error) {
     throw new HttpError(
       400,
@@ -400,7 +400,13 @@ export async function connectAdo(ctx: Ctx): Promise<Response> {
     throw new HttpError(400, `Could not reach ${baseUrl}: ${(error as Error).message}`);
   }
 
-  const connection = upsertConnection(user.id, { kind: 'ado', baseUrl, accessToken: token, login });
+  const connection = upsertConnection(user.id, {
+    kind: 'ado',
+    baseUrl,
+    accessToken: token,
+    login: account.name,
+    avatarUrl: account.avatarUrl,
+  });
   return json({ connection: connectionInfo(connection) }, 201);
 }
 

@@ -2,7 +2,9 @@ import type { ForgeKind, TokenWarning } from '../shared/types';
 import { connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
 import { Cache, mapLimit } from './cache';
+import { db } from './db';
 import { clientFor } from './forges';
+import { AdoClient } from './forges/ado';
 import { json } from './http';
 import type { Ctx } from './router';
 
@@ -29,6 +31,19 @@ export async function listWarnings(ctx: Ctx): Promise<Response> {
   await mapLimit(connectionsFor(user.id), 2, async (connection) => {
     const client = clientFor(connection);
     if (!client.tokenExpiry) return;
+
+    // Azure DevOps avatars cannot be fetched by the browser; store the
+    // account's avatar URL so the client can load it through the proxy.
+    if (connection.kind === 'ado' && !connection.avatar_url && client instanceof AdoClient) {
+      try {
+        const account = await client.currentUser();
+        if (account.avatarUrl) {
+          db.run('UPDATE forge_connections SET avatar_url = ? WHERE id = ?', [account.avatarUrl, connection.id]);
+        }
+      } catch {
+        // No avatar available; not worth a warning.
+      }
+    }
 
     const key = `${connection.id}#${Bun.hash(connection.access_token).toString(36)}`;
     let expiry = expiryCache.get(key);

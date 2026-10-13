@@ -25,7 +25,17 @@ const server = Bun.serve({
     requests.push(url.pathname + url.search);
 
     if (url.pathname.endsWith('/_apis/connectionData')) {
-      return Response.json({ instanceId: 'org-1' });
+      const credentials = req.headers.get('authorization') ?? '';
+      const plain = credentials === `Basic ${Buffer.from(':no-avatar').toString('base64')}`;
+      return Response.json({
+        instanceId: 'org-1',
+        authenticatedUser: {
+          id: 'user-1',
+          providerDisplayName: 'Loudar',
+          customDisplayName: 'loudar',
+          ...(plain ? {} : { _links: { avatar: { href: `http://localhost:${url.port}/avatars/self.png` } } }),
+        },
+      });
     }
 
     if (url.pathname.endsWith('/_apis/tokens/pats')) {
@@ -197,6 +207,16 @@ test('deletes a thread comment on the forge', async () => {
   await client.deleteComment('Proj/Repo', 7, '12:35');
   expect(requests[0]).toContain('/pullrequests/7/threads/12/comments/35');
   expect(requests[0]).toContain('api-version=7.1');
+});
+
+test('finds the account avatar from connectionData', async () => {
+  const account = await client.currentUser();
+  expect(account).toEqual({ id: 'user-1', name: 'loudar', avatarUrl: `http://localhost:${server.port}/avatars/self.png` });
+});
+
+test('falls back to the identity image endpoint without an avatar link', async () => {
+  const plain = new AdoClient(`http://localhost:${server.port}`, 'no-avatar');
+  expect((await plain.currentUser()).avatarUrl).toBe(`http://localhost:${server.port}/_api/_common/identityImage?id=user-1`);
 });
 
 test('picks the soonest expiring code token for the organization', async () => {

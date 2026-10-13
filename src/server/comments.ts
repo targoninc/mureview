@@ -1,10 +1,10 @@
 import type { Comment, CommentInput } from '../shared/types';
 import { loadReadableReviewSetRow } from './access';
-import { connectionById, connectionsFor } from './auth/identities';
+import { connectionById, matchingConnection } from './auth/identities';
 import { publicUser, requireUser } from './auth/session';
 import { type ForgeConnectionRow, db } from './db';
 import { clientFor } from './forges';
-import { hostOf, organizationOf } from './forges/types';
+import { hostOf } from './forges/types';
 import { HttpError, json, readJson } from './http';
 import { markCommentSynced, repoPullRequest } from './pullRequests';
 import type { Ctx } from './router';
@@ -225,20 +225,6 @@ function connectionForComment(userId: number, ownerConnectionId: number): ForgeC
     .get(ownerConnectionId);
   if (!ownerConnection) return null;
   return connectionById(userId, ownerConnection.id) ?? matchingConnection(userId, ownerConnection);
-}
-
-/** The user's own connection to the same forge and organization. */
-function matchingConnection(userId: number, ownerConnection: ForgeConnectionRow): ForgeConnectionRow | null {
-  const host = hostOf(ownerConnection.base_url);
-  const org = organizationOf(ownerConnection.base_url);
-  return (
-    connectionsFor(userId).find(
-      (candidate) =>
-        candidate.kind === ownerConnection.kind &&
-        hostOf(candidate.base_url) === host &&
-        (org === null || organizationOf(candidate.base_url) === org),
-    ) ?? null
-  );
 }
 
 /**
