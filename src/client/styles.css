@@ -37,6 +37,13 @@ body {
   color: var(--fgColor-onEmphasis);
 }
 
+.app-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .app-header-brand {
   display: flex;
   align-items: center;
@@ -44,6 +51,13 @@ body {
   color: inherit !important;
   font-weight: 600;
   font-size: 13px;
+}
+
+.app-header-build {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.7;
+  text-decoration: none;
 }
 
 .app-header-actions {
@@ -769,6 +783,10 @@ body.sidebar-resizing {
   }
 
   .app-header-username {
+    display: none;
+  }
+
+  .app-header-build {
     display: none;
   }
 

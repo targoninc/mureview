@@ -14,6 +14,7 @@ interface ShellProps {
 export function Shell({ user, onSignOut, children }: ShellProps) {
   const navigate = useNavigate();
   const confirm = useConfirm();
+  const builtAt = new Date(__BUILD_TIME__).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
   const signOut = async () => {
     const approved = await confirm({
@@ -28,10 +29,15 @@ export function Shell({ user, onSignOut, children }: ShellProps) {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <a className="app-header-brand" href={`${basePath}/`}>
-          <FileDiffIcon size={18} />
-          <span>mureview</span>
-        </a>
+        <div className="app-header-left">
+          <a className="app-header-brand" href={`${basePath}/`}>
+            <FileDiffIcon size={18} />
+            <span>mureview</span>
+          </a>
+          <span className="app-header-build" title="When this build was created">
+            built {builtAt}
+          </span>
+        </div>
         <div className="app-header-actions">
           <span className="app-header-user">
             <Avatar src={user.avatarUrl} size={20} alt={user.name} />
