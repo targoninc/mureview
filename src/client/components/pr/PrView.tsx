@@ -102,6 +102,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const visibleFrame = useRef<number | null>(null);
   const visibleTrailing = useRef<number | null>(null);
+  const restoredFromUrl = useRef(false);
 
   useEffect(() => setComments(pr.comments), [pr.comments]);
   useEffect(
@@ -148,6 +149,20 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       if (rect.bottom > bounds.top + 1 && rect.top < bounds.bottom - 1) next.add(rendered.id);
     }
     setVisibleItems((current) => (current.size === next.size && [...next].every((id) => current.has(id)) ? current : next));
+
+    // Keep the file being read (and the offset inside it) in the URL, so a
+    // reload lands back at the same scroll position.
+    const top = viewer
+      .getRenderedItems()
+      .filter((rendered) => rendered.element.getBoundingClientRect().bottom > bounds.top + 1)
+      .sort((a, b) => a.element.getBoundingClientRect().top - b.element.getBoundingClientRect().top)[0];
+    if (top) {
+      const within = Math.max(0, Math.round(bounds.top - top.element.getBoundingClientRect().top));
+      const hash = `#file=${encodeURIComponent(top.id)}${within > 0 ? `&y=${within}` : ''}`;
+      if (window.location.hash !== hash) {
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}${hash}`);
+      }
+    }
   }, []);
 
   const updateVisibleItems = useCallback(() => {
@@ -343,6 +358,26 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   );
 
   const hasFiles = parsed.length > 0;
+
+  // Restore the scroll position from the URL once the diffs are rendered.
+  useEffect(() => {
+    if (restoredFromUrl.current || !hasFiles) return;
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const file = params.get('file');
+    if (!file || !parsed.some((entry) => entry.id === file)) return;
+    restoredFromUrl.current = true;
+    const offset = Number(params.get('y') ?? 0);
+    const timer = window.setTimeout(() => {
+      codeViewRef.current?.scrollTo({ type: 'item', id: file, align: 'start' });
+      if (offset > 0) {
+        window.setTimeout(() => {
+          const scroll = scrollRef.current;
+          if (scroll) scroll.scrollTop += offset;
+        }, 120);
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [hasFiles, parsed]);
   const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
   const commitCount = pr.repos.reduce((count, repo) => count + (repo.commits?.length ?? 0), 0);
   const checksByRepo = useMemo(() => new Map(checks.map((entry) => [`${entry.connectionId}:${entry.repo}`, entry.checks])), [checks]);
