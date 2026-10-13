@@ -215,9 +215,9 @@ export function ReviewSetFormPage() {
     });
   };
 
-  const branchOptions = (item: ReviewSetRepo, value: string | null): string[] => {
+  const branchOptions = (item: ReviewSetRepo, value: string | null, usedBranches: string[] = []): string[] => {
     const list = branches[branchKey(item.connectionId, item.repo)];
-    const known = list?.state === 'ready' ? list.branches : [];
+    const known = (list?.state === 'ready' ? list.branches : []).filter((branch) => !usedBranches.includes(branch));
     return value && !known.includes(value) ? [value, ...known] : known;
   };
 
@@ -474,7 +474,14 @@ export function ReviewSetFormPage() {
                                 }
                               >
                                 <Select.Option value="">Branch…</Select.Option>
-                                {branchOptions(item, layer.branch).map((branch) => (
+                                {branchOptions(
+                                  item,
+                                  layer.branch,
+                                  layers
+                                    .filter((other) => other.position !== layer.position)
+                                    .map((other) => other.branch)
+                                    .filter((branch): branch is string => Boolean(branch)),
+                                ).map((branch) => (
                                   <Select.Option key={branch} value={branch}>
                                     {branch}
                                   </Select.Option>

@@ -6,6 +6,9 @@ import type { ReviewSet } from '../../shared/types';
 import { api } from '../lib/api';
 
 function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
+  // Stacks hold several entries per repository; count the repositories.
+  const repos = [...new Map(reviewSet.repos.map((repo) => [`${repo.connectionId}:${repo.repo}`, repo])).values()];
+  const layers = reviewSet.mode === 'stack' ? reviewSet.repos.length : 0;
   return (
     <Link className="repo-list-item" to={`/review-sets/${reviewSet.id}`}>
       <div className="repo-list-main">
@@ -18,15 +21,17 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
               <Avatar src={reviewSet.owner.avatarUrl} size={16} alt={reviewSet.owner.name} /> {reviewSet.owner.name}
             </span>
           ) : null}
-          <Label variant="secondary">/{reviewSet.branchRegex}/</Label>
+          {reviewSet.mode === 'stack' ? <Label variant="accent">stacked</Label> : null}
+          {reviewSet.mode === 'stack' ? null : <Label variant="secondary">/{reviewSet.branchRegex}/</Label>}
           <span className="row">
             <GitBranchIcon size={14} /> target: <span className="mono">{reviewSet.targetBranch}</span>
           </span>
         </div>
       </div>
-      <span className="repo-list-count" title={reviewSet.repos.map((repo) => `${repo.host}/${repo.repo}`).join('\n')}>
+      <span className="repo-list-count" title={repos.map((repo) => `${repo.host}/${repo.repo}`).join('\n')}>
         <RepoIcon size={14} />
-        {reviewSet.repos.length} {reviewSet.repos.length === 1 ? 'repo' : 'repos'} included
+        {repos.length} {repos.length === 1 ? 'repo' : 'repos'}
+        {layers > 0 ? ` · ${layers} ${layers === 1 ? 'layer' : 'layers'}` : ''} included
       </span>
     </Link>
   );

@@ -323,7 +323,7 @@ export function MergePage() {
         {conflictCount > 0 && !results ? (
           <Flash variant="danger">
             <strong>
-              {conflictCount} {conflictCount === 1 ? 'repository has' : 'repositories have'} merge conflicts.
+              {conflictCount} {stacked ? (conflictCount === 1 ? 'layer has' : 'layers have') : conflictCount === 1 ? 'repository has' : 'repositories have'} merge conflicts.
             </strong>{' '}
             Resolve them on the forge (or retarget the branch pattern) before merging.
           </Flash>
@@ -336,7 +336,7 @@ export function MergePage() {
         {blockedCount > 0 && !results ? (
           <Flash variant="danger">
             <strong>
-              You cannot complete pull requests in {blockedCount} {blockedCount === 1 ? 'repository' : 'repositories'}.
+              You cannot complete pull requests in {blockedCount} {stacked ? (blockedCount === 1 ? 'layer' : 'layers') : blockedCount === 1 ? 'repository' : 'repositories'}.
             </strong>{' '}
             Ask someone with write access to merge, or merge manually on the forge.
           </Flash>

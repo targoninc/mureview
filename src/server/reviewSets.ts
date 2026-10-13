@@ -4,7 +4,7 @@ import { mapLimit } from './cache';
 import { type ForgeConnectionRow, type UserRow, db } from './db';
 import { hostOf, organizationOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
-import { buildPrStatus, clientsFor, clientsForActor } from './pr';
+import { buildPrStatus, clientsForActor } from './pr';
 import { canManageRepoList, canManageReviewSet } from './permissions';
 import { listComments } from './comments';
 import { syncForgeComments } from './commentSync';
@@ -182,6 +182,7 @@ function isFresh(ctx: Ctx): boolean {
 export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
   const access = await loadReadableReviewSet(user, id);
   const connections = connectionsFor(access.ownerId);
+  const clients = clientsForActor(user.id, connections);
   const [pr, canManage] = await Promise.all([
     buildPrStatus(connections, access.reviewSet, fresh, {
       commits: false,
@@ -189,6 +190,7 @@ export async function buildDetail(user: UserRow, id: number, fresh = false): Pro
       progress: true,
       progressUserId: user.id,
       viewerId: user.id,
+      clients,
     }),
     canManageReviewSet(user.id, access.reviewSet, connections),
   ]);
@@ -212,6 +214,7 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const fresh = isFresh(ctx);
   const connections = connectionsFor(access.ownerId);
+  const clients = clientsForActor(user.id, connections);
   if (fresh && !(await canManageReviewSet(user.id, access.reviewSet, connections))) {
     throw new HttpError(403, 'You need merge permission on every repository in this review set to refresh it.');
   }
@@ -237,6 +240,7 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
           progress: true,
           progressUserId: user.id,
           onRepo: (repo) => send({ repo }),
+          clients,
         });
         send({ done: pr });
         await permission;
@@ -257,9 +261,20 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
 export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const access = await loadReadableReviewSet(user, requireId(ctx));
-  const status = await buildPrStatus(connectionsFor(access.ownerId), access.reviewSet, false, { discussions: false, commits: true, ensurePulls: false });
+  const connections = connectionsFor(access.ownerId);
+  const status = await buildPrStatus(connections, access.reviewSet, false, {
+    discussions: false,
+    commits: true,
+    ensurePulls: false,
+    clients: clientsForActor(user.id, connections),
+  });
   return json({
-    repos: status.repos.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, commits: repo.commits ?? [] })),
+    repos: status.repos.map((repo) => ({
+      connectionId: repo.connectionId,
+      repo: repo.repo,
+      position: repo.position,
+      commits: repo.commits ?? [],
+    })),
   });
 }
 
@@ -268,20 +283,32 @@ export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const connections = connectionsFor(access.ownerId);
-  const clients = clientsFor(connections);
-  const status = await buildPrStatus(connections, access.reviewSet, false, { discussions: false, commits: false, ensurePulls: false });
+  const clients = clientsForActor(user.id, connections);
+  const status = await buildPrStatus(connections, access.reviewSet, false, {
+    discussions: false,
+    commits: false,
+    ensurePulls: false,
+    clients,
+  });
   const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);
 
   const repos = await mapLimit(open, 3, async (repo) => {
     const client = clients.get(repo.connectionId);
-    if (!client) return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'unknown' as const, runs: [] } };
+    if (!client)
+      return { connectionId: repo.connectionId, repo: repo.repo, position: repo.position, checks: { state: 'unknown' as const, runs: [] } };
     try {
       const head = await client.getBranch(repo.repo, repo.branch!, {});
-      if (!head) return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'none' as const, runs: [] } };
-      return { connectionId: repo.connectionId, repo: repo.repo, checks: await client.checks(repo.repo, head.sha, { pullRequest: repo.pullRequest?.ref }) };
+      if (!head)
+        return { connectionId: repo.connectionId, repo: repo.repo, position: repo.position, checks: { state: 'none' as const, runs: [] } };
+      return {
+        connectionId: repo.connectionId,
+        repo: repo.repo,
+        position: repo.position,
+        checks: await client.checks(repo.repo, head.sha, { pullRequest: repo.pullRequest?.ref }),
+      };
     } catch (error) {
       console.error(`Could not read the checks for ${repo.repo}:`, error);
-      return { connectionId: repo.connectionId, repo: repo.repo, checks: { state: 'unknown' as const, runs: [] } };
+      return { connectionId: repo.connectionId, repo: repo.repo, position: repo.position, checks: { state: 'unknown' as const, runs: [] } };
     }
   });
 

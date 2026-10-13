@@ -375,7 +375,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const renderHeaderMetadata = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
       const entry = parsedRef.current.get(item.id);
-      if (!entry || !pr.prId) return null;
+      // Viewed marks belong to layers; the cumulative view is read-only.
+      if (!entry || !pr.prId || entry.combined) return null;
       return (
         <label className="viewed-toggle" title="Mark this file as reviewed">
           <Checkbox checked={reviewed.has(entry.id)} onChange={() => applyReviewed([entry.id], !reviewed.has(entry.id))} />
