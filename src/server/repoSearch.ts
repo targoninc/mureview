@@ -3,6 +3,7 @@ import type { ForgeConnectionRow, UserRow } from './db';
 import { Cache, cached, mapLimit } from './cache';
 import { clientFor, hostOf, organizationOf } from './forges';
 import { connectionsFor } from './auth/identities';
+import { HttpError } from './http';
 import { forgeErrorMessage } from './validate';
 
 /**
@@ -49,8 +50,7 @@ async function loadConnectionRepos(connection: ForgeConnectionRow): Promise<Avai
     .sort((a, b) => a.repo.localeCompare(b.repo));
 }
 
-export async function listAvailableRepos(user: UserRow, fresh = false): Promise<RepoSearchResponse> {
-  const connections = connectionsFor(user.id);
+export async function listAvailableRepos(user: UserRow, fresh = false): Promise<RepoSearchResponse> {  const connections = connectionsFor(user.id);
   const results = await mapLimit(connections, 4, async (connection) => {
     const key = `connection:${connection.id}`;
     const label = forgeSourceLabel(connection);
@@ -72,4 +72,16 @@ export async function listAvailableRepos(user: UserRow, fresh = false): Promise<
     sources: connections.map(toSource),
     errors: results.flatMap((result) => (result.error ? [result.error] : [])),
   };
+}
+
+/** The branch names of one repository, for the per-repo branch pickers. */
+export async function listRepoBranches(user: UserRow, connectionId: number, repo: string): Promise<string[]> {
+  const connection = connectionsFor(user.id).find((candidate) => candidate.id === connectionId);
+  if (!connection) throw new HttpError(404, 'Connection not found');
+  try {
+    const branches = await clientFor(connection).listBranches(repo, {});
+    return branches.map((branch) => branch.name);
+  } catch (error) {
+    throw new HttpError(400, `Could not list branches (${forgeErrorMessage(error)}).`);
+  }
 }

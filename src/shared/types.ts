@@ -62,18 +62,25 @@ export interface LoadProgress {
   finished: boolean;
 }
 
+export type ReviewSetMode = 'pattern' | 'per-repo';
+
 export interface ReviewSetRepo {
   connectionId: number;
   repo: string;
   kind: ForgeKind;
   host: string;
   org: string | null;
+  /** Selected source branch in per-repo mode. */
+  branch: string | null;
+  /** Selected target branch in per-repo mode. */
+  target: string | null;
 }
 
 export interface ReviewSet {
   id: number;
   name: string;
   repos: ReviewSetRepo[];
+  mode: ReviewSetMode;
   branchRegex: string;
   targetBranch: string;
   createdAt: string;
@@ -83,7 +90,8 @@ export interface ReviewSet {
 
 export interface ReviewSetInput {
   name: string;
-  repos: { connectionId: number; repo: string }[];
+  repos: { connectionId: number; repo: string; branch?: string | null; target?: string | null }[];
+  mode: ReviewSetMode;
   branchRegex: string;
   targetBranch: string;
 }
@@ -137,6 +145,8 @@ export interface RepoStatus {
   error?: string;
   matches: string[];
   branch: string | null;
+  /** The branch the matched branch is compared against. */
+  target: string;
   targetExists: boolean;
   state: RepoPrState;
   aheadBy?: number;

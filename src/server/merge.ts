@@ -77,10 +77,10 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
     throw new HttpError(400, 'Nothing to merge: no matched branch has changes against the target branch.');
   }
 
-  const target = reviewSet.targetBranch;
   const unsynced = current.prId ? listUnsyncedComments(current.prId) : [];
   const results = await mapLimit(openRepos, 3, async (repo): Promise<MergeResult> => {
     const label = `${repo.host}/${repo.repo}`;
+    const target = repo.target || reviewSet.targetBranch;
     const client = clients.get(repo.connectionId);
     if (!client) return { connectionId: repo.connectionId, label, ok: false, message: 'the forge connection was removed' };
     try {

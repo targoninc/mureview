@@ -100,12 +100,25 @@ export function PrHeader({
               </span>
             ) : openRepos.length > 0 ? (
               <>
-                Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'} into{' '}
-                <span className="mono">{reviewSet.targetBranch}</span> · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
+                Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'}{' '}
+                {reviewSet.mode === 'per-repo' ? (
+                  'into their target branches'
+                ) : (
+                  <>
+                    into <span className="mono">{reviewSet.targetBranch}</span>
+                  </>
+                )}{' '}
+                · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
               </>
             ) : (
               <>
-                Target branch <span className="mono">{reviewSet.targetBranch}</span>
+                {reviewSet.mode === 'per-repo' ? (
+                  'Watching the selected branch of every repository'
+                ) : (
+                  <>
+                    Target branch <span className="mono">{reviewSet.targetBranch}</span>
+                  </>
+                )}
               </>
             )}
             {skipped > 0 ? ` · ${skipped} non-text files skipped` : ''}

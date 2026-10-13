@@ -16,6 +16,8 @@ import type { Ctx } from './router';
 interface RepoRow {
   connection_id: number;
   repo: string;
+  branch: string | null;
+  target_branch: string | null;
   kind: ForgeKind;
   base_url: string;
 }
@@ -23,7 +25,7 @@ interface RepoRow {
 function reposFor(reviewSetId: number): ReviewSetRepo[] {
   return db
     .query<RepoRow, [number]>(
-      `SELECT rsr.connection_id, rsr.repo, fc.kind, fc.base_url
+      `SELECT rsr.connection_id, rsr.repo, rsr.branch, rsr.target_branch, fc.kind, fc.base_url
        FROM review_set_repos rsr
        JOIN forge_connections fc ON fc.id = rsr.connection_id
        WHERE rsr.review_set_id = ?
@@ -36,6 +38,8 @@ function reposFor(reviewSetId: number): ReviewSetRepo[] {
       kind: row.kind,
       host: hostOf(row.base_url),
       org: organizationOf(row.base_url),
+      branch: row.branch,
+      target: row.target_branch,
     }));
 }
 
@@ -44,6 +48,7 @@ function toReviewSet(row: ReviewSetRow): ReviewSet {
     id: row.id,
     name: row.name,
     repos: reposFor(row.id),
+    mode: row.mode === 'per-repo' ? 'per-repo' : 'pattern',
     branchRegex: row.branch_regex,
     targetBranch: row.target_branch,
     createdAt: row.created_at,
@@ -77,8 +82,7 @@ export function requireId(ctx: Ctx): number {
 function parseInput(user: UserRow, body: unknown): ReviewSetInput {
   const record = (body ?? {}) as Record<string, unknown>;
   const name = requireString(record.name, 'name', 200);
-  const branchRegex = requireString(record.branchRegex, 'branchRegex', 500);
-  const targetBranch = requireString(record.targetBranch, 'targetBranch', 255);
+  const mode: ReviewSetInput['mode'] = record.mode === 'per-repo' ? 'per-repo' : 'pattern';
 
   const raw = Array.isArray(record.repos) ? record.repos : [];
   const connections = new Set(connectionsFor(user.id).map((connection) => connection.id));
@@ -86,7 +90,7 @@ function parseInput(user: UserRow, body: unknown): ReviewSetInput {
   const seen = new Set<string>();
 
   for (const entry of raw) {
-    const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown };
+    const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown; branch?: unknown; target?: unknown };
     const connectionId = Number(item.connectionId);
     if (!Number.isInteger(connectionId) || !connections.has(connectionId)) {
       throw new HttpError(400, 'Every repository must reference one of your forge connections.');
@@ -96,19 +100,34 @@ function parseInput(user: UserRow, body: unknown): ReviewSetInput {
     const key = `${connectionId}:${repo}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    repos.push({ connectionId, repo });
+
+    const branch = typeof item.branch === 'string' && item.branch.trim() ? item.branch.trim().slice(0, 255) : null;
+    const target = typeof item.target === 'string' && item.target.trim() ? item.target.trim().slice(0, 255) : null;
+    if (mode === 'per-repo' && (!branch || !target)) {
+      throw new HttpError(400, `Pick a source and target branch for ${repo}.`);
+    }
+    repos.push({ connectionId, repo, branch, target });
   }
 
   if (!repos.length) throw new HttpError(400, 'Add at least one repository.');
   if (repos.length > 50) throw new HttpError(400, 'A review set can include at most 50 repositories.');
-  return { name, repos, branchRegex, targetBranch };
+
+  const branchRegex = mode === 'per-repo' ? '' : requireString(record.branchRegex, 'branchRegex', 500);
+  const targetBranch = mode === 'per-repo' ? '' : requireString(record.targetBranch, 'targetBranch', 255);
+  return { name, repos, mode, branchRegex, targetBranch };
 }
 
 function saveRepos(reviewSetId: number, repos: ReviewSetInput['repos']): void {
   const apply = db.transaction(() => {
     db.run('DELETE FROM review_set_repos WHERE review_set_id = ?', [reviewSetId]);
     for (const repo of repos) {
-      db.run('INSERT INTO review_set_repos (review_set_id, connection_id, repo) VALUES (?, ?, ?)', [reviewSetId, repo.connectionId, repo.repo]);
+      db.run('INSERT INTO review_set_repos (review_set_id, connection_id, repo, branch, target_branch) VALUES (?, ?, ?, ?, ?)', [
+        reviewSetId,
+        repo.connectionId,
+        repo.repo,
+        repo.branch ?? null,
+        repo.target ?? null,
+      ]);
     }
   });
   apply();
@@ -275,9 +294,10 @@ export async function listReviewSets(ctx: Ctx): Promise<Response> {
 export async function createReviewSet(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const input = parseInput(user, await readJson(ctx.req));
-  const inserted = db.run('INSERT INTO review_sets (owner_id, name, branch_regex, target_branch) VALUES (?, ?, ?, ?)', [
+  const inserted = db.run('INSERT INTO review_sets (owner_id, name, mode, branch_regex, target_branch) VALUES (?, ?, ?, ?, ?)', [
     user.id,
     input.name,
+    input.mode,
     input.branchRegex,
     input.targetBranch,
   ]);
@@ -291,8 +311,9 @@ export async function updateReviewSet(ctx: Ctx): Promise<Response> {
   const id = requireId(ctx);
   loadOwnedReviewSet(user, id);
   const input = parseInput(user, await readJson(ctx.req));
-  db.run('UPDATE review_sets SET name = ?, branch_regex = ?, target_branch = ? WHERE id = ?', [
+  db.run('UPDATE review_sets SET name = ?, mode = ?, branch_regex = ?, target_branch = ? WHERE id = ?', [
     input.name,
+    input.mode,
     input.branchRegex,
     input.targetBranch,
     id,

@@ -89,7 +89,7 @@ export function forgeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error';
 }
 
-export function emptyRepoStatus(repo: ReviewSetRepo, error?: string): RepoStatus {
+export function emptyRepoStatus(repo: ReviewSetRepo, error?: string, defaultTarget = ''): RepoStatus {
   return {
     connectionId: repo.connectionId,
     kind: repo.kind,
@@ -100,6 +100,7 @@ export function emptyRepoStatus(repo: ReviewSetRepo, error?: string): RepoStatus
     error,
     matches: [],
     branch: null,
+    target: repo.target ?? defaultTarget,
     targetExists: false,
     state: error ? 'error' : 'no-match',
   };
@@ -117,18 +118,28 @@ export interface LocatedRepo {
   sha: string | null;
 }
 
+export interface InspectOptions {
+  /** Regular expressions to match branches against, in pattern mode. */
+  patterns: RegExp[];
+  /** In per-repo mode every repository has its own branch. */
+  perRepo?: boolean;
+  /** The target branch to fall back to when a repository has none. */
+  defaultTarget?: string;
+  fresh?: boolean;
+}
+
 export async function inspectRepos(
   clients: Map<number, ForgeClient>,
   repos: ReviewSetRepo[],
-  patterns: RegExp[],
-  fresh = false,
+  options: InspectOptions,
   onPhase?: (repo: ReviewSetRepo, phase: 'checking' | 'done' | 'error') => void,
 ): Promise<LocatedRepo[]> {
+  const { patterns, perRepo = false, defaultTarget = '', fresh = false } = options;
   return mapLimit(repos, 4, async (repo): Promise<LocatedRepo> => {
     const client = clients.get(repo.connectionId);
     if (!client) {
       onPhase?.(repo, 'error');
-      return { status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`), sha: null };
+      return { status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`, defaultTarget), sha: null };
     }
     onPhase?.(repo, 'checking');
     try {
@@ -136,23 +147,30 @@ export async function inspectRepos(
     } catch (error) {
       onPhase?.(repo, 'error');
       return {
-        status: emptyRepoStatus(repo, `You don't have access to ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`),
+        status: emptyRepoStatus(repo, `You don't have access to ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
         sha: null,
       };
     }
     try {
       const branches = await client.listBranches(repo.repo, { fresh });
-      const matches = matchingBranches(
-        branches.map((branch) => branch.name),
-        patterns,
-      );
+      const matches = perRepo
+        ? repo.branch && branches.some((branch) => branch.name === repo.branch)
+          ? [repo.branch]
+          : []
+        : matchingBranches(
+            branches.map((branch) => branch.name),
+            patterns,
+          );
       const branch = matches.length === 1 ? matches[0] : null;
       const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
       if (!sha) onPhase?.(repo, 'done');
-      return { status: { ...emptyRepoStatus(repo), accessible: true, matches, branch }, sha };
+      return { status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true, matches, branch }, sha };
     } catch (error) {
       onPhase?.(repo, 'error');
-      return { status: emptyRepoStatus(repo, `Could not list branches for ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`), sha: null };
+      return {
+        status: emptyRepoStatus(repo, `Could not list branches for ${repo.host}/${repo.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
+        sha: null,
+      };
     }
   });
 }

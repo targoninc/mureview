@@ -1,20 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { AnchoredOverlay, Button, Checkbox, Flash, FormControl, Heading, IconButton, Label, Spinner, TextInput } from '@primer/react';
-import { FilterIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
-import type { AvailableRepo, RepoSource, ReviewSetDetail, ReviewSetRepo } from '../../shared/types';
+import {
+  AnchoredOverlay,
+  Button,
+  Checkbox,
+  Flash,
+  FormControl,
+  Heading,
+  IconButton,
+  Select,
+  Spinner,
+  TextInput,
+} from '@primer/react';
+import { FilterIcon, LockIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
+import type { AvailableRepo, RepoSource, ReviewSetDetail, ReviewSetMode, ReviewSetRepo } from '../../shared/types';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 import { del, post, put, api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
 
 interface FormState {
   name: string;
+  mode: ReviewSetMode;
   selected: ReviewSetRepo[];
   branchRegex: string;
   targetBranch: string;
 }
 
-const emptyForm: FormState = { name: '', selected: [], branchRegex: '', targetBranch: 'main' };
+const emptyForm: FormState = { name: '', mode: 'pattern', selected: [], branchRegex: '', targetBranch: 'main' };
+
+type BranchList = { state: 'loading' } | { state: 'error' } | { state: 'ready'; branches: string[] };
 
 export function ReviewSetFormPage() {
   const { id } = useParams();
@@ -30,6 +44,24 @@ export function ReviewSetFormPage() {
   const [search, setSearch] = useState('');
   const [hiddenSources, setHiddenSources] = useState<Set<number>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
+  const [branches, setBranches] = useState<Record<string, BranchList>>({});
+
+  const branchKey = (connectionId: number, repo: string) => `${connectionId}:${repo}`;
+
+  const loadBranches = (connectionId: number, repo: string) => {
+    const key = branchKey(connectionId, repo);
+    setBranches((current) => (current[key] ? current : { ...current, [key]: { state: 'loading' } }));
+    api<{ branches: string[] }>(`/repos/branches?connectionId=${connectionId}&repo=${encodeURIComponent(repo)}`)
+      .then((result) => setBranches((current) => ({ ...current, [key]: { state: 'ready', branches: result.branches } })))
+      .catch(() => setBranches((current) => ({ ...current, [key]: { state: 'error' } })));
+  };
+
+  useEffect(() => {
+    if (form.mode !== 'per-repo') return;
+    for (const item of form.selected) {
+      if (!branches[branchKey(item.connectionId, item.repo)]) loadBranches(item.connectionId, item.repo);
+    }
+  }, [form.mode, form.selected]);
 
   useEffect(() => {
     api<{ repos: AvailableRepo[]; sources: RepoSource[]; errors: { connectionId: number; message: string }[] }>('/repos')
@@ -45,9 +77,10 @@ export function ReviewSetFormPage() {
     if (!detail) return;
     setForm({
       name: detail.reviewSet.name,
+      mode: detail.reviewSet.mode,
       selected: detail.reviewSet.repos,
       branchRegex: detail.reviewSet.branchRegex,
-      targetBranch: detail.reviewSet.targetBranch,
+      targetBranch: detail.reviewSet.targetBranch || 'main',
     });
   }, [detail]);
 
@@ -72,12 +105,25 @@ export function ReviewSetFormPage() {
   }, [available, form.selected, search, hiddenSources]);
 
   const addRepo = (repo: AvailableRepo) => {
-    update({ selected: [...form.selected, { connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host, org: repo.org }] });
+    update({
+      selected: [
+        ...form.selected,
+        { connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host, org: repo.org, branch: null, target: null },
+      ],
+    });
     setSearch('');
   };
 
   const addAllResults = () => {
-    const additions = results.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host, org: repo.org }));
+    const additions = results.map((repo) => ({
+      connectionId: repo.connectionId,
+      repo: repo.repo,
+      kind: repo.kind,
+      host: repo.host,
+      org: repo.org,
+      branch: null,
+      target: null,
+    }));
     update({ selected: [...form.selected, ...additions] });
     setSearch('');
   };
@@ -95,12 +141,32 @@ export function ReviewSetFormPage() {
     update({ selected: form.selected.filter((item) => !(item.connectionId === connectionId && item.repo === repo)) });
   };
 
+  const setRepoBranches = (connectionId: number, repo: string, patch: { branch?: string; target?: string }) => {
+    update({
+      selected: form.selected.map((item) =>
+        item.connectionId === connectionId && item.repo === repo ? { ...item, ...patch } : item,
+      ),
+    });
+  };
+
+  const branchOptions = (item: ReviewSetRepo, value: string | null): string[] => {
+    const list = branches[branchKey(item.connectionId, item.repo)];
+    const known = list?.state === 'ready' ? list.branches : [];
+    return value && !known.includes(value) ? [value, ...known] : known;
+  };
+
   const save = async () => {
     setSaving(true);
     setError(null);
     const body = {
       name: form.name,
-      repos: form.selected.map((item) => ({ connectionId: item.connectionId, repo: item.repo })),
+      mode: form.mode,
+      repos: form.selected.map((item) => ({
+        connectionId: item.connectionId,
+        repo: item.repo,
+        branch: item.branch,
+        target: item.target,
+      })),
       branchRegex: form.branchRegex,
       targetBranch: form.targetBranch,
     };
@@ -223,7 +289,15 @@ export function ReviewSetFormPage() {
                     </span>
                     <span className="row" style={{ gap: 8 }}>
                       {ambiguousHosts.has(repo.host) ? <span className="repo-source">{repo.sourceLabel}</span> : null}
-                      {repo.private ? <Label variant="secondary">private</Label> : null}
+                      {repo.private ? (
+                        <span
+                          title="Private repository"
+                          aria-label="Private repository"
+                          style={{ display: 'inline-flex', color: 'var(--fgColor-muted)' }}
+                        >
+                          <LockIcon size={12} />
+                        </span>
+                      ) : null}
                     </span>
                   </button>
                 ))}
@@ -245,13 +319,43 @@ export function ReviewSetFormPage() {
                   {item.host}/{item.repo}
                 </span>
                 <span className="row" style={{ gap: 8 }}>
+                  {form.mode === 'per-repo' ? (
+                    <>
+                      <Select
+                        size="small"
+                        aria-label={`Source branch for ${item.repo}`}
+                        value={item.branch ?? ''}
+                        onChange={(event) => setRepoBranches(item.connectionId, item.repo, { branch: event.target.value })}
+                      >
+                        <Select.Option value="">Source branch…</Select.Option>
+                        {branchOptions(item, item.branch).map((branch) => (
+                          <Select.Option key={branch} value={branch}>
+                            {branch}
+                          </Select.Option>
+                        ))}
+                      </Select>
+                      <Select
+                        size="small"
+                        aria-label={`Target branch for ${item.repo}`}
+                        value={item.target ?? ''}
+                        onChange={(event) => setRepoBranches(item.connectionId, item.repo, { target: event.target.value })}
+                      >
+                        <Select.Option value="">Target branch…</Select.Option>
+                        {branchOptions(item, item.target).map((branch) => (
+                          <Select.Option key={branch} value={branch}>
+                            {branch}
+                          </Select.Option>
+                        ))}
+                      </Select>
+                    </>
+                  ) : null}
                   {ambiguousHosts.has(item.host) ? (
                     <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
                   ) : null}
                   <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
                   <Button
                     size="small"
-                    variant="invisible"
+                    variant="danger"
                     leadingVisual={XIcon}
                     aria-label={`Remove ${item.repo}`}
                     onClick={() => removeRepo(item.connectionId, item.repo)}
@@ -265,26 +369,52 @@ export function ReviewSetFormPage() {
         )}
 
         <FormControl>
-          <FormControl.Label>Branch pattern</FormControl.Label>
-          <FormControl.Caption>
-            One or more regular expressions separated by commas, for example ^main$, ^release/v2\.\d+. Across all patterns each
-            repository must match at most one branch.
-          </FormControl.Caption>
-          <TextInput
-            block
-            value={form.branchRegex}
-            onChange={(event) => update({ branchRegex: event.target.value })}
-            placeholder="^main$, ^release/v2\\.\\d+"
-          />
+          <FormControl.Label>Branches</FormControl.Label>
+          <div className="row" style={{ gap: 8, marginBottom: 8 }}>
+            <Button
+              size="small"
+              variant={form.mode === 'pattern' ? 'primary' : 'invisible'}
+              onClick={() => update({ mode: 'pattern' })}
+            >
+              Pattern-based
+            </Button>
+            <Button
+              size="small"
+              variant={form.mode === 'per-repo' ? 'primary' : 'invisible'}
+              onClick={() => update({ mode: 'per-repo' })}
+            >
+              Per-repo
+            </Button>
+          </div>
+          {form.mode === 'pattern' ? (
+            <>
+              <FormControl.Caption>
+                One or more regular expressions separated by commas, for example ^main$, ^release/v2\.\d+. Across all patterns
+                each repository must match at most one branch.
+              </FormControl.Caption>
+              <TextInput
+                block
+                value={form.branchRegex}
+                onChange={(event) => update({ branchRegex: event.target.value })}
+                placeholder="^main$, ^release/v2\\.\\d+"
+              />
+            </>
+          ) : (
+            <FormControl.Caption>
+              Pick a source and target branch for every repository above. Repositories without a source branch are skipped.
+            </FormControl.Caption>
+          )}
         </FormControl>
 
-        <FormControl>
-          <FormControl.Label>Target branch</FormControl.Label>
-          <FormControl.Caption>
-            The branch your matched branches are compared against. It is created for repositories where it does not exist yet.
-          </FormControl.Caption>
-          <TextInput block value={form.targetBranch} onChange={(event) => update({ targetBranch: event.target.value })} />
-        </FormControl>
+        {form.mode === 'pattern' ? (
+          <FormControl>
+            <FormControl.Label>Target branch</FormControl.Label>
+            <FormControl.Caption>
+              The branch your matched branches are compared against. It is created for repositories where it does not exist yet.
+            </FormControl.Caption>
+            <TextInput block value={form.targetBranch} onChange={(event) => update({ targetBranch: event.target.value })} />
+          </FormControl>
+        ) : null}
 
         <div className="form-actions">
           {editing ? (

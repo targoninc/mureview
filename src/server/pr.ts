@@ -100,13 +100,13 @@ async function inspectBranch(
   client: ForgeClient,
   status: RepoStatus,
   branchSha: string,
-  target: string,
   fresh: boolean,
   includeCommits: boolean,
   knownPull: number | null = null,
   onPhase?: (phase: 'diffing' | 'done' | 'error') => void,
 ): Promise<RepoStatus> {
   const repo = status.repo;
+  const target = status.target;
   onPhase?.('diffing');
   try {
     const targetRef = await client.getBranch(repo, target, { fresh });
@@ -221,7 +221,8 @@ export async function buildPrStatus(
   const ensurePulls = options.ensurePulls ?? true;
   const errors: string[] = [];
   const clients = options.clients ?? clientsFor(connections);
-  const compiled = compilePatterns(reviewSet.branchRegex);
+  const perRepo = reviewSet.mode === 'per-repo';
+  const compiled = perRepo ? { patterns: [] as RegExp[], error: null } : compilePatterns(reviewSet.branchRegex);
   if (compiled.error) errors.push(compiled.error);
 
   const reporting = options.progress === true && options.progressUserId !== undefined;
@@ -237,8 +238,11 @@ export async function buildPrStatus(
   };
 
   try {
-    const located = await inspectRepos(clients, reviewSet.repos, compiled.patterns, fresh, (repo, value) =>
-      phase(repo.connectionId, repo.repo, value),
+    const located = await inspectRepos(
+      clients,
+      reviewSet.repos,
+      { patterns: compiled.patterns, perRepo, defaultTarget: reviewSet.targetBranch, fresh },
+      (repo, value) => phase(repo.connectionId, repo.repo, value),
     );
     const repos = await mapLimit(located, 4, async ({ status, sha }) => {
       const client = clients.get(status.connectionId);
@@ -247,7 +251,7 @@ export async function buildPrStatus(
         return status;
       }
       const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo);
-      const result = await inspectBranch(client, status, sha, reviewSet.targetBranch, fresh, includeCommits, knownPull, (value) =>
+      const result = await inspectBranch(client, status, sha, fresh, includeCommits, knownPull, (value) =>
         phase(status.connectionId, status.repo, value),
       );
       options.onRepo?.(result);

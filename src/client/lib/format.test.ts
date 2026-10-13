@@ -31,6 +31,7 @@ const repo = (kind: RepoStatus['kind'], url: string): RepoStatus => ({
   accessible: true,
   matches: ['feature'],
   branch: 'feature',
+  target: 'main',
   targetExists: true,
   state: 'open',
   pullRequest: { number: 7, url },

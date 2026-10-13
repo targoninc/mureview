@@ -9,6 +9,7 @@ export interface ReviewSetRow {
   id: number;
   owner_id: number;
   name: string;
+  mode: string;
   branch_regex: string;
   target_branch: string;
   created_at: string;

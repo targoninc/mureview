@@ -274,7 +274,13 @@ export function MergePage() {
     <div className="page-scroll">
       <div className="page-inner" style={{ maxWidth: 760 }}>
         <Heading as="h1" variant="medium">
-          Merge into <span className="mono">{target}</span>
+          {target ? (
+            <>
+              Merge into <span className="mono">{target}</span>
+            </>
+          ) : (
+            'Merge branches'
+          )}
         </Heading>
         {ready ? (
           <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>

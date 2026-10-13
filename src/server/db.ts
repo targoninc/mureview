@@ -405,7 +405,21 @@ if (userVersion() < 7) {
   run();
   db.exec('PRAGMA foreign_keys = ON;');
 }
-db.exec('PRAGMA user_version = 7;');
+if (userVersion() < 8) {
+  // Review sets can pick branches per repository instead of by pattern.
+  const setColumns = db.query<{ name: string }, []>('PRAGMA table_info(review_sets)').all();
+  if (!setColumns.some((column) => column.name === 'mode')) {
+    db.exec("ALTER TABLE review_sets ADD COLUMN mode TEXT NOT NULL DEFAULT 'pattern'");
+  }
+  const repoColumns = db.query<{ name: string }, []>('PRAGMA table_info(review_set_repos)').all();
+  if (!repoColumns.some((column) => column.name === 'branch')) {
+    db.exec('ALTER TABLE review_set_repos ADD COLUMN branch TEXT');
+  }
+  if (!repoColumns.some((column) => column.name === 'target_branch')) {
+    db.exec('ALTER TABLE review_set_repos ADD COLUMN target_branch TEXT');
+  }
+}
+db.exec('PRAGMA user_version = 8;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

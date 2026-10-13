@@ -137,7 +137,7 @@ export async function buildMergePreview(
   const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);
   options.onStart?.(open.length);
   const repos = await mapLimit(open, 3, async (repo): Promise<MergePreviewRepo> => {
-    const card = await previewRepo(clients.get(repo.connectionId), repo, reviewSet.targetBranch);
+    const card = await previewRepo(clients.get(repo.connectionId), repo, repo.target || reviewSet.targetBranch);
     options.onRepo?.(card);
     return card;
   });

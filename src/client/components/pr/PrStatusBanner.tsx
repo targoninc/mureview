@@ -55,7 +55,12 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
     const merged = pr.repos.filter((repo) => repo.branch);
     return (
       <Flash variant="success">
-        <strong>All matched branches are merged into {reviewSet.targetBranch}.</strong> The ephemeral pull request was closed and
+        <strong>
+          {reviewSet.mode === 'per-repo'
+            ? 'All matched branches are merged into their target branches.'
+            : `All matched branches are merged into ${reviewSet.targetBranch}.`}
+        </strong>{' '}
+        The ephemeral pull request was closed and
         its comments were discarded. Configure a new branch pattern or point at new branches to start the next review.
         {merged.length > 0 ? (
           <div style={{ marginTop: 4 }}>

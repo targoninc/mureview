@@ -20,7 +20,7 @@ import { forgeAvatarRoute } from './avatars';
 import { resolveReferenceRoute } from './refs';
 import { config } from './config';
 import { mergeReviewSet, streamMergePreview } from './merge';
-import { listAvailableRepos } from './repoSearch';
+import { listAvailableRepos, listRepoBranches } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
 import {
   createReviewSet,
@@ -36,7 +36,7 @@ import {
 import { Router } from './router';
 import { requireUser } from './auth/session';
 import type { Ctx } from './router';
-import { json } from './http';
+import { HttpError, json } from './http';
 import { listWarnings } from './warnings';
 
 export const api = new Router();
@@ -63,6 +63,13 @@ api.post('/api/connections/ado', connectAdo);
 api.delete('/api/account/data', deleteAccountData);
 api.delete('/api/connections/:id', deleteConnection);
 api.get('/api/repos', (ctx: Ctx) => listAvailableRepos(requireUser(ctx), ctx.url.searchParams.get('fresh') === '1').then((result) => json(result)));
+api.get('/api/repos/branches', (ctx: Ctx) => {
+  const user = requireUser(ctx);
+  const connectionId = Number(ctx.url.searchParams.get('connectionId'));
+  const repo = ctx.url.searchParams.get('repo') ?? '';
+  if (!Number.isInteger(connectionId) || !repo) throw new HttpError(400, 'A connection and repository are required.');
+  return listRepoBranches(user, connectionId, repo).then((branches) => json({ branches }));
+});
 
 api.get('/api/review-sets', listReviewSets);
 api.post('/api/review-sets', createReviewSet);
