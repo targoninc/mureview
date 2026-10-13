@@ -425,7 +425,8 @@ export class GithubClient implements ForgeClient {
       if (!next.length) break;
       commits.push(...next);
     }
-    return commits.slice(0, limit).map(toCommitInfo).reverse();
+    // The commits endpoint lists newest first.
+    return commits.slice(0, limit).map(toCommitInfo);
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {

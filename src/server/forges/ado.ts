@@ -675,7 +675,7 @@ export class AdoClient implements ForgeClient {
       return commits
         .slice(0, limit)
         .map(toCommitInfo)
-        .sort((a, b) => a.date.localeCompare(b.date));
+        .sort((a, b) => b.date.localeCompare(a.date));
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
       return null;
@@ -715,7 +715,8 @@ export class AdoClient implements ForgeClient {
       continuation = response.headers.get('x-ms-continuationtoken');
       if (!continuation && batch.length < 100) break;
     }
-    return commits.slice(0, limit).map(toCommitInfo).reverse();
+    // Both the commits and the pull request endpoints list newest first.
+    return commits.slice(0, limit).map(toCommitInfo);
   }
 
   /**

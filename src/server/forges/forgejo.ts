@@ -484,16 +484,14 @@ export class ForgejoClient implements ForgeClient {
       if (!next.length) break;
       commits.push(...next);
     }
-    return commits
-      .slice(0, limit)
-      .map((commit) => ({
-        sha: commit.sha,
-        message: commit.commit.message.split('\n')[0],
-        author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
-        date: commit.commit.author?.date ?? '',
-        url: commit.html_url,
-      }))
-      .reverse();
+    // Both the compare and the commits endpoints list newest first.
+    return commits.slice(0, limit).map((commit) => ({
+      sha: commit.sha,
+      message: commit.commit.message.split('\n')[0],
+      author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
+      date: commit.commit.author?.date ?? '',
+      url: commit.html_url,
+    }));
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {

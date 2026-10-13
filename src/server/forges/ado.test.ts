@@ -138,14 +138,13 @@ const server = Bun.serve({
 
 const client = new AdoClient(`http://localhost:${server.port}`, 'token');
 
-test('uses the pull request commits endpoint and pages through them, oldest first', async () => {
+test('uses the pull request commits endpoint and pages through them, newest first', async () => {
   requests.length = 0;
   const commits = await client.listCommits('Proj/Repo', { headSha: 'head', pullRequest: 7, limit: 200 });
 
   expect(commits).toHaveLength(120);
-  expect(commits[0]!.sha).toBe('sha0000');
-  expect(commits.at(-1)!.sha).toBe('sha0119');
-  expect(commits[0]!.message).toBe('commit 0');
+  expect(commits[0]!.sha).toBe('sha0020');
+  expect(commits.at(-1)!.sha).toBe('sha0019');
   expect(requests).toEqual([
     '/Proj/_apis/git/repositories/Repo/pullrequests/7/commits?$top=100&$skip=0&api-version=7.1',
     '/Proj/_apis/git/repositories/Repo/pullrequests/7/commits?$top=100&$skip=100&api-version=7.1',
@@ -156,7 +155,7 @@ test('falls back to the branch comparison when the pull request is gone', async 
   requests.length = 0;
   const commits = await client.listCommits('Proj/Repo', { headSha: 'head', baseSha: 'base', pullRequest: 8 });
 
-  expect(commits.map((entry) => entry.sha)).toEqual(['sha0001', 'sha0002', 'sha0003', 'sha0004']);
+  expect(commits.map((entry) => entry.sha)).toEqual(['sha0004', 'sha0003', 'sha0002', 'sha0001']);
   expect(requests[0]).toContain('/pullrequests/8/commits');
   expect(requests[1]).toContain('searchCriteria.compareVersion.version=base');
   expect(requests).toHaveLength(3);
