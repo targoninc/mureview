@@ -19,6 +19,7 @@ export interface ForgeConnectionInfo {
   kind: ForgeKind;
   baseUrl: string;
   host: string;
+  org: string | null;
   login: string;
   avatarUrl: string;
   manageUrl: string | null;
@@ -37,6 +38,7 @@ export interface ReviewSetRepo {
   repo: string;
   kind: ForgeKind;
   host: string;
+  org: string | null;
 }
 
 export interface ReviewSet {
@@ -59,6 +61,7 @@ export interface RepoSource {
   connectionId: number;
   kind: ForgeKind;
   host: string;
+  org: string | null;
   login: string;
   label: string;
 }
@@ -68,6 +71,7 @@ export interface AvailableRepo {
   repo: string;
   kind: ForgeKind;
   host: string;
+  org: string | null;
   login: string;
   sourceLabel: string;
   private: boolean;
@@ -96,6 +100,7 @@ export interface RepoStatus {
   connectionId: number;
   kind: ForgeKind;
   host: string;
+  org: string | null;
   repo: string;
   accessible: boolean;
   error?: string;

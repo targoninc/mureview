@@ -1,6 +1,6 @@
 import type { ForgeKind, ReviewSet, ReviewSetDetail, ReviewSetInput, ReviewSetRepo } from '../shared/types';
 import { type UserRow, db } from './db';
-import { hostOf } from './forges';
+import { hostOf, organizationOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
 import { buildPrStatus, clientsFor } from './pr';
 import { listComments } from './comments';
@@ -36,7 +36,13 @@ function reposFor(reviewSetId: number): ReviewSetRepo[] {
        ORDER BY fc.kind, fc.base_url, rsr.repo`,
     )
     .all(reviewSetId)
-    .map((row) => ({ connectionId: row.connection_id, repo: row.repo, kind: row.kind, host: hostOf(row.base_url) }));
+    .map((row) => ({
+      connectionId: row.connection_id,
+      repo: row.repo,
+      kind: row.kind,
+      host: hostOf(row.base_url),
+      org: organizationOf(row.base_url),
+    }));
 }
 
 function toReviewSet(row: ReviewSetRow): ReviewSet {

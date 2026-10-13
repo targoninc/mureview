@@ -3,7 +3,7 @@ import type { AuthProvider, ForgeConnectionInfo, IdentityInfo, MeResponse } from
 import { Cache } from '../cache';
 import { config } from '../config';
 import { type ForgeConnectionRow, db } from '../db';
-import { ForgeError } from '../forges';
+import { ForgeError, organizationOf } from '../forges';
 import { AdoClient, normalizeAdoOrganization } from '../forges/ado';
 import { getForgejoUser } from '../forges/forgejo';
 import { getUser as getGithubUser } from '../forges/github';
@@ -350,6 +350,7 @@ function connectionInfo(connection: ForgeConnectionRow): ForgeConnectionInfo {
     kind: connection.kind,
     baseUrl: connection.base_url,
     host,
+    org: organizationOf(connection.base_url),
     login: connection.login,
     avatarUrl: connection.avatar_url,
     manageUrl: manageUrlFor(connection),

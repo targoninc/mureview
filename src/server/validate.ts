@@ -94,6 +94,7 @@ export function emptyRepoStatus(repo: ReviewSetRepo, error?: string): RepoStatus
     connectionId: repo.connectionId,
     kind: repo.kind,
     host: repo.host,
+    org: repo.org,
     repo: repo.repo,
     accessible: !error,
     error,

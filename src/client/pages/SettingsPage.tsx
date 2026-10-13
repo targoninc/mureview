@@ -1,18 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Avatar, Button, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
-import { MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon, CloudIcon, ShieldIcon, TrashIcon } from '@primer/octicons-react';
-import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
+import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
+import type { AuthProvider, MeResponse } from '../../shared/types';
 import { api, basePath, del } from '../lib/api';
-import { AdoForm, AtprotoForm, ForgejoForm } from '../components/Login';
+import { AdoForm, AtprotoForm, ForgejoForm, providerVisual } from '../components/Login';
+import { ServiceGlyph, ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
-const forgeLabel: Record<ForgeKind, string> = { github: 'github', forgejo: 'forgejo', ado: 'azure devops' };
-
-const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
-  github: MarkGithubIcon,
-  forgejo: ServerIcon,
-  atproto: GlobeIcon,
-  email: MailIcon,
-};
 
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -76,11 +69,10 @@ export function SettingsPage() {
           </Heading>
           <div className="repo-list">
             {me.identities.map((identity) => {
-              const Icon = providerIcon[identity.provider];
               return (
                 <div className="repo-list-item" key={identity.id} style={{ cursor: 'default' }}>
                   <div className="row">
-                    <Icon size={16} />
+                    {providerVisual(identity.provider)}
                     <span>{identity.displayName}</span>
                   </div>
                   <Label variant="secondary">{identity.provider}</Label>
@@ -101,13 +93,13 @@ export function SettingsPage() {
               {me.connections.map((connection) => (
                 <div className="repo-list-item" key={connection.id} style={{ cursor: 'default' }}>
                   <div className="row">
+                    <ServiceIcon kind={connection.kind} detail={serviceDetail(connection.kind, connection)} />
                     <Avatar src={connection.avatarUrl} size={20} alt={connection.login} />
                     <span>
                       {connection.host}/{connection.login}
                     </span>
                   </div>
                   <div className="row">
-                    <Label variant="secondary">{forgeLabel[connection.kind]}</Label>
                     {connection.manageUrl ? (
                       <Button
                         as="a"
@@ -143,19 +135,22 @@ export function SettingsPage() {
           <div className="row">
             {me.providers.includes('github') && me.connections.every((connection) => connection.kind !== 'github') ? (
               <Button
-                leadingVisual={MarkGithubIcon}
+                leadingVisual={<ServiceGlyph kind="github" />}
                 onClick={() => (window.location.href = `${basePath}/api/auth/login/github?mode=connect`)}
               >
                 Connect GitHub
               </Button>
             ) : null}
-            <Button leadingVisual={ServerIcon} onClick={() => setAdding(adding === 'forgejo' ? null : 'forgejo')}>
+            <Button leadingVisual={<ServiceGlyph kind="forgejo" />} onClick={() => setAdding(adding === 'forgejo' ? null : 'forgejo')}>
               Connect Forgejo
             </Button>
-            <Button leadingVisual={GlobeIcon} onClick={() => setAdding(adding === 'atproto' ? null : 'atproto')}>
+            <Button
+              leadingVisual={providerVisual('atproto')}
+              onClick={() => setAdding(adding === 'atproto' ? null : 'atproto')}
+            >
               Connect atproto
             </Button>
-            <Button leadingVisual={CloudIcon} onClick={() => setAdding(adding === 'ado' ? null : 'ado')}>
+            <Button leadingVisual={<ServiceGlyph kind="ado" />} onClick={() => setAdding(adding === 'ado' ? null : 'ado')}>
               Connect Azure DevOps
             </Button>
           </div>

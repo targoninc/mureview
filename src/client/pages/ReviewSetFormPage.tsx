@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { AnchoredOverlay, Button, Checkbox, Flash, FormControl, Heading, IconButton, Label, Spinner, TextInput } from '@primer/react';
 import { FilterIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
 import type { AvailableRepo, RepoSource, ReviewSetDetail, ReviewSetRepo } from '../../shared/types';
+import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 import { del, post, put, api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
 
@@ -71,12 +72,12 @@ export function ReviewSetFormPage() {
   }, [available, form.selected, search, hiddenSources]);
 
   const addRepo = (repo: AvailableRepo) => {
-    update({ selected: [...form.selected, { connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host }] });
+    update({ selected: [...form.selected, { connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host, org: repo.org }] });
     setSearch('');
   };
 
   const addAllResults = () => {
-    const additions = results.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host }));
+    const additions = results.map((repo) => ({ connectionId: repo.connectionId, repo: repo.repo, kind: repo.kind, host: repo.host, org: repo.org }));
     update({ selected: [...form.selected, ...additions] });
     setSearch('');
   };
@@ -193,7 +194,8 @@ export function ReviewSetFormPage() {
                 {sources.map((source) => (
                   <label key={source.connectionId} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
                     <Checkbox checked={!hiddenSources.has(source.connectionId)} onChange={() => toggleSource(source.connectionId)} />
-                    <span className="source-label">{source.kind === 'ado' ? `azure devops · ${source.label}` : source.label}</span>
+                    <ServiceIcon kind={source.kind} detail={serviceDetail(source.kind, source)} />
+                    <span className="source-label">{source.label}</span>
                   </label>
                 ))}
                 {sources.length === 0 ? <span style={{ fontSize: 12 }}>No forges connected.</span> : null}
@@ -246,7 +248,7 @@ export function ReviewSetFormPage() {
                   {ambiguousHosts.has(item.host) ? (
                     <span className="repo-source">{sources.find((source) => source.connectionId === item.connectionId)?.label}</span>
                   ) : null}
-                  <Label variant="secondary">{item.kind}</Label>
+                  <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
                   <Button
                     size="small"
                     variant="invisible"

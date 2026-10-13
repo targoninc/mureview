@@ -5,6 +5,7 @@ import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, XCircleFillIcon } from '@
 import type { CheckInfo, MergePreview, MergePreviewRepo, MergeResult, ReviewSetDetail } from '../../shared/types';
 import { api, post } from '../lib/api';
 import { MergeResultsFlash } from '../components/pr/merge';
+import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 
 type ConflictTone = 'success' | 'danger' | 'attention' | 'secondary';
 
@@ -29,14 +30,15 @@ const checkTone: Record<CheckInfo['state'], 'success' | 'danger' | 'attention' |
 
 function RepoCard({ repo }: { repo: MergePreviewRepo }) {
   const badge = conflictBadge(repo);
-  const kindLabel = repo.kind === 'github' ? '' : repo.kind === 'ado' ? 'azure devops · ' : `${repo.kind} · `;
   return (
     <div className="merge-card">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div className="stack" style={{ gap: 4 }}>
-          <span className="mono">
-            {kindLabel}
-            {repo.host}/{repo.repo}
+          <span className="row" style={{ gap: 6 }}>
+            <ServiceIcon kind={repo.kind} detail={serviceDetail(repo.kind, repo)} />
+            <span className="mono">
+              {repo.host}/{repo.repo}
+            </span>
           </span>
           <span className="mono" style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
             {repo.branch} → {repo.target}

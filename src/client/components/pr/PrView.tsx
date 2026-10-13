@@ -11,6 +11,7 @@ import { put } from '../../lib/api';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, repoStatusText, treePathFor } from '../../lib/format';
 import { useIsMobile } from '../../lib/useIsMobile';
+import { ServiceIcon, serviceDetail } from '../ServiceIcon';
 import { PrStatusBanner } from './PrStatusBanner';
 import { PrHeader } from './PrHeader';
 import { CommitList } from './CommitList';
@@ -421,8 +422,11 @@ export function PrView({ detail, onReload }: PrViewProps) {
               {pullRequests.map((repo) => (
                 <div className="dialog-row" key={`${repo.connectionId}:${repo.repo}`}>
                   <div className="stack" style={{ gap: 2, flex: 1, minWidth: 0 }}>
-                    <span className="mono" style={{ fontSize: 12 }}>
-                      {repo.host}/{repo.repo}
+                    <span className="row" style={{ gap: 6 }}>
+                      <ServiceIcon kind={repo.kind} detail={serviceDetail(repo.kind, repo)} />
+                      <span className="mono" style={{ fontSize: 12 }}>
+                        {repo.host}/{repo.repo}
+                      </span>
                     </span>
                     <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
                       {repo.branch} → {reviewSet.targetBranch}

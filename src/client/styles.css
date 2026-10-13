@@ -236,6 +236,17 @@ svg.checks-pending {
   background-color: var(--control-transparent-bgColor-hover);
 }
 
+.service-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fgColor-muted);
+  flex: none;
+}
+
+.service-icon:hover {
+  color: var(--fgColor-default);
+}
+
 .sources-menu {
   max-width: min(90vw, 560px);
 }

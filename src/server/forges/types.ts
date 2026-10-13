@@ -105,6 +105,12 @@ export function hostOf(baseUrl: string): string {
   return new URL(baseUrl).host;
 }
 
+/** Azure DevOps organizations (and similar path-scoped forges) live in the path. */
+export function organizationOf(baseUrl: string): string | null {
+  const path = new URL(baseUrl).pathname.replace(/^\/+|\/+$/g, '');
+  return path || null;
+}
+
 export const statusMap: Record<string, FileStatus> = {
   added: 'added',
   removed: 'deleted',

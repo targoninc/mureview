@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Flash, FormControl, TextInput } from '@primer/react';
 import { FileDiffIcon, MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon } from '@primer/octicons-react';
+import { ServiceGlyph } from './ServiceIcon';
 import type { AuthProvider } from '../../shared/types';
 import { basePath, post } from '../lib/api';
 
@@ -22,6 +23,12 @@ const providerIcon: Record<AuthProvider, typeof MarkGithubIcon> = {
   atproto: GlobeIcon,
   email: MailIcon,
 };
+
+export function providerVisual(provider: AuthProvider) {
+  if (provider === 'github' || provider === 'forgejo') return <ServiceGlyph kind={provider} size={16} />;
+  const Icon = providerIcon[provider];
+  return <Icon size={16} />;
+}
 
 export function Login({ providers, onSignedIn }: LoginProps) {
   const [choice, setChoice] = useState<AuthProvider | null>(null);
@@ -54,14 +61,13 @@ export function Login({ providers, onSignedIn }: LoginProps) {
         {choice === null ? (
           <div className="stack">
             {providers.map((provider) => {
-              const Icon = providerIcon[provider];
               return (
                 <Button
                   key={provider}
                   block
                   size="large"
                   variant={provider === 'github' ? 'primary' : 'default'}
-                  leadingVisual={Icon}
+                  leadingVisual={providerVisual(provider)}
                   onClick={() => {
                     if (provider === 'github') window.location.href = `${basePath}/api/auth/login/github`;
                     else setChoice(provider);

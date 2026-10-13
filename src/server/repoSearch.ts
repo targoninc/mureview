@@ -1,7 +1,7 @@
 import type { AvailableRepo, RepoSearchResponse, RepoSource } from '../shared/types';
 import type { ForgeConnectionRow, UserRow } from './db';
 import { Cache, cached, mapLimit } from './cache';
-import { clientFor, hostOf } from './forges';
+import { clientFor, hostOf, organizationOf } from './forges';
 import { connectionsFor } from './auth/identities';
 import { forgeErrorMessage } from './validate';
 
@@ -21,6 +21,7 @@ function toSource(connection: ForgeConnectionRow): RepoSource {
     connectionId: connection.id,
     kind: connection.kind,
     host: hostOf(connection.base_url),
+    org: organizationOf(connection.base_url),
     login: connection.login,
     label: forgeSourceLabel(connection),
   };
@@ -40,6 +41,7 @@ async function loadConnectionRepos(connection: ForgeConnectionRow): Promise<Avai
       repo: repo.repo,
       kind: connection.kind,
       host: client.host,
+      org: organizationOf(connection.base_url),
       login: connection.login,
       sourceLabel: forgeSourceLabel(connection),
       private: repo.private,
