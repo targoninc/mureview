@@ -61,14 +61,15 @@ Built with [Bun](https://bun.sh), [React](https://react.dev),
   branch is merged the PR closes automatically.
 
 Data is stored in a single SQLite database (migrated automatically on start).
-Everything is scoped to the signed-in owner and every forge request uses their
-own connection tokens. A review set also shows up for other users, under
+Everything is scoped to the signed-in owner and forge actions use the acting
+user's own connection tokens. A review set also shows up for other users, under
 "Review sets from others", when they can reach **every** repository in it with
-their own connections; otherwise it stays invisible. Such shared review sets
-are read-only for the owner's configuration (no merging, settings or viewed
-marks), but anyone with access can comment — as themselves, on mureview and on
-the forge. A comment can only be deleted by its own author, so the two sides
-cannot drift apart.
+their own connections; otherwise it stays invisible. Anyone whose own accounts
+may merge every branch in a shared set can also change its settings, refresh it
+and merge — always with their own credentials, never the owner's. Everyone else
+gets a read-only view. Anyone with access can comment — as themselves, on
+mureview and on the forge — and viewed marks are personal. A comment can only be
+deleted by its own author, so the two sides cannot drift apart.
 
 ## Configuration
 

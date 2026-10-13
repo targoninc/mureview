@@ -61,6 +61,9 @@ export function useDetail(id: string | undefined) {
           reviewSet = event.reviewSet;
           owned = event.owned;
           owner = event.owner;
+          // Provisional until the permission event arrives; the server gates
+          // every action anyway.
+          canManage = event.owned;
           setLoading({ loaded: 0, total: event.reviewSet.repos.length });
           // A review set without repositories never produces a repo event.
           if (event.reviewSet.repos.length === 0) commit(loadingPr());
