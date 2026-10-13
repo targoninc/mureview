@@ -22,27 +22,22 @@ export function CommentThread({
   prId,
   comments,
   repos,
-  canModerate,
   onAdded,
   onDeleted,
 }: {
   prId: number | null;
   comments: Comment[];
   repos?: RepoStatus[];
-  /** True for the owner of the review set, who may delete any comment. */
-  canModerate?: boolean;
   onAdded?: (comment: Comment) => void;
   onDeleted: (id: number) => void;
 }) {
   const confirm = useConfirm();
   const { user } = useAppContext();
 
-  const remove = async (id: number, hasReplies: boolean) => {
+  const remove = async (id: number) => {
     const approved = await confirm({
       title: 'Delete this comment?',
-      content: hasReplies
-        ? 'The comment and its replies will be permanently removed from this review.'
-        : 'The comment will be permanently removed from this review.',
+      content: 'The comment will be permanently removed from this review.',
       confirmButtonContent: 'Delete',
       confirmButtonType: 'danger',
     });
@@ -50,8 +45,6 @@ export function CommentThread({
     await del(`/comments/${id}`);
     onDeleted(id);
   };
-
-  const hasReplies = (id: number) => comments.some((comment) => comment.parentId === id);
 
   const anchored = comments.find((comment) => comment.path);
   const anchor: CommentAnchor = anchored
@@ -71,7 +64,7 @@ export function CommentThread({
     <div className="comment-thread">
       {comments.map((comment) => {
         const link = repos ? forgeCommentLink(repos, comment) : null;
-        const canDelete = canModerate === true || (comment.authorId !== null && comment.authorId === user?.id);
+        const canDelete = comment.authorId !== null && comment.authorId === user?.id;
         return (
           <div className="comment" key={comment.id}>
             <div className="comment-header">
@@ -102,7 +95,7 @@ export function CommentThread({
                   aria-label="Delete comment"
                   variant="invisible"
                   size="small"
-                  onClick={() => remove(comment.id, hasReplies(comment.id))}
+                  onClick={() => remove(comment.id)}
                 />
               ) : null}
             </div>

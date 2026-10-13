@@ -232,14 +232,15 @@ function matchingConnection(userId: number, ownerConnection: ForgeConnectionRow)
   );
 }
 
+/**
+ * Only a comment's own author may delete it: removals are not synced to the
+ * forge, so deleting someone else's comment (even as the review set owner)
+ * would leave the two sides disagreeing.
+ */
 export function deleteCommentRoute(ctx: Ctx): Response {
   const user = requireUser(ctx);
-  const comment = db
-    .query<{ id: number; author_id: number; owner_id: number }, [number]>(
-      `SELECT c.id, c.author_id, r.owner_id FROM comments c JOIN pull_requests p ON p.id = c.pr_id JOIN review_sets r ON r.id = p.review_set_id WHERE c.id = ?`,
-    )
-    .get(Number(ctx.params.id));
-  if (!comment || (comment.author_id !== user.id && comment.owner_id !== user.id)) {
+  const comment = db.query<{ id: number; author_id: number | null }, [number]>('SELECT id, author_id FROM comments WHERE id = ?').get(Number(ctx.params.id));
+  if (!comment || comment.author_id === null || comment.author_id !== user.id) {
     throw new HttpError(404, 'Comment not found');
   }
   db.run('DELETE FROM comments WHERE id = ?', [comment.id]);

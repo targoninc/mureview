@@ -337,7 +337,44 @@ if (userVersion() < 5) {
     db.exec('ALTER TABLE comments ADD COLUMN parent_id INTEGER REFERENCES comments(id) ON DELETE CASCADE');
   }
 }
-db.exec('PRAGMA user_version = 5;');
+if (userVersion() < 6) {
+  const columns = db.query<{ name: string }, []>('PRAGMA table_info(comments)').all();
+  if (columns.some((column) => column.name === 'parent_id')) {
+    // Deleting a comment must not take other people's replies down with it;
+    // they only lose the parent link.
+    db.exec('PRAGMA foreign_keys = OFF;');
+    const run = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE comments_v6 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pr_id INTEGER NOT NULL REFERENCES pull_requests(id) ON DELETE CASCADE,
+          author_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          author_name TEXT NOT NULL DEFAULT '',
+          author_avatar TEXT NOT NULL DEFAULT '',
+          connection_id INTEGER,
+          repo TEXT,
+          path TEXT,
+          line INTEGER,
+          side TEXT,
+          body TEXT NOT NULL,
+          synced_at TEXT,
+          forge_comment_id TEXT,
+          source TEXT NOT NULL DEFAULT 'mureview',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          parent_id INTEGER REFERENCES comments_v6(id) ON DELETE SET NULL
+        );
+        INSERT INTO comments_v6 (id, pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, source, created_at, parent_id)
+          SELECT id, pr_id, author_id, author_name, author_avatar, connection_id, repo, path, line, side, body, synced_at, forge_comment_id, source, created_at, parent_id FROM comments;
+        DROP TABLE comments;
+        ALTER TABLE comments_v6 RENAME TO comments;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_comments_forge ON comments(pr_id, forge_comment_id);
+      `);
+    });
+    run();
+    db.exec('PRAGMA foreign_keys = ON;');
+  }
+}
+db.exec('PRAGMA user_version = 6;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

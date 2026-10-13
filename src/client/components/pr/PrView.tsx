@@ -265,7 +265,6 @@ export function PrView({ detail, onReload }: PrViewProps) {
           prId={pr.prId}
           comments={meta.comments}
           repos={pr.repos}
-          canModerate={owned}
           onAdded={(comment) => setComments((current) => [...current, comment])}
           onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
         />
@@ -352,7 +351,6 @@ export function PrView({ detail, onReload }: PrViewProps) {
         prId={pr.prId}
         comments={comments}
         repos={pr.repos}
-        canModerate={owned}
         onAdded={(comment) => setComments((current) => [...current, comment])}
         onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
       />

@@ -5,12 +5,11 @@ interface ConversationPanelProps {
   prId: number | null;
   comments: Comment[];
   repos?: RepoStatus[];
-  canModerate?: boolean;
   onAdded: (comment: Comment) => void;
   onDeleted: (id: number) => void;
 }
 
-export function ConversationPanel({ prId, comments, repos, canModerate, onAdded, onDeleted }: ConversationPanelProps) {
+export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }: ConversationPanelProps) {
   const general = comments.filter((comment) => !comment.path);
   if (!prId) return null;
 
@@ -24,7 +23,7 @@ export function ConversationPanel({ prId, comments, repos, canModerate, onAdded,
           onDone={onAdded}
         />
       ) : (
-        <CommentThread prId={prId} comments={general} repos={repos} canModerate={canModerate} onAdded={onAdded} onDeleted={onDeleted} />
+        <CommentThread prId={prId} comments={general} repos={repos} onAdded={onAdded} onDeleted={onDeleted} />
       )}
     </div>
   );
