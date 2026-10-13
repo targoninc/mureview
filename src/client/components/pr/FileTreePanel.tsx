@@ -1,77 +1,16 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Checkbox } from '@primer/react';
-import { ChevronDownIcon, ChevronRightIcon, FileBinaryIcon, FileCodeIcon, FileDirectoryIcon, FileIcon, FileMediaIcon, FileZipIcon } from '@primer/octicons-react';
+import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, ForgeKind, PrStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
 import { fileItemId, fileSegments } from '../../lib/format';
 import { ServiceGlyph } from '../ServiceIcon';
+import { FileTypeIcon } from './FileTypeIcon';
 
 interface Entry extends TreeEntry {
   file: FileDiff;
   path: string;
-}
-
-const extensionIcons: Record<string, typeof FileIcon> = {};
-for (const extension of ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico', 'bmp', 'avif']) extensionIcons[extension] = FileMediaIcon;
-for (const extension of ['zip', 'gz', 'tgz', 'tar', '7z', 'rar', 'bz2', 'xz']) extensionIcons[extension] = FileZipIcon;
-for (const extension of ['exe', 'dll', 'so', 'dylib', 'wasm', 'class', 'jar', 'o', 'a', 'bin']) extensionIcons[extension] = FileBinaryIcon;
-for (const extension of [
-  'ts',
-  'tsx',
-  'js',
-  'jsx',
-  'mjs',
-  'cjs',
-  'json',
-  'py',
-  'rb',
-  'go',
-  'rs',
-  'java',
-  'kt',
-  'c',
-  'h',
-  'cpp',
-  'hpp',
-  'cs',
-  'php',
-  'swift',
-  'sh',
-  'bash',
-  'zsh',
-  'fish',
-  'yml',
-  'yaml',
-  'toml',
-  'ini',
-  'xml',
-  'html',
-  'css',
-  'scss',
-  'less',
-  'vue',
-  'svelte',
-  'sql',
-  'lua',
-  'dart',
-  'ex',
-  'exs',
-  'clj',
-  'hs',
-  'ml',
-  'scala',
-  'pl',
-  'ps1',
-  'bat',
-  'cmd',
-]) {
-  extensionIcons[extension] = FileCodeIcon;
-}
-
-function iconForFile(path: string): typeof FileIcon {
-  const extension = path.split('.').pop()?.toLowerCase() ?? '';
-  return extensionIcons[extension] ?? FileIcon;
 }
 
 const statusLetter: Record<FileStatus, string> = {
@@ -169,7 +108,6 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
       }
 
       const { file } = node.entry;
-      const FileTypeIcon = iconForFile(node.entry.path);
       const isReviewed = reviewedItems.has(node.entry.itemId);
       return [
         <div
@@ -192,7 +130,7 @@ export function FileTreePanel({ pr, reviewedItems, visibleItems, onSelectItem, o
           </span>
           <span className="tree-chevron" />
           <span className="tree-icon">
-            <FileTypeIcon size={14} />
+            <FileTypeIcon name={node.name} path={node.entry.path} size={14} />
           </span>
           <span className="tree-name" title={node.entry.path}>
             {node.name}
