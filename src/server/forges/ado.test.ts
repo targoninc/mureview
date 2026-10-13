@@ -16,10 +16,11 @@ const commit = (id: number, date: string): AdoCommit => ({
 });
 
 const requests: string[] = [];
+const bodies: { method: string; body?: { description?: string; sourceRefName?: string }; source?: string | null }[] = [];
 
 const server = Bun.serve({
   port: 0,
-  fetch(req) {
+  async fetch(req) {
     const url = new URL(req.url);
     requests.push(url.pathname + url.search);
 
@@ -68,6 +69,34 @@ const server = Bun.serve({
 
     if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/threads/12/comments/35' && req.method === 'DELETE') {
       return new Response(null, { status: 204 });
+    }
+
+    if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests') {
+      if (req.method === 'POST') {
+        const body = (await req.json()) as { sourceRefName?: string; description?: string };
+        bodies.push({ method: 'POST', body });
+        if (body.sourceRefName !== 'refs/heads/feature/new') return Response.json({ message: 'exists' }, { status: 409 });
+        return Response.json({ pullRequestId: 21, status: 'active', description: body.description });
+      }
+      const source = url.searchParams.get('searchCriteria.sourceRefName');
+      bodies.push({ method: 'GET', source });
+      return Response.json({
+        value: [
+          {
+            pullRequestId: 12,
+            status: 'active',
+            description: source?.includes('feature/already')
+              ? 'Has https://mureview.example.com/review-sets/1 inside'
+              : 'Existing description',
+          },
+        ],
+      });
+    }
+
+    if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/12' && req.method === 'PATCH') {
+      const body = (await req.json()) as { description?: string };
+      bodies.push({ method: 'PATCH', body });
+      return Response.json({ pullRequestId: 12, status: 'active', description: body.description });
     }
 
     if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/7/commits') {
@@ -136,6 +165,31 @@ test('reports the account a comment was posted under', async () => {
     replyTo: '12:34',
   });
   expect(reply).toEqual({ kind: 'line', id: '12:35', author: { name: 'Lena Muster', avatarUrl: avatar } });
+});
+
+const url = 'https://mureview.example.com/review-sets/1';
+
+test('creates a pull request with the mureview link in the description', async () => {
+  bodies.length = 0;
+  const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/new', 'Merge feature', 'Review set: X', url);
+  expect(pull).toEqual({ number: 21, created: true });
+  const post = bodies.find((entry) => entry.method === 'POST');
+  expect(post?.body?.description).toBe(`Review set: X\n\nOpen in mureview: ${url}`);
+});
+
+test('appends the mureview link to an existing description', async () => {
+  bodies.length = 0;
+  const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/cool', 'Merge feature', 'Review set: X', url);
+  expect(pull).toEqual({ number: 12, created: false });
+  const patch = bodies.find((entry) => entry.method === 'PATCH');
+  expect(patch?.body?.description).toBe(`Existing description\n\nOpen in mureview: ${url}`);
+});
+
+test('leaves a description that already links to mureview alone', async () => {
+  bodies.length = 0;
+  const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/already', 'Merge feature', 'Review set: X', url);
+  expect(pull).toEqual({ number: 12, created: false });
+  expect(bodies.some((entry) => entry.method === 'PATCH')).toBe(false);
 });
 
 test('deletes a thread comment on the forge', async () => {

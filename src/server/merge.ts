@@ -7,7 +7,7 @@ import { invalidateForgeCaches } from './forges';
 import { HttpError, json } from './http';
 import { buildMergePreview } from './mergePreview';
 import { buildPrStatus, clientsFor } from './pr';
-import { markCommentSynced } from './pullRequests';
+import { markCommentSynced, reviewSetUrl } from './pullRequests';
 import { buildDetail, loadOwnedReviewSet, requireId } from './reviewSets';
 import type { Ctx } from './router';
 import { forgeErrorMessage } from './validate';
@@ -96,7 +96,16 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
 
       const pullNumber =
         repo.pullRequest?.number ??
-        (await client.ensurePullRequest(repo.repo, target, repo.branch!, `Merge ${repo.branch} into ${target}`)).number;
+        (
+          await client.ensurePullRequest(
+            repo.repo,
+            target,
+            repo.branch!,
+            `Merge ${repo.branch} into ${target}`,
+            `Review set: ${reviewSet.name}`,
+            reviewSetUrl(reviewSet.id),
+          )
+        ).number;
 
       // Comments are synced as they are written; this catches the ones whose
       // immediate sync failed.

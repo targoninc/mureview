@@ -1,7 +1,13 @@
 import type { RepoStatus, ReviewSet } from '../shared/types';
 import { mapLimit } from './cache';
+import { config } from './config';
 import { db } from './db';
 import type { ForgeClient } from './forges';
+
+/** The public mureview page of a review set. */
+export function reviewSetUrl(reviewSetId: number): string {
+  return `${config.baseUrl}/review-sets/${reviewSetId}`;
+}
 
 export interface RepoPullRow {
   forge_pr_number: number;
@@ -55,6 +61,7 @@ export async function ensureRepoPullRequests(
         repo.branch!,
         `Merge ${repo.branch} into ${reviewSet.targetBranch}`,
         `Review set: ${reviewSet.name}`,
+        reviewSetUrl(reviewSet.id),
       );
       db.run(
         `INSERT INTO pull_request_repos (pr_id, connection_id, repo, forge_pr_number, head_sha) VALUES (?, ?, ?, ?, ?)

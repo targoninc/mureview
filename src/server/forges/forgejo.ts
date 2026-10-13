@@ -18,6 +18,8 @@ import {
   type ReviewComment,
   type TreeListing,
   decodeText,
+  appendMureviewLink,
+  withMureviewLink,
   fetchImage,
   statusMap,
   summarizeChecks,
@@ -90,6 +92,7 @@ interface GiteaPull {
   number: number;
   head: { ref: string };
   base: { ref: string };
+  body?: string | null;
 }
 
 const maxFileBytes = 200_000;
@@ -305,12 +308,19 @@ export class ForgejoClient implements ForgeClient {
     });
   }
 
-  async ensurePullRequest(repo: string, base: string, head: string, title: string, body = 'Created by mureview.'): Promise<PullRequestRef> {
+  async ensurePullRequest(
+    repo: string,
+    base: string,
+    head: string,
+    title: string,
+    body = 'Created by mureview.',
+    mureviewUrl?: string,
+  ): Promise<PullRequestRef> {
     try {
       const pull = await this.request<GiteaPull>(`/repos/${repo}/pulls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ head, base, title, body }),
+        body: JSON.stringify({ head, base, title, body: withMureviewLink(body, mureviewUrl) }),
       });
       return { number: pull.number, created: true };
     } catch (error) {
@@ -318,6 +328,16 @@ export class ForgejoClient implements ForgeClient {
       const pulls = await this.request<GiteaPull[]>(`/repos/${repo}/pulls?state=open&limit=50`);
       const existing = pulls.find((pull) => pull.head.ref === head && pull.base.ref === base);
       if (!existing) throw new ForgeError(409, 'a conflicting pull request already exists');
+      if (mureviewUrl) {
+        const next = appendMureviewLink(existing.body, mureviewUrl);
+        if (next !== null) {
+          await this.request(`/repos/${repo}/pulls/${existing.number}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: next }),
+          });
+        }
+      }
       return { number: existing.number, created: false };
     }
   }

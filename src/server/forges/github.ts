@@ -18,6 +18,8 @@ import {
   type TreeListing,
   decodeText,
   fetchImage,
+  appendMureviewLink,
+  withMureviewLink,
   statusMap,
   summarizeChecks,
 } from './types';
@@ -253,22 +255,33 @@ export class GithubClient implements ForgeClient {
     return value;
   }
 
-  async ensurePullRequest(repo: string, base: string, head: string, title: string, body = ''): Promise<PullRequestRef> {
+  async ensurePullRequest(repo: string, base: string, head: string, title: string, body = '', mureviewUrl?: string): Promise<PullRequestRef> {
     try {
       const created = await this.request<{ number: number }>(`/repos/${repo}/pulls`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, head, base, body }),
+        body: JSON.stringify({ title, head, base, body: withMureviewLink(body, mureviewUrl) }),
       });
       return { number: created.number, created: true };
     } catch (error) {
       if (!(error instanceof ForgeError) || error.status !== 422) throw error;
       const [owner] = repo.split('/');
-      const existing = await this.request<{ number: number }[]>(
+      const existing = await this.request<{ number: number; body?: string | null }[]>(
         `/repos/${repo}/pulls?state=open&head=${encodeURIComponent(`${owner}:${head}`)}&base=${encodeURIComponent(base)}`,
       );
       if (!existing.length) throw error;
-      return { number: existing[0].number, created: false };
+      const pull = existing[0];
+      if (mureviewUrl) {
+        const next = appendMureviewLink(pull.body, mureviewUrl);
+        if (next !== null) {
+          await this.request(`/repos/${repo}/pulls/${pull.number}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body: next }),
+          });
+        }
+      }
+      return { number: pull.number, created: false };
     }
   }
 

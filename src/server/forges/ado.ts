@@ -19,6 +19,8 @@ import {
   type TreeListing,
   decodeText,
   fetchImage,
+  appendMureviewLink,
+  withMureviewLink,
   organizationOf,
   statusMap,
   summarizeChecks,
@@ -69,6 +71,7 @@ interface AdoItem {
 interface AdoPull {
   pullRequestId: number;
   status: string;
+  description?: string;
   lastMergeSourceCommit?: { commitId: string };
 }
 
@@ -426,7 +429,8 @@ export class AdoClient implements ForgeClient {
     return value;
   }
 
-  async ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef> {
+  async ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string, mureviewUrl?: string): Promise<PullRequestRef> {
+    const description = withMureviewLink(body ?? 'Created by mureview.', mureviewUrl);
     try {
       const created = await this.request<AdoPull>(`${this.repoUrl(repo)}/pullrequests?api-version=7.1`, {
         method: 'POST',
@@ -434,7 +438,7 @@ export class AdoClient implements ForgeClient {
           sourceRefName: `refs/heads/${head}`,
           targetRefName: `refs/heads/${base}`,
           title,
-          description: body ?? 'Created by mureview.',
+          description,
         },
       });
       return { number: created.pullRequestId, created: true };
@@ -445,8 +449,18 @@ export class AdoClient implements ForgeClient {
         `&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${base}`)}` +
         `&searchCriteria.status=active&api-version=7.1`;
       const active = await this.request<{ value: AdoPull[] }>(`${this.repoUrl(repo)}/pullrequests?${query}`);
-      if (!active.value?.length) throw new ForgeError(409, 'a conflicting pull request already exists');
-      return { number: active.value[0].pullRequestId, created: false };
+      const existing = active.value?.[0];
+      if (!existing) throw new ForgeError(409, 'a conflicting pull request already exists');
+      if (mureviewUrl) {
+        const next = appendMureviewLink(existing.description, mureviewUrl);
+        if (next !== null) {
+          await this.request(`${this.repoUrl(repo)}/pullrequests/${existing.pullRequestId}?api-version=7.1`, {
+            method: 'PATCH',
+            json: { description: next },
+          });
+        }
+      }
+      return { number: existing.pullRequestId, created: false };
     }
   }
 

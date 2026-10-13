@@ -71,6 +71,25 @@ export interface PullRequestRef {
   created: boolean;
 }
 
+/** The description line that points back at mureview. */
+export function mureviewLink(url: string): string {
+  return `Open in mureview: ${url}`;
+}
+
+/** The description to create a pull request with. */
+export function withMureviewLink(body: string, url?: string): string {
+  const text = body.trim();
+  if (!url || text.includes(url)) return text;
+  return text ? `${text}\n\n${mureviewLink(url)}` : mureviewLink(url);
+}
+
+/** The description with the mureview link appended, or null when it is already there. */
+export function appendMureviewLink(body: string | null | undefined, url: string): string | null {
+  const text = (body ?? '').trim();
+  if (text.includes(url)) return null;
+  return text ? `${text}\n\n${mureviewLink(url)}` : mureviewLink(url);
+}
+
 export interface ReviewComment {
   body: string;
   path: string;
@@ -100,7 +119,7 @@ export interface ForgeClient {
   mergeBase(repo: string, baseSha: string, headSha: string): Promise<string | null>;
   listBlobs(repo: string, sha: string): Promise<TreeListing>;
   getBlobText(repo: string, sha: string): Promise<string | null>;
-  ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string): Promise<PullRequestRef>;
+  ensurePullRequest(repo: string, base: string, head: string, title: string, body?: string, mureviewUrl?: string): Promise<PullRequestRef>;
   mergePullRequest(repo: string, number: number, message: string): Promise<string>;
   pullRequestUrl(repo: string, number: number): string;
   postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<PostedComment>;
