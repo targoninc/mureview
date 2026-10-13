@@ -27,12 +27,12 @@ body {
 }
 
 .app-header {
-  height: 56px;
+  height: 38px;
   flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 10px;
   background-color: var(--bgColor-emphasis);
   color: var(--fgColor-onEmphasis);
 }
@@ -40,23 +40,28 @@ body {
 .app-header-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: inherit !important;
   font-weight: 600;
-  font-size: 16px;
+  font-size: 13px;
 }
 
 .app-header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+}
+
+.app-header-actions [data-component='IconButton'] {
+  width: 28px;
+  height: 28px;
 }
 
 .app-header-user {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
+  gap: 6px;
+  font-size: 12px;
 }
 
 .app-main {
@@ -639,8 +644,7 @@ svg.checks-pending {
   }
 
   .app-header {
-    height: 52px;
-    padding: 0 12px;
+    padding: 0 8px;
   }
 
   .app-header-username {

@@ -18,12 +18,12 @@ export function Shell({ user, onSignOut, children }: ShellProps) {
     <div className="app-shell">
       <header className="app-header">
         <a className="app-header-brand" href={`${basePath}/`}>
-          <FileDiffIcon size={24} />
+          <FileDiffIcon size={18} />
           <span>mureview</span>
         </a>
         <div className="app-header-actions">
           <span className="app-header-user">
-            <Avatar src={user.avatarUrl} size={24} alt={user.name} />
+            <Avatar src={user.avatarUrl} size={20} alt={user.name} />
             <span className="app-header-username">{user.name}</span>
           </span>
           <IconButton icon={GearIcon} aria-label="Settings" variant="invisible" onClick={() => navigate('/settings')} />
