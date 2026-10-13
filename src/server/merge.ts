@@ -40,7 +40,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
       const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
       if (!headRef) throw new Error('the matched branch no longer exists');
 
-      const checks = await client.checks(repo.repo, headRef.sha);
+      const checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.number });
       if (checks.state === 'failure') {
         const failing = checks.runs
           .filter((run) => run.state === 'failure')

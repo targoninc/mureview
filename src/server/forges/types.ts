@@ -83,7 +83,7 @@ export interface ForgeClient {
   mergePullRequest(repo: string, number: number, message: string): Promise<string>;
   pullRequestUrl(repo: string, number: number): string;
   postReviewComment(repo: string, number: number, comment: ReviewComment): Promise<'line' | 'pull-request'>;
-  checks(repo: string, sha: string): Promise<ChecksSummary>;
+  checks(repo: string, sha: string, options?: { pullRequest?: number }): Promise<ChecksSummary>;
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
 }
 

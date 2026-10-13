@@ -95,7 +95,7 @@ export async function buildMergePreview(connections: ForgeConnectionRow[], revie
     try {
       const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
       if (!headRef) return base;
-      base.checks = await client.checks(repo.repo, headRef.sha);
+      base.checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.number });
       if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
       const targetRef = await client.getBranch(repo.repo, reviewSet.targetBranch, { fresh: true });
       if (!targetRef) return base;

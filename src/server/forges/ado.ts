@@ -67,7 +67,18 @@ interface AdoPull {
   lastMergeSourceCommit?: { commitId: string };
 }
 
+interface AdoEvaluation {
+  status: 'queued' | 'running' | 'approved' | 'rejected' | 'notApplicable' | 'broken' | string;
+  context?: { buildId?: number };
+  configuration?: {
+    isBlocking?: boolean;
+    settings?: { displayName?: string };
+    type?: { displayName?: string };
+  };
+}
+
 const repoCache = new Cache<void>(200, 5 * 60_000);
+const projectCache = new Cache<{ id: string; name: string }>(50, 60 * 60_000);
 const branchListCache = new Cache<BranchInfo[]>(100, 45_000);
 const branchCache = new Cache<BranchInfo | null>(300, 45_000);
 const compareCache = new Cache<CompareResult>(60, 60 * 60_000);
@@ -391,28 +402,48 @@ export class AdoClient implements ForgeClient {
     }
   }
 
-  async checks(repo: string, sha: string): Promise<ChecksSummary> {
+  /**
+   * Azure DevOps checks are the pull request's policy evaluations (build
+   * validation, required reviewers, status policies). Commit statuses are
+   * ordinary pipeline runs and are not used, so a repository without a pull
+   * request reports no checks.
+   */
+  async checks(repo: string, _sha: string, options: { pullRequest?: number } = {}): Promise<ChecksSummary> {
+    if (!options.pullRequest) return { state: 'none', runs: [] };
     try {
-      const statuses = await this.request<{
-        value: { state: string; description?: string; context?: { name?: string; genre?: string }; targetUrl?: string }[];
-      }>(`${this.repoUrl(repo)}/commits/${sha}/statuses?api-version=7.1`);
-      const runs: CheckInfo[] = (statuses.value ?? []).map((entry) => ({
-        name: entry.context?.name ?? 'status',
+      const project = await this.project(repo);
+      const artifactId = `vstfs:///CodeReview/CodeReviewId/${project.id}/${options.pullRequest}`;
+      const data = await this.request<{ value: AdoEvaluation[] }>(
+        `${this.baseUrl}/${encodeURIComponent(project.name)}/_apis/policy/evaluations` +
+          `?artifactId=${encodeURIComponent(artifactId)}&api-version=7.1-preview.1`,
+      );
+      const runs: CheckInfo[] = (data.value ?? []).map((evaluation) => ({
+        name: evaluation.configuration?.settings?.displayName ?? evaluation.configuration?.type?.displayName ?? 'policy',
         state:
-          entry.state === 'succeeded'
+          evaluation.status === 'approved'
             ? 'success'
-            : entry.state === 'pending'
-              ? 'pending'
-              : entry.state === 'notApplicable'
+            : evaluation.status === 'rejected' || evaluation.status === 'broken'
+              ? 'failure'
+              : evaluation.status === 'notApplicable'
                 ? 'neutral'
-                : 'failure',
-        description: entry.description,
-        url: entry.targetUrl,
+                : 'pending',
+        description: evaluation.configuration?.isBlocking === false ? 'non-blocking policy' : undefined,
+        url: evaluation.context?.buildId
+          ? `${this.baseUrl}/${encodeURIComponent(project.name)}/_build/results?buildId=${evaluation.context.buildId}`
+          : undefined,
       }));
       return { state: summarizeChecks(runs), runs };
     } catch {
       return { state: 'unknown', runs: [] };
     }
+  }
+
+  private project(repo: string): Promise<{ id: string; name: string }> {
+    const name = repo.slice(0, repo.indexOf('/'));
+    return cached(projectCache, `${this.baseUrl}#${name}`, async () => {
+      const project = await this.request<{ id: string; name: string }>(`${this.baseUrl}/_apis/projects/${encodeURIComponent(name)}?api-version=7.1`);
+      return { id: project.id, name: project.name };
+    });
   }
 
   async createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void> {

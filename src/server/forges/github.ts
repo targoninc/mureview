@@ -276,9 +276,11 @@ export class GithubClient implements ForgeClient {
             ? 'pending'
             : run.conclusion === 'success' || run.conclusion === 'skipped' || run.conclusion === 'neutral'
               ? (run.conclusion as CheckInfo['state'])
-              : run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled' || run.conclusion === 'action_required' || run.conclusion === 'stale'
-                ? 'failure'
-                : 'unknown';
+              : run.conclusion === 'stale'
+                ? 'neutral' // superseded by a newer run, not a failure
+                : run.conclusion === 'failure' || run.conclusion === 'timed_out' || run.conclusion === 'cancelled' || run.conclusion === 'action_required'
+                  ? 'failure'
+                  : 'unknown';
         runs.push({ name: run.name, state, description: run.output?.title, url: run.details_url });
       }
     } catch {
