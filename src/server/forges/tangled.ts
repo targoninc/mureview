@@ -149,6 +149,38 @@ async function responseMessage(response: Response): Promise<string> {
 
 const avatarCache = new Cache<string>(300, 6 * 60 * 60_000);
 
+interface KnotCapabilities {
+  /** Whether the knot answered with a capability list at all. */
+  known: boolean;
+  /** Whether the knot accepts contributed records (pull requests, comments). */
+  socialWrites: boolean;
+}
+
+const capabilityCache = new Cache<KnotCapabilities>(200, 5 * 60_000);
+
+/**
+ * What a knot says it can do. Older knots answer without a version or
+ * capability list; those don't serve the record API at all.
+ */
+async function knotCapabilities(knot: string): Promise<KnotCapabilities> {
+  const hit = capabilityCache.get(knot);
+  if (hit) return hit;
+  let result: KnotCapabilities = { known: false, socialWrites: false };
+  try {
+    const response = await fetch(`${knot}/xrpc/org.tangled.knot.describeKnot`, { headers: { accept: 'application/json' } });
+    if (response.ok) {
+      const body = (await response.json()) as { capabilities?: unknown };
+      if (Array.isArray(body.capabilities)) {
+        result = { known: true, socialWrites: body.capabilities.includes('knot-social-writes') };
+      }
+    }
+  } catch {
+    // treat as unknown; the write itself will tell
+  }
+  capabilityCache.set(knot, result);
+  return result;
+}
+
 /** The avatar of an atproto account, when it has one. */
 export async function tangledAvatar(did: string): Promise<string> {
   if (!did) return '';
@@ -704,7 +736,15 @@ export class TangledClient implements ForgeClient {
    */
   private async authorizedPost<T>(knot: string, method: string, body: unknown, repoDid: string): Promise<T> {
     if (!this.writes) {
-      throw new ForgeError(401, `sign in with atproto as ${this.login} under Settings to write on Tangled`);
+      throw new ForgeError(401, `sign in with atproto as ${this.login} under Settings to write on Tangled`, true);
+    }
+    const capabilities = await knotCapabilities(knot);
+    if (capabilities.known && !capabilities.socialWrites) {
+      throw new ForgeError(
+        501,
+        `${new URL(knot).host} doesn't accept Tangled records (it doesn't offer social writes), so pull requests and comments can't be created there`,
+        true,
+      );
     }
     let token: string;
     try {
@@ -716,6 +756,7 @@ export class TangledClient implements ForgeClient {
         /no atproto session/i.test(detail)
           ? `sign in with atproto as ${this.login} under Settings, then reload this review set`
           : `could not mint a service token for this knot (${detail})`,
+        true,
       );
     }
     const response = await fetch(`${knot}/xrpc/${method}`, {
@@ -730,13 +771,22 @@ export class TangledClient implements ForgeClient {
     });
     if (!response.ok) {
       const message = await responseMessage(response);
+      const host = new URL(knot).host;
+      if (response.status === 404 && !capabilities.known) {
+        throw new ForgeError(
+          404,
+          `${host} doesn't serve the Tangled write API yet (it looks like an older knot build), so pull requests and comments can't be created there until the knot is updated`,
+          true,
+        );
+      }
       if (response.status === 401 || response.status === 403) {
         throw new ForgeError(
           response.status,
-          `the knot rejected this write (${message}) — check that ${this.login} is a member of ${new URL(knot).host} with push access`,
+          `the knot rejected this write (${message}) — check that ${this.login} is a member of ${host} with push access`,
+          true,
         );
       }
-      throw new ForgeError(response.status, message);
+      throw new ForgeError(response.status, `${host} answered ${response.status} for ${method} (${message})`, true);
     }
     try {
       return (await response.json()) as T;
@@ -748,7 +798,7 @@ export class TangledClient implements ForgeClient {
   private async hosted(repo: string): Promise<ResolvedRepo & { repoDid: string }> {
     const target = await resolveRepo(repo);
     if (!target.repoDid) {
-      throw new ForgeError(400, 'this repository predates repository DIDs, so mureview cannot write to it');
+      throw new ForgeError(400, 'this repository predates repository DIDs, so mureview cannot write to it', true);
     }
     return { ...target, repoDid: target.repoDid };
   }
@@ -782,8 +832,8 @@ export class TangledClient implements ForgeClient {
   ): Promise<PullRequestRef> {
     const target = await this.hosted(repo);
     const [baseRef, headRef] = await Promise.all([this.getBranch(repo, base, { fresh: true }), this.getBranch(repo, head, { fresh: true })]);
-    if (!baseRef) throw new ForgeError(404, `the target branch ${base} does not exist`);
-    if (!headRef) throw new ForgeError(404, `the branch ${head} does not exist`);
+    if (!baseRef) throw new ForgeError(404, `the target branch ${base} does not exist`, true);
+    if (!headRef) throw new ForgeError(404, `the branch ${head} does not exist`, true);
     // The patch's range should start at the merge base so the pull request
     // shows only this branch's changes; a comparison that is too large for the
     // knot falls back to the target tip.
@@ -834,7 +884,7 @@ export class TangledClient implements ForgeClient {
     const target = await this.hosted(repo);
     const patches = await this.ticketPatches(target.knot, target.repoDid, ref);
     const latest = patches[0];
-    if (!latest) throw new ForgeError(404, 'this pull request has no patch to merge');
+    if (!latest) throw new ForgeError(404, 'this pull request has no patch to merge', true);
     await this.authorizedPost(
       target.knot,
       'sh.tangled.repo.pull.merge',
@@ -880,7 +930,7 @@ export class TangledClient implements ForgeClient {
   async postReviewComment(repo: string, ref: string, comment: ReviewComment): Promise<PostedComment> {
     const target = await this.hosted(repo);
     const subject = await recordRef(target.knot, target.repoDid, 'org.tangled.track.ticket', ref);
-    if (!subject) throw new ForgeError(404, 'the pull request this comment belongs to is gone');
+    if (!subject) throw new ForgeError(404, 'the pull request this comment belongs to is gone', true);
 
     let replyTo: { uri: string; cid: string } | undefined;
     if (comment.replyTo) {

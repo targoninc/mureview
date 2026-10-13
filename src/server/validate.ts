@@ -77,6 +77,9 @@ export function matchingBranches(branches: string[], patterns: RegExp[]): string
 export function forgeErrorMessage(error: unknown): string {
   if (error instanceof ForgeError) {
     const detail = error.message?.trim();
+    // Forges that explain themselves (Tangled's knots, token mints) say it
+    // better than the generic advice below.
+    if (error.friendly && detail) return detail;
     const rateLimited = /rate limit|too many requests|secondary rate/i.test(detail ?? '');
     // Errors that already tell the user what to do (Tangled asking for an
     // atproto sign-in, a failed token mint, a knot rejecting the write) are

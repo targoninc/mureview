@@ -191,3 +191,73 @@ test('writes ask for an atproto sign-in without a session', async () => {
   const anonymous = new TangledClient('https://tangled.org', ownerDid);
   await expect(anonymous.ensurePullRequest(repo, 'main', 'feature', 'x')).rejects.toThrow('sign in with atproto');
 });
+
+test('a knot that does not accept records is named before any write', async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = new URL(String(input));
+    if (url.host === 'plc.directory') {
+      const did = url.pathname.slice(1);
+      if (did === ownerDid) return Response.json({ service: [{ id: '#atproto_pds', serviceEndpoint: 'https://pds.example' }], alsoKnownAs: [] });
+      if (did === repoDid) return Response.json({ service: [{ id: '#atproto_pds', serviceEndpoint: 'https://knot-norecords.example' }], alsoKnownAs: [] });
+      return Response.json({}, { status: 404 });
+    }
+    if (url.host === 'pds.example' && url.pathname === '/xrpc/com.atproto.repo.getRecord') {
+      return Response.json({ value: { knot: 'knot-norecords.example', repoDid } });
+    }
+    if (url.pathname === '/xrpc/org.tangled.knot.describeKnot') {
+      return Response.json({ did: repoDid, version: 'v1.0.0', capabilities: [] });
+    }
+    if (url.pathname === '/xrpc/sh.tangled.repo.branch') return Response.json({ name: 'main', hash: 'a'.repeat(40) });
+    if (url.pathname === '/xrpc/sh.tangled.repo.compare') {
+      return Response.json({ rev1: 'a'.repeat(40), rev2: 'b'.repeat(40), merge_base: 'a'.repeat(40), format_patch: [], combined_patch: null });
+    }
+    return Response.json({}, { status: 404 });
+  }) as unknown as typeof fetch;
+  try {
+    const client = new TangledClient('https://tangled.org', ownerDid, {
+      did: ownerDid,
+      serviceAuth: async () => 'token',
+    });
+    await expect(client.ensurePullRequest(`${ownerDid}/norecords`, 'main', 'feature', 'x')).rejects.toThrow("doesn't accept Tangled records");
+  } finally {
+    globalThis.fetch = previous;
+  }
+});
+
+test('an older knot build is explained instead of surfacing a bare 404', async () => {
+  const previous = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = (async (input: unknown) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    if (url.host === 'plc.directory') {
+      const did = url.pathname.slice(1);
+      if (did === ownerDid) return Response.json({ service: [{ id: '#atproto_pds', serviceEndpoint: 'https://pds.example' }], alsoKnownAs: [] });
+      if (did === repoDid) return Response.json({ service: [{ id: '#atproto_pds', serviceEndpoint: 'https://knot-old.example' }], alsoKnownAs: [] });
+      return Response.json({}, { status: 404 });
+    }
+    if (url.host === 'pds.example' && url.pathname === '/xrpc/com.atproto.repo.getRecord') {
+      return Response.json({ value: { knot: 'knot-old.example', repoDid } });
+    }
+    // An older knot: no capability list, and the record route is not there.
+    if (url.pathname === '/xrpc/org.tangled.knot.describeKnot') return new Response('', { status: 404 });
+    if (url.pathname === '/xrpc/sh.tangled.repo.branch') return Response.json({ name: 'main', hash: 'a'.repeat(40) });
+    if (url.pathname === '/xrpc/sh.tangled.repo.compare') {
+      return Response.json({ rev1: 'a'.repeat(40), rev2: 'b'.repeat(40), merge_base: 'a'.repeat(40), format_patch: [], combined_patch: null });
+    }
+    if (url.pathname === '/xrpc/com.atproto.repo.createRecord') return Response.json({}, { status: 404 });
+    return Response.json({}, { status: 404 });
+  }) as unknown as typeof fetch;
+  try {
+    const client = new TangledClient('https://tangled.org', ownerDid, {
+      did: ownerDid,
+      serviceAuth: async () => 'token',
+    });
+    await expect(client.ensurePullRequest(repo, 'main', 'feature', 'x')).rejects.toThrow('older knot build');
+    // The service token is still minted; the knot is what refuses.
+    expect(calls).toContain('/xrpc/com.atproto.repo.createRecord');
+  } finally {
+    globalThis.fetch = previous;
+  }
+});

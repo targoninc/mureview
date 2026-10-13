@@ -17,10 +17,13 @@ export interface ForgeComment {
 
 export class ForgeError extends Error {
   status: number;
+  /** When set, the message already explains the fix and is shown verbatim. */
+  friendly: boolean;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, friendly = false) {
     super(message);
     this.status = status;
+    this.friendly = friendly;
   }
 }
 
