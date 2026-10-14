@@ -275,3 +275,34 @@ test('deleteBranch deletes the ref once its current object id is known', async (
     server.stop(true);
   }
 });
+
+test('reviewPullRequest maps votes to the reviewer API', async () => {
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      calls.push({ url: url.pathname + url.search, method: request.method, body: request.method === 'PUT' ? await request.text() : '' });
+      if (url.pathname.endsWith('/_apis/connectionData')) {
+        return Response.json({ authenticatedUser: { id: 'uid', uniqueName: 'me@example.com' } });
+      }
+      if (url.pathname.includes('/pullRequests/5/reviewers/uid')) return Response.json({ vote: 10 });
+      if (url.pathname.includes('/pullRequests/5')) {
+        return Response.json({ reviewers: [{ id: 'uid', uniqueName: 'me@example.com', vote: 10 }] });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+  try {
+    const client = new AdoClient(`http://localhost:${server.port}`, 'token');
+    expect(await client.pullRequestReview('project/repo', '5')).toBe('approve');
+    await client.reviewPullRequest('project/repo', '5', 'reject');
+    const vote = calls.find((call) => call.method === 'PUT');
+    expect(vote?.url).toContain('/pullRequests/5/reviewers/uid');
+    expect(vote?.body).toContain('-10');
+    await client.reviewPullRequest('project/repo', '5', 'waiting');
+    expect(calls.filter((call) => call.method === 'PUT').pop()?.body).toContain('"vote":0');
+  } finally {
+    server.stop(true);
+  }
+});

@@ -1,5 +1,8 @@
 export type ForgeKind = 'github' | 'forgejo' | 'ado' | 'tangled';
 
+/** The acting user's decision on a pull request. */
+export type ReviewVote = 'approve' | 'waiting' | 'reject';
+
 export type AuthProvider = 'github' | 'forgejo' | 'atproto' | 'email' | 'entra';
 
 export interface User {
@@ -175,7 +178,7 @@ export interface RepoStatus {
   deletions?: number;
   truncated?: boolean;
   headSha?: string;
-  pullRequest?: { ref: string; url: string };
+  pullRequest?: { ref: string; url: string; review?: ReviewVote | null };
   /** Why creating the forge pull request failed, when it did. */
   prError?: string;
   commits?: CommitInfo[];
@@ -298,7 +301,7 @@ export interface MergePreviewRepo {
   /** Whether the acting account may complete pull requests in this repository. */
   canComplete: 'yes' | 'no' | 'unknown';
   checks: ChecksSummary;
-  pullRequest?: { ref: string; url: string };
+  pullRequest?: { ref: string; url: string; review?: ReviewVote | null };
   error?: string;
 }
 

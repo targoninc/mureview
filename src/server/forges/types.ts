@@ -142,6 +142,10 @@ export interface ForgeClient {
   createBranch(repo: string, target: string, from: { sha: string; branch: string }): Promise<void>;
   /** Deletes a branch after it has been merged; a missing branch is fine. */
   deleteBranch?(repo: string, branch: string): Promise<void>;
+  /** The acting user's review decision on a pull request, when the forge has reviews. */
+  pullRequestReview?(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null>;
+  /** Records the acting user's review decision on a pull request. */
+  reviewPullRequest?(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void>;
   /** When the stored credentials expire, if the forge reports it. */
   tokenExpiry?(): Promise<{ displayName: string; validTo: string } | null>;
   /**

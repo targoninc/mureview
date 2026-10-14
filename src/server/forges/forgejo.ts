@@ -624,6 +624,60 @@ export class ForgejoClient implements ForgeClient {
     });
   }
 
+  private login: string | null = null;
+
+  private async currentLogin(): Promise<string> {
+    if (this.login) return this.login;
+    const user = await this.request<{ login: string }>('/user');
+    this.login = user.login;
+    return this.login;
+  }
+
+  async pullRequestReview(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null> {
+    const login = await this.currentLogin();
+    const reviews = await this.request<Array<{ id: number; user?: { login?: string } | null; state?: string }>>(
+      `/repos/${repo}/pulls/${ref}/reviews`,
+    );
+    const own = reviews.filter((review) => review.user?.login === login);
+    const last = own[own.length - 1];
+    if (!last) return null;
+    if (last.state === 'APPROVED') return 'approve';
+    if (last.state === 'REQUEST_CHANGES') return 'reject';
+    return 'waiting';
+  }
+
+  async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
+    if (vote === 'waiting') {
+      const login = await this.currentLogin();
+      const reviews = await this.request<Array<{ id: number; user?: { login?: string } | null; state?: string }>>(
+        `/repos/${repo}/pulls/${ref}/reviews`,
+      );
+      const own = reviews.filter((review) => review.user?.login === login && review.state !== 'COMMENT');
+      const last = own[own.length - 1];
+      if (!last) return;
+      try {
+        await this.request(`/repos/${repo}/pulls/${ref}/reviews/${last.id}/dismissals`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'Withdrawn in mureview' }),
+        });
+      } catch (error) {
+        if (error instanceof ForgeError && (error.status === 404 || error.status === 405 || error.status === 422)) return;
+        throw error;
+      }
+      return;
+    }
+    await this.request(`/repos/${repo}/pulls/${ref}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        vote === 'approve'
+          ? { event: 'APPROVE', body: '' }
+          : { event: 'REQUEST_CHANGES', body: 'Changes requested in mureview' },
+      ),
+    });
+  }
+
   async deleteBranch(repo: string, branch: string): Promise<void> {
     try {
       await this.request(`/repos/${repo}/branches/${branch}`, { method: 'DELETE' });

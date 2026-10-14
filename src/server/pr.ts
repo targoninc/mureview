@@ -300,6 +300,15 @@ export async function buildPrStatus(
     if (hasOpen && lifecycle) {
       if (lifecycle.prId && ensurePulls) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
       else attachKnownPullRequests(clients, repos, lifecycle.prId);
+      await mapLimit(repos, 4, async (repo) => {
+        const client = clients.get(repo.connectionId);
+        if (!repo.pullRequest || !client?.pullRequestReview) return;
+        try {
+          repo.pullRequest = { ...repo.pullRequest, review: await client.pullRequestReview(repo.repo, repo.pullRequest.ref) };
+        } catch (error) {
+          console.error(`Could not read the review state for ${repoLabel(repo)}:`, error);
+        }
+      });
       return {
         state: 'open',
         errors,

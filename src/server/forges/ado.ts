@@ -833,6 +833,49 @@ export class AdoClient implements ForgeClient {
     });
   }
 
+  private identity: { id: string; uniqueName: string } | null = null;
+
+  private async currentIdentity(): Promise<{ id: string; uniqueName: string }> {
+    if (this.identity) return this.identity;
+    const data = await this.request<{ authenticatedUser?: { id?: string; uniqueName?: string } }>(
+      `${this.baseUrl}/_apis/connectionData?api-version=7.1`,
+    );
+    const id = data.authenticatedUser?.id ?? '';
+    const uniqueName = data.authenticatedUser?.uniqueName ?? '';
+    if (!id) throw new ForgeError(401, 'could not read the Azure DevOps identity of this token');
+    this.identity = { id, uniqueName };
+    return this.identity;
+  }
+
+  async pullRequestReview(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null> {
+    const identity = await this.currentIdentity();
+    const data = await this.request<{ reviewers?: Array<{ id?: string; uniqueName?: string; vote?: number }> }>(
+      `${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`,
+    );
+    const own = (data.reviewers ?? []).find(
+      (reviewer) => reviewer.id === identity.id || (reviewer.uniqueName ?? '').toLowerCase() === identity.uniqueName.toLowerCase(),
+    );
+    if (!own) return null;
+    if ((own.vote ?? 0) >= 5) return 'approve';
+    if ((own.vote ?? 0) <= -10) return 'reject';
+    return 'waiting';
+  }
+
+  async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
+    const identity = await this.currentIdentity();
+    const data = await this.request<{ reviewers?: Array<{ id?: string; uniqueName?: string }> }>(
+      `${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`,
+    );
+    const own = (data.reviewers ?? []).find(
+      (reviewer) => reviewer.id === identity.id || (reviewer.uniqueName ?? '').toLowerCase() === identity.uniqueName.toLowerCase(),
+    );
+    if (!own?.id) throw new ForgeError(400, 'you are not a reviewer on this pull request yet');
+    await this.request(`${this.repoUrl(repo)}/pullRequests/${ref}/reviewers/${own.id}?api-version=7.1`, {
+      method: 'PUT',
+      json: { vote: vote === 'approve' ? 10 : vote === 'reject' ? -10 : 0 },
+    });
+  }
+
   async deleteBranch(repo: string, branch: string): Promise<void> {
     const ref = await this.getBranch(repo, branch);
     if (!ref) return;

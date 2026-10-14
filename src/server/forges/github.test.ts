@@ -140,3 +140,46 @@ test('deleteBranch deletes the reference and tolerates a missing branch', async 
   await client.deleteBranch('acme/repo', 'feature/gone');
   expect(calls[1].method).toBe('DELETE');
 });
+
+test('pullRequestReview reads the acting user\'s latest decision', async () => {
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.endsWith('/user')) return Response.json({ login: 'me' });
+    if (url.includes('/pulls/5/reviews')) {
+      return Response.json([
+        { id: 1, user: { login: 'someone' }, state: 'APPROVED' },
+        { id: 2, user: { login: 'me' }, state: 'CHANGES_REQUESTED' },
+      ]);
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('token');
+  expect(await client.pullRequestReview('acme/repo', '5')).toBe('reject');
+});
+
+test('reviewPullRequest approves, requests changes and withdraws', async () => {
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, method: init?.method ?? 'GET', body: String(init?.body ?? '') });
+    if (url.endsWith('/user')) return Response.json({ login: 'me' });
+    if (url.includes('/reviews') && (init?.method ?? 'GET') === 'GET') {
+      return Response.json([{ id: 7, user: { login: 'me' }, state: 'APPROVED' }]);
+    }
+    return new Response(null, { status: 204 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('token');
+  await client.reviewPullRequest('acme/repo', '5', 'approve');
+  const approve = calls.find((call) => call.url.includes('/pulls/5/reviews') && call.method === 'POST');
+  expect(approve?.body).toContain('"event":"APPROVE"');
+
+  await client.reviewPullRequest('acme/repo', '5', 'reject');
+  const reject = calls.filter((call) => call.method === 'POST').pop();
+  expect(reject?.body).toContain('"event":"REQUEST_CHANGES"');
+
+  await client.reviewPullRequest('acme/repo', '5', 'waiting');
+  const dismiss = calls.find((call) => call.url.includes('/reviews/7/dismissals'));
+  expect(dismiss?.method).toBe('PUT');
+});

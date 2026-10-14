@@ -194,6 +194,8 @@ export class GithubClient implements ForgeClient {
   readonly baseUrl = 'https://github.com';
   readonly host = 'github.com';
 
+  private login: string | null = null;
+
   constructor(private token: string, private auth?: GithubAuth) {}
 
   /** Refreshes an expired token once per request before giving up. */
@@ -385,6 +387,55 @@ export class GithubClient implements ForgeClient {
       body: JSON.stringify({ merge_method: 'merge', commit_title: message }),
     });
     return `merged pull request #${number}`;
+  }
+
+  async pullRequestReview(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null> {
+    const login = await this.currentLogin();
+    const reviews = await this.paginate<{ user?: { login?: string }; state?: string }>(`/repos/${repo}/pulls/${pullNumber(ref)}/reviews`);
+    const own = reviews.filter((review) => review.user?.login === login);
+    const last = own[own.length - 1];
+    if (!last) return null;
+    if (last.state === 'APPROVED') return 'approve';
+    if (last.state === 'CHANGES_REQUESTED') return 'reject';
+    return 'waiting';
+  }
+
+  async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
+    const number = pullNumber(ref);
+    if (vote === 'waiting') {
+      const login = await this.currentLogin();
+      const reviews = await this.paginate<{ id?: number; user?: { login?: string }; state?: string }>(`/repos/${repo}/pulls/${number}/reviews`);
+      const own = reviews.filter((review) => review.user?.login === login && review.state !== 'COMMENTED');
+      const last = own[own.length - 1];
+      if (!last?.id) return;
+      try {
+        await this.request(`/repos/${repo}/pulls/${number}/reviews/${last.id}/dismissals`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'Withdrawn in mureview' }),
+        });
+      } catch (error) {
+        if (error instanceof ForgeError && (error.status === 404 || error.status === 422)) return;
+        throw error;
+      }
+      return;
+    }
+    await this.request(`/repos/${repo}/pulls/${number}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        vote === 'approve'
+          ? { event: 'APPROVE' }
+          : { event: 'REQUEST_CHANGES', body: 'Changes requested in mureview' },
+      ),
+    });
+  }
+
+  private async currentLogin(): Promise<string> {
+    if (this.login) return this.login;
+    const user = await this.request<{ login: string }>('/user');
+    this.login = user.login;
+    return this.login;
   }
 
   async retargetPullRequest(repo: string, ref: string, base: string): Promise<void> {

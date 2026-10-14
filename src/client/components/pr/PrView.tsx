@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { Button, Checkbox, Dialog, IconButton, Label } from '@primer/react';
+import { Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -14,8 +14,8 @@ import {
   GitCommitIcon,
   GitPullRequestIcon,
 } from '@primer/octicons-react';
-import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewSetDetail } from '../../../shared/types';
-import { api, put } from '../../lib/api';
+import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewSetDetail, ReviewVote } from '../../../shared/types';
+import { api, post, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, repoStatusText } from '../../lib/format';
@@ -119,6 +119,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     () => (isMobile && tab !== 'files' ? tab : null),
   );
   const [pullsOpen, setPullsOpen] = useState(false);
+  const [votes, setVotes] = useState<Map<string, ReviewVote>>(new Map());
+  const [voteError, setVoteError] = useState<string | null>(null);
   const [collapsedChecks, setCollapsedChecks] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
@@ -545,6 +547,28 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     '--diffs-line-height': '22px',
   } as CSSProperties;
 
+  const voteKey = (repo: RepoStatus) => `${repo.connectionId}:${repo.repo}:${repo.position}`;
+  const voteOf = (repo: RepoStatus): ReviewVote => votes.get(voteKey(repo)) ?? repo.pullRequest?.review ?? 'waiting';
+  const castVote = async (repo: RepoStatus, vote: ReviewVote) => {
+    setVoteError(null);
+    setVotes((current) => new Map(current).set(voteKey(repo), vote));
+    try {
+      await post(`/review-sets/${reviewSet.id}/review`, {
+        connectionId: repo.connectionId,
+        repo: repo.repo,
+        position: repo.position,
+        vote,
+      });
+    } catch (err) {
+      setVoteError((err as Error).message);
+      setVotes((current) => {
+        const next = new Map(current);
+        next.delete(voteKey(repo));
+        return next;
+      });
+    }
+  };
+
   const openPanel = (next: 'files' | 'commits' | 'conversation') => {
     setTab(next);
     setPanel(next);
@@ -735,6 +759,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           <div className="stack" style={{ gap: 20 }}>
             <div className="stack" style={{ gap: 0 }}>
               <strong style={{ fontSize: 12 }}>Open pull requests</strong>
+              {voteError ? <Flash variant="danger">{voteError}</Flash> : null}
               {pullRequests.length === 0 ? (
                 <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No pull requests yet.</span>
               ) : null}
@@ -783,6 +808,32 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                         PR #{repo.pullRequest!.ref}
                       </Button>
                     </div>
+                    {repo.pullRequest?.review !== undefined ? (
+                      <div className="row" style={{ gap: 4, paddingLeft: 8 }}>
+                        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>Your review</span>
+                        <Button
+                          size="small"
+                          variant={voteOf(repo) === 'approve' ? 'primary' : 'default'}
+                          onClick={() => castVote(repo, 'approve')}
+                        >
+                          Approve
+                        </Button>
+                        <Button
+                          size="small"
+                          variant={voteOf(repo) === 'waiting' ? 'primary' : 'default'}
+                          onClick={() => castVote(repo, 'waiting')}
+                        >
+                          Waiting
+                        </Button>
+                        <Button
+                          size="small"
+                          variant={voteOf(repo) === 'reject' ? 'primary' : 'default'}
+                          onClick={() => castVote(repo, 'reject')}
+                        >
+                          Reject
+                        </Button>
+                      </div>
+                    ) : null}
                     {repoChecks ? (
                       repoChecks.runs.length === 0 ? (
                         <span style={{ color: 'var(--fgColor-muted)', fontSize: 12, paddingLeft: 8 }}>
