@@ -1,4 +1,5 @@
 import type { RepoStatus, ReviewSet } from '../shared/types';
+import { repoLabel } from '../shared/types';
 import { mapLimit } from './cache';
 import { config } from './config';
 import { db } from './db';
@@ -82,7 +83,7 @@ export async function ensureRepoPullRequests(
       // Surfaced on the review page; creating pull requests must not fail
       // silently, the forge usually explains what is missing.
       repo.prError = forgeErrorMessage(error);
-      console.error(`Could not ensure a pull request for ${repo.host}/${repo.repo}:`, error);
+      console.error(`Could not ensure a pull request for ${repoLabel(repo)}:`, error);
     }
   });
 

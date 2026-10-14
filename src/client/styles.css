@@ -986,7 +986,19 @@ body.sidebar-resizing {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+}
+
+/* Threads span the whole conversation panel; the diff view keeps the
+   inline margins that keep them clear of the code. */
+.conversation .comment-thread {
+  margin: 0;
+}
+
+.conversation-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .tree {
@@ -1262,4 +1274,17 @@ a.comment-mention:hover {
 
 .comment-markdown p {
   margin: 6px 0;
+}
+
+/* Conversation threads are grouped by the pull request they belong to. */
+.conversation-group + .conversation-group {
+  margin-top: 6px;
+}
+
+.conversation-group-label {
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+  font-family: var(--font-mono);
 }

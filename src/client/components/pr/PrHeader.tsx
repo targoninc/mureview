@@ -13,6 +13,7 @@ import {
 } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, ReviewSetDetail } from '../../../shared/types';
+import { repoLabel } from '../../../shared/types';
 
 type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done' | 'secondary';
 
@@ -74,7 +75,7 @@ export function PrHeader({
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
   const skippedFiles = pr.repos.flatMap((repo) =>
-    (repo.files ?? []).filter((file) => !file.patch).map((file) => `${repo.host}/${repo.repo}: ${file.path}`),
+    (repo.files ?? []).filter((file) => !file.patch).map((file) => `${repoLabel(repo)}: ${file.path}`),
   );
   const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
 

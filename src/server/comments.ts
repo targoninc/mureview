@@ -126,20 +126,30 @@ export async function loadReadablePr(userId: number, id: number): Promise<PrRow>
  * set's repositories, which reference the owner's connections.
  */
 function normalizeAnchor(reviewSetId: number, input: CommentInput) {
-  if (!input.path) return { connectionId: null, repo: null, position: 0, path: null, line: null, side: null };
+  // A general comment may still name the pull request it belongs to, so the
+  // discussion can group comments by their repository.
   const connectionId = Number(input.connectionId);
-  if (!Number.isInteger(connectionId)) throw new HttpError(400, 'A valid connection is required for line comments.');
-  if (typeof input.repo !== 'string' || !input.repo) throw new HttpError(400, 'A repository is required for line comments.');
   const position = Number.isInteger(input.position) && (input.position ?? 0) >= 0 ? (input.position as number) : 0;
-  const known = db
-    .query<{ repo: string }, [number, number, string, number]>(
-      'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ? AND position = ?',
-    )
-    .get(reviewSetId, connectionId, input.repo, position);
-  if (!known) throw new HttpError(400, 'That file does not belong to this review set.');
+  const hasContext =
+    Number.isInteger(connectionId) && typeof input.repo === 'string' && Boolean(input.repo);
+  if (hasContext) {
+    const known = db
+      .query<{ repo: string }, [number, number, string, number]>(
+        'SELECT repo FROM review_set_repos WHERE review_set_id = ? AND connection_id = ? AND repo = ? AND position = ?',
+      )
+      .get(reviewSetId, connectionId, input.repo as string, position);
+    if (!known) throw new HttpError(400, 'That repository does not belong to this review set.');
+  }
+
+  if (!input.path) {
+    return hasContext
+      ? { connectionId, repo: input.repo as string, position, path: null, line: null, side: null }
+      : { connectionId: null, repo: null, position: 0, path: null, line: null, side: null };
+  }
+  if (!hasContext) throw new HttpError(400, 'A valid connection is required for line comments.');
   if (!Number.isInteger(input.line) || (input.line as number) < 1) throw new HttpError(400, 'A line number is required for line comments.');
   if (input.side !== 'additions' && input.side !== 'deletions') throw new HttpError(400, 'A valid diff side is required for line comments.');
-  return { connectionId, repo: input.repo, position, path: input.path, line: input.line, side: input.side };
+  return { connectionId, repo: input.repo as string, position, path: input.path, line: input.line, side: input.side };
 }
 
 export async function listCommentsRoute(ctx: Ctx): Promise<Response> {

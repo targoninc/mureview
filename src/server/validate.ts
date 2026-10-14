@@ -1,4 +1,5 @@
 import type { RepoStatus, ReviewSetRepo } from '../shared/types';
+import { repoLabel } from '../shared/types';
 import { mapLimit } from './cache';
 import { type ForgeClient, ForgeError } from './forges';
 import { parseRepoList } from './repos';
@@ -118,7 +119,7 @@ export function multiMatchError(status: RepoStatus): string | null {
   if (!status.accessible || status.matches.length <= 1) return null;
   const shown = status.matches.slice(0, 5).join(', ');
   const list = status.matches.length > 5 ? `${shown}, …` : shown;
-  return `${status.host}/${status.repo}: ${status.matches.length} branches match your patterns (${list}). The patterns together must match at most one branch per repository.`;
+  return `${repoLabel(status)}: ${status.matches.length} branches match your patterns (${list}). The patterns together must match at most one branch per repository.`;
 }
 
 export interface LocatedRepo {
@@ -168,7 +169,7 @@ export async function inspectRepos(
     } catch (error) {
       for (const repo of group) onPhase?.(repo, 'error');
       return group.map((repo) => ({
-        status: emptyRepoStatus(repo, `You don't have access to ${first.host}/${first.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
+        status: emptyRepoStatus(repo, `You don't have access to ${repoLabel(first)} (${forgeErrorMessage(error)}).`, defaultTarget),
         sha: null,
       }));
     }
@@ -178,7 +179,7 @@ export async function inspectRepos(
     } catch (error) {
       for (const repo of group) onPhase?.(repo, 'error');
       return group.map((repo) => ({
-        status: emptyRepoStatus(repo, `Could not list branches for ${first.host}/${first.repo} (${forgeErrorMessage(error)}).`, defaultTarget),
+        status: emptyRepoStatus(repo, `Could not list branches for ${repoLabel(first)} (${forgeErrorMessage(error)}).`, defaultTarget),
         sha: null,
       }));
     }

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Avatar, Button, Flash, Heading, Label, Spinner } from '@primer/react';
 import { GitBranchIcon, PlusIcon, RepoIcon } from '@primer/octicons-react';
 import type { ReviewSet } from '../../shared/types';
+import { repoLabel } from '../../shared/types';
 import { api } from '../lib/api';
 
 function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
@@ -14,7 +15,7 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
   const sharedTarget = perRepoTargets.size === 1 ? [...perRepoTargets][0] : null;
   // Each mode selects branches differently; show what actually happens.
   const branchPairs = branches
-    .map((repo) => `${repo.host}/${repo.repo}: ${repo.branch} → ${repo.target ?? reviewSet.targetBranch}`)
+    .map((repo) => `${repoLabel(repo)}: ${repo.branch} → ${repo.target ?? reviewSet.targetBranch}`)
     .join('\n');
   const summary =
     reviewSet.mode === 'pattern' ? (
@@ -68,7 +69,7 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
           {summary}
         </div>
       </div>
-      <span className="repo-list-count" title={repos.map((repo) => `${repo.host}/${repo.repo}`).join('\n')}>
+      <span className="repo-list-count" title={repos.map((repo) => repoLabel(repo)).join('\n')}>
         <RepoIcon size={14} />
         {repos.length} {repos.length === 1 ? 'repo' : 'repos'}
         {layers > 0 ? ` · ${layers} ${layers === 1 ? 'layer' : 'layers'}` : ''} included

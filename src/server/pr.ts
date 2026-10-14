@@ -1,4 +1,5 @@
 import type { CommitInfo, FileDiff, LoadPhase, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import { repoLabel } from '../shared/types';
 import { connectionOrMatching } from './auth/identities';
 import { Cache, cached, mapLimit } from './cache';
 import { listComments } from './comments';
@@ -170,7 +171,7 @@ async function inspectBranch(
     };
   } catch (error) {
     onPhase?.('error');
-    return { ...status, error: `Could not build the diff for ${status.host}/${repo} (${forgeErrorMessage(error)}).`, state: 'error' };
+    return { ...status, error: `Could not build the diff for ${repoLabel(status)} (${forgeErrorMessage(error)}).`, state: 'error' };
   }
 }
 
@@ -234,7 +235,7 @@ export async function buildPrStatus(
   if (compiled.error) errors.push(compiled.error);
 
   const layerLabel = (repo: ReviewSet['repos'][number]) =>
-    stacked && repo.branch ? `${repo.host}/${repo.repo} · ${repo.branch}` : `${repo.host}/${repo.repo}`;
+    stacked && repo.branch ? `${repoLabel(repo)} · ${repo.branch}` : repoLabel(repo);
 
   const reporting = options.progress === true && options.progressUserId !== undefined;
   if (reporting) {

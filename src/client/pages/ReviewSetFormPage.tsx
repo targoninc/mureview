@@ -14,6 +14,7 @@ import {
 } from '@primer/react';
 import { FilterIcon, LockIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
 import type { AvailableRepo, RepoSource, ReviewSet, ReviewSetMode, ReviewSetRepo } from '../../shared/types';
+import { repoLabel } from '../../shared/types';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 import { del, post, put, api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
@@ -122,7 +123,7 @@ export function ReviewSetFormPage() {
                 (item.kind === repo.kind && item.host === repo.host && (repo.kind !== 'ado' || item.org === repo.org))),
           ),
       )
-      .filter((repo) => !needle || `${repo.host}/${repo.repo}`.toLowerCase().includes(needle))
+      .filter((repo) => !needle || repoLabel(repo).toLowerCase().includes(needle))
       .slice(0, 100);
   }, [available, form.selected, search, hiddenSources]);
 

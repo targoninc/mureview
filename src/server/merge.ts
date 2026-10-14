@@ -1,4 +1,5 @@
 import type { MergeResult, RepoStatus } from '../shared/types';
+import { repoLabel } from '../shared/types';
 import { connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
@@ -100,7 +101,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const unsynced = current.prId ? listUnsyncedComments(current.prId) : [];
   const results = await mapLimit([...groups.values()], 3, async (layers): Promise<MergeResult> => {
     const first = layers[0];
-    const label = `${first.host}/${first.repo}`;
+    const label = repoLabel(first);
     const client = clients.get(first.connectionId);
     if (!client) return { connectionId: first.connectionId, label, ok: false, message: 'the forge connection was removed' };
     if (client.readOnly) return { connectionId: first.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet' };

@@ -31,12 +31,15 @@ export function CommentThread({
   prId,
   comments,
   repos,
+  context,
   onAdded,
   onDeleted,
 }: {
   prId: number | null;
   comments: Comment[];
   repos?: RepoStatus[];
+  /** The pull request the thread belongs to, for replies to general comments. */
+  context?: { connectionId: number; repo: string; position: number };
   onAdded?: (comment: Comment) => void;
   onDeleted: (id: number) => void;
 }) {
@@ -81,7 +84,9 @@ export function CommentThread({
         line: anchored.line,
         side: anchored.side,
       }
-    : generalAnchor;
+    : context
+      ? { connectionId: context.connectionId, repo: context.repo, position: context.position, path: null, line: null, side: null }
+      : generalAnchor;
   // Replies answer the whole thread: continue the forge thread of the first
   // comment that exists there, otherwise the first comment.
   const parent = comments.find((comment) => comment.forgeCommentId) ?? comments[0];

@@ -327,3 +327,8 @@ export interface MergePreview {
   repos: MergePreviewRepo[];
   canMerge: boolean;
 }
+
+/** The repository as it should be shown: Tangled identifiers already start with their host. */
+export function repoLabel(repo: { host: string; repo: string }): string {
+  return repo.repo.startsWith(`${repo.host}/`) ? repo.repo : `${repo.host}/${repo.repo}`;
+}
