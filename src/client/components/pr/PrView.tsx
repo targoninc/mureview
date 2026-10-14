@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
@@ -95,9 +95,28 @@ interface PrViewProps {
 export function PrView({ detail, onReload, progress }: PrViewProps) {
   const { reviewSet, pr } = detail;
   const navigate = useNavigate();
+  const location = useLocation();
   const isMobile = useIsMobile();
-  const [tab, setTab] = useState<'files' | 'commits' | 'conversation'>('files');
-  const [panel, setPanel] = useState<'files' | 'commits' | 'conversation' | null>(null);
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab: 'files' | 'commits' | 'conversation' =
+    tabParam === 'commits' || tabParam === 'conversation' ? tabParam : 'files';
+  const setTab = useCallback(
+    (next: 'files' | 'commits' | 'conversation') => {
+      const params = new URLSearchParams(searchParams);
+      if (next === 'files') params.delete('tab');
+      else params.set('tab', next);
+      const search = params.toString();
+      navigate(
+        { pathname: location.pathname, search: search ? `?${search}` : '', hash: location.hash },
+        { replace: true },
+      );
+    },
+    [navigate, searchParams, location.pathname, location.hash],
+  );
+  const [panel, setPanel] = useState<'files' | 'commits' | 'conversation' | null>(
+    () => (isMobile && tab !== 'files' ? tab : null),
+  );
   const [pullsOpen, setPullsOpen] = useState(false);
   const [collapsedChecks, setCollapsedChecks] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Draft | null>(null);
