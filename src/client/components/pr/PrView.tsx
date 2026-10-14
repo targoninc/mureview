@@ -484,6 +484,23 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
   const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest && repo.position >= 0);
 
+  // Alt+Arrow moves between files while the single file view is open.
+  useEffect(() => {
+    if (fileMode !== 'single') return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const entry = event.key === 'ArrowUp' ? previousEntry : nextEntry;
+      if (!entry) return;
+      event.preventDefault();
+      setFocusedId(entry.id);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fileMode, previousEntry, nextEntry]);
+
   const fileNavButton = (entry: (typeof ordered)[number] | undefined, direction: 'previous' | 'next') => (
     <button
       type="button"
@@ -494,6 +511,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     >
       {direction === 'previous' ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
       <span className="single-file-nav-label">{direction === 'previous' ? 'Previous file' : 'Next file'}</span>
+      <span className="single-file-nav-hint">{direction === 'previous' ? 'Alt ↑' : 'Alt ↓'}</span>
       {entry ? <span className="single-file-nav-path">{entry.path}</span> : null}
       <span className="single-file-nav-count">
         {activeIndex + 1} / {ordered.length}

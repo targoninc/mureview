@@ -1558,3 +1558,18 @@ a.comment-mention:hover {
     height: 320px;
   }
 }
+
+.single-file-nav-hint {
+  padding: 1px 6px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 4px;
+  color: var(--fgColor-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .single-file-nav-hint {
+    display: none;
+  }
+}
