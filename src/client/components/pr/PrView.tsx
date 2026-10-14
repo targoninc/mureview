@@ -298,6 +298,15 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   parsedRef.current = parsedById;
 
   const threadsByItem = useMemo(() => groupThreads(comments), [comments]);
+  const commentCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const comment of comments) {
+      if (!comment.path || comment.connectionId === null || !comment.repo) continue;
+      const id = fileItemId(comment.connectionId, comment.repo, comment.position, comment.path);
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments]);
 
   const buildItem = useCallback(
     (entry: (typeof ordered)[number]): CodeViewItem<AnnotationMeta> => {
@@ -544,6 +553,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           reviewedItems={reviewed}
           visibleItems={treeVisibleItems}
           focusedItemId={fileMode === 'single' ? (activeEntry?.id ?? null) : null}
+          commentCounts={commentCounts}
           onSelectItem={(itemId) => {
             if (fileMode === 'single') setFocusedId(itemId);
             else codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });

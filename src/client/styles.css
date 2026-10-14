@@ -1555,3 +1555,12 @@ a.comment-mention:hover {
     display: none;
   }
 }
+
+/* Comment count on a file row in the tree. */
+.tree-comments {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 4px;
+  color: var(--fgColor-accent);
+}

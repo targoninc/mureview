@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Checkbox } from '@primer/react';
-import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon } from '@primer/octicons-react';
+import { ChevronDownIcon, ChevronRightIcon, CommentDiscussionIcon, FileDirectoryIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, ForgeKind, PrStatus, RepoStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
 import { fileItemId, fileSegments } from '../../lib/format';
@@ -50,6 +50,8 @@ interface FileTreePanelProps {
   visibleItems: Set<string>;
   /** The file open in the single file view; scrolled into view when it changes. */
   focusedItemId?: string | null;
+  /** Comments per file item, shown as an icon with a count. */
+  commentCounts?: Map<string, number>;
   onSelectItem: (itemId: string) => void;
   /** Sets the viewed mark; everyone keeps their own marks, also on shared sets. */
   onSetReviewed?: (itemIds: string[], reviewed: boolean) => void;
@@ -62,6 +64,7 @@ export function FileTreePanel({
   reviewedItems,
   visibleItems,
   focusedItemId,
+  commentCounts,
   onSelectItem,
   onSetReviewed,
 }: FileTreePanelProps) {
@@ -220,6 +223,7 @@ export function FileTreePanel({
         depth={depth}
         reviewed={reviewedItems.has(entry.itemId)}
         visible={visibleItems.has(entry.itemId)}
+        comments={commentCounts?.get(entry.itemId) ?? 0}
         selected={focusedItemId ? focusedItemId === entry.itemId : selected === entry.itemId}
         canReview={Boolean(onSetReviewed)}
         onSelect={selectItem}
@@ -248,6 +252,7 @@ const TreeFileRow = memo(function TreeFileRow({
   depth,
   reviewed,
   visible,
+  comments,
   selected,
   canReview,
   onSelect,
@@ -260,6 +265,7 @@ const TreeFileRow = memo(function TreeFileRow({
   depth: number;
   reviewed: boolean;
   visible: boolean;
+  comments: number;
   selected: boolean;
   canReview: boolean;
   onSelect: (itemId: string) => void;
@@ -285,6 +291,12 @@ const TreeFileRow = memo(function TreeFileRow({
         {name}
       </span>
       <span className="tree-stats">
+        {comments > 0 ? (
+          <span className="tree-comments" title={`${comments} ${comments === 1 ? 'comment' : 'comments'}`}>
+            <CommentDiscussionIcon size={12} />
+            {comments}
+          </span>
+        ) : null}
         {file.additions > 0 ? <span className="additions">+{file.additions}</span> : null}
         {file.deletions > 0 ? <span className="deletions">−{file.deletions}</span> : null}
         <span className={statusClass[file.type]} title={`${file.type} file`}>
