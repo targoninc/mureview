@@ -390,7 +390,9 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
   ]);
   const id = Number(inserted.lastInsertRowid);
   saveRepos(id, input.repos);
-  return json({ detail: await buildDetail(user, id) }, 201);
+  // The review itself is built by the review page's stream, so saving stays
+  // quick and the page can show what is loading repository by repository.
+  return json({ detail: { reviewSet: toReviewSet(reviewSetRow(id)!), owned: true } }, 201);
 }
 
 /**
@@ -453,7 +455,8 @@ export async function updateReviewSet(ctx: Ctx): Promise<Response> {
     id,
   ]);
   saveRepos(id, input.repos);
-  return json({ detail: await buildDetail(user, id) });
+  // Permission was required to get here, so the editor can manage the set.
+  return json({ detail: { reviewSet: toReviewSet(reviewSetRow(id)!), owned: access.owned, canManage: true } });
 }
 
 export function deleteReviewSet(ctx: Ctx): Response {

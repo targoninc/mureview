@@ -13,7 +13,7 @@ import {
   TextInput,
 } from '@primer/react';
 import { FilterIcon, LockIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
-import type { AvailableRepo, RepoSource, ReviewSetDetail, ReviewSetMode, ReviewSetRepo } from '../../shared/types';
+import type { AvailableRepo, RepoSource, ReviewSet, ReviewSetMode, ReviewSetRepo } from '../../shared/types';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 import { del, post, put, api } from '../lib/api';
 import { useDetail } from '../lib/useDetail';
@@ -239,8 +239,8 @@ export function ReviewSetFormPage() {
     };
     try {
       const result = editing
-        ? await put<{ detail: ReviewSetDetail }>(`/review-sets/${id}`, body)
-        : await post<{ detail: ReviewSetDetail }>('/review-sets', body);
+        ? await put<{ detail: { reviewSet: ReviewSet } }>(`/review-sets/${id}`, body)
+        : await post<{ detail: { reviewSet: ReviewSet } }>('/review-sets', body);
       navigate(`/review-sets/${result.detail.reviewSet.id}`);
     } catch (err) {
       setError((err as Error).message);
@@ -259,10 +259,32 @@ export function ReviewSetFormPage() {
     }
   };
 
+  if (saving) {
+    return (
+      <div className="centered">
+        <div className="load-card">
+          <Spinner size="medium" aria-label={editing ? 'Saving the review set' : 'Creating the review set'} />
+          <div className="stack load-card-body">
+            <strong>{editing ? 'Saving the review set…' : 'Creating the review set…'}</strong>
+            <span className="load-meta">
+              {form.name ? `${form.name} · ` : ''}Checking the repositories, matching branches and building the diffs next.
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (editing && !detail && !loadError) {
     return (
       <div className="centered">
-        <Spinner aria-label="Loading" />
+        <div className="load-card">
+          <Spinner size="medium" aria-label="Loading review set" />
+          <div className="stack load-card-body">
+            <strong>Loading the review set…</strong>
+            <span className="load-meta">Reading its repositories and settings.</span>
+          </div>
+        </div>
       </div>
     );
   }

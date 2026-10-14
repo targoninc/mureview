@@ -9,6 +9,37 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
   // Stacks hold several entries per repository; count the repositories.
   const repos = [...new Map(reviewSet.repos.map((repo) => [`${repo.connectionId}:${repo.repo}`, repo])).values()];
   const layers = reviewSet.mode === 'stack' ? reviewSet.repos.length : 0;
+  const branches = reviewSet.repos.filter((repo) => repo.branch);
+  // Each mode selects branches differently; show what actually happens.
+  const branchPairs = branches
+    .map((repo) => `${repo.host}/${repo.repo}: ${repo.branch} → ${repo.target ?? reviewSet.targetBranch}`)
+    .join('\n');
+  const summary =
+    reviewSet.mode === 'pattern' ? (
+      <>
+        <Label variant="secondary">/{reviewSet.branchRegex}/</Label>
+        <span className="row">
+          <GitBranchIcon size={14} /> target: <span className="mono">{reviewSet.targetBranch}</span>
+        </span>
+      </>
+    ) : reviewSet.mode === 'stack' ? (
+      <>
+        <Label variant="accent">stacked</Label>
+        <span className="row" title={branchPairs}>
+          <GitBranchIcon size={14} />
+          {layers} {layers === 1 ? 'layer' : 'layers'} in {repos.length} {repos.length === 1 ? 'stack' : 'stacks'} →{' '}
+          <span className="mono">{reviewSet.targetBranch}</span>
+        </span>
+      </>
+    ) : (
+      <>
+        <Label variant="secondary">per-repo</Label>
+        <span className="row" title={branchPairs}>
+          <GitBranchIcon size={14} />
+          {branches.length} {branches.length === 1 ? 'branch' : 'branches'} → their own targets
+        </span>
+      </>
+    );
   return (
     <Link className="repo-list-item" to={`/review-sets/${reviewSet.id}`}>
       <div className="repo-list-main">
@@ -21,11 +52,7 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
               <Avatar src={reviewSet.owner.avatarUrl} size={16} alt={reviewSet.owner.name} /> {reviewSet.owner.name}
             </span>
           ) : null}
-          {reviewSet.mode === 'stack' ? <Label variant="accent">stacked</Label> : null}
-          {reviewSet.mode === 'stack' ? null : <Label variant="secondary">/{reviewSet.branchRegex}/</Label>}
-          <span className="row">
-            <GitBranchIcon size={14} /> target: <span className="mono">{reviewSet.targetBranch}</span>
-          </span>
+          {summary}
         </div>
       </div>
       <span className="repo-list-count" title={repos.map((repo) => `${repo.host}/${repo.repo}`).join('\n')}>
