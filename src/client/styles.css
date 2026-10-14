@@ -1436,67 +1436,119 @@ a.comment-mention:hover {
   }
 }
 
-/* Monospace font picker in the settings. */
-.font-options {
+/* Monospace font picker: searchable list on the left, the real diff view on
+   the right so the preview matches the review screen exactly. */
+.font-picker {
   display: flex;
+  gap: 16px;
+  height: min(60vh, 520px);
+  min-height: 320px;
+}
+
+.font-picker-list {
+  display: flex;
+  flex: none;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  width: 220px;
+  min-height: 0;
 }
 
-.font-options-label {
-  margin-top: 6px;
-  font-size: 12px;
-  font-weight: 600;
+.font-picker-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.font-picker-group {
+  padding: 8px 6px 2px;
   color: var(--fgColor-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.font-option {
+.font-picker-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--borderColor-default);
+  padding: 6px 8px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background-color: var(--bgColor-default);
+  background: none;
   color: var(--fgColor-default);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 
-.font-option:hover:not(:disabled) {
+.font-picker-item:hover {
   background-color: var(--bgColor-neutral-muted);
 }
 
-.font-option[aria-pressed='true'] {
+.font-picker-item[aria-pressed='true'] {
   border-color: var(--borderColor-accent-emphasis);
-  box-shadow: inset 0 0 0 1px var(--borderColor-accent-emphasis);
+  background-color: var(--bgColor-accent-muted);
 }
 
-.font-option:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.font-option-check {
+.font-picker-check {
   flex: none;
   width: 16px;
   color: var(--fgColor-accent);
 }
 
-.font-option-name {
-  font-weight: 600;
-  white-space: nowrap;
+.font-picker-preview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.font-option-preview {
-  margin-left: auto;
-  min-width: 0;
+.font-picker-preview-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--borderColor-muted);
+  background-color: var(--bgColor-muted);
+}
+
+.font-picker-preview-note {
   color: var(--fgColor-muted);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 12px;
+}
+
+.font-picker-diff {
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 700px) {
+  .font-picker {
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+
+  .font-picker-list {
+    width: 100%;
+  }
+
+  .font-picker-scroll {
+    max-height: 180px;
+  }
+
+  .font-picker-diff {
+    height: 320px;
+  }
 }
