@@ -623,6 +623,15 @@ export class ForgejoClient implements ForgeClient {
       body: JSON.stringify({ new_branch_name: target, old_branch_name: from.branch }),
     });
   }
+
+  async deleteBranch(repo: string, branch: string): Promise<void> {
+    try {
+      await this.request(`/repos/${repo}/branches/${branch}`, { method: 'DELETE' });
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return;
+      throw error;
+    }
+  }
 }
 
 export async function getForgejoUser(baseUrl: string, token: string): Promise<{ id: number; login: string; full_name: string; avatar_url: string }> {

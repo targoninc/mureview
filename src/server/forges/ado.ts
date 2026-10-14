@@ -832,6 +832,20 @@ export class AdoClient implements ForgeClient {
       json: [{ name: `refs/heads/${target}`, oldObjectId: zeroObjectId, newObjectId: from.sha }],
     });
   }
+
+  async deleteBranch(repo: string, branch: string): Promise<void> {
+    const ref = await this.getBranch(repo, branch);
+    if (!ref) return;
+    try {
+      await this.request(`${this.repoUrl(repo)}/refs?api-version=7.1`, {
+        method: 'POST',
+        json: [{ name: `refs/heads/${branch}`, oldObjectId: ref.sha, newObjectId: zeroObjectId }],
+      });
+    } catch (error) {
+      if (error instanceof ForgeError && (error.status === 404 || error.status === 409)) return;
+      throw error;
+    }
+  }
 }
 
 

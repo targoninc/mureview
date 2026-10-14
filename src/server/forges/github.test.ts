@@ -125,3 +125,18 @@ test('refreshGithubToken fails cleanly without a stored refresh token', async ()
   });
   await expect(refreshGithubToken(connection.id)).rejects.toThrow('reconnect GitHub');
 });
+
+test('deleteBranch deletes the reference and tolerates a missing branch', async () => {
+  const calls: Array<{ url: string; method: string }> = [];
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    calls.push({ url: String(input), method: init?.method ?? 'GET' });
+    return new Response(null, { status: calls.length === 1 ? 204 : 422 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('token');
+  await client.deleteBranch('acme/repo', 'feature/one');
+  expect(calls[0].url).toBe('https://api.github.com/repos/acme/repo/git/refs/heads/feature/one');
+  expect(calls[0].method).toBe('DELETE');
+  await client.deleteBranch('acme/repo', 'feature/gone');
+  expect(calls[1].method).toBe('DELETE');
+});

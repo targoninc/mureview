@@ -247,3 +247,31 @@ test('reports no expiry when no suitable token exists', async () => {
 afterAll(() => {
   server.stop(true);
 });
+
+test('deleteBranch deletes the ref once its current object id is known', async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith('/refs') && request.method === 'GET') {
+        const filter = url.searchParams.get('filter') ?? '';
+        return Response.json({ value: filter.includes('feature') ? [{ name: 'refs/heads/feature', objectId: 'abc123' }] : [] });
+      }
+      if (url.pathname.endsWith('/refs') && request.method === 'POST') {
+        const body = (await request.json()) as Array<{ name: string; oldObjectId: string; newObjectId: string }>;
+        if (body[0].name !== 'refs/heads/feature' || body[0].oldObjectId !== 'abc123' || body[0].newObjectId !== '0000000000000000000000000000000000000000') {
+          return new Response('bad body', { status: 400 });
+        }
+        return Response.json({ count: 1 });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+  try {
+    const client = new AdoClient(`http://localhost:${server.port}`, 'token');
+    await client.deleteBranch('project/repo', 'feature');
+    await client.deleteBranch('project/repo', 'gone');
+  } finally {
+    server.stop(true);
+  }
+});

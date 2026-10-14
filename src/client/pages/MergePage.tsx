@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
+import { Button, Checkbox, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type {
   ForgeKind,
@@ -164,6 +164,7 @@ export function MergePage() {
   const [error, setError] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
   const [results, setResults] = useState<MergeResult[] | null>(null);
+  const [deleteBranches, setDeleteBranches] = useState(() => window.localStorage.getItem('mureview:merge-delete-branches') === '1');
   const [checksOpen, setChecksOpen] = useState(false);
 
   // The stream sends the target branch and every repository first, then each
@@ -225,7 +226,7 @@ export function MergePage() {
     setMerging(true);
     setError(null);
     try {
-      const result = await post<{ results: MergeResult[]; detail: ReviewSetDetail }>(`/review-sets/${id}/merge`, {});
+      const result = await post<{ results: MergeResult[]; detail: ReviewSetDetail }>(`/review-sets/${id}/merge`, { deleteBranches });
       setResults(result.results);
     } catch (err) {
       setError((err as Error).message);
@@ -347,6 +348,21 @@ export function MergePage() {
         ))}
 
         <div className="form-actions">
+          <label className="merge-delete-branches" title="Delete each source branch once its changes have landed">
+            <Checkbox
+              checked={deleteBranches}
+              onChange={() => {
+                setDeleteBranches((current) => {
+                  window.localStorage.setItem('mureview:merge-delete-branches', current ? '0' : '1');
+                  return !current;
+                });
+              }}
+            />
+            <span>
+              <strong style={{ fontSize: 13 }}>Delete source branches</strong>
+              <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}> after merging them</span>
+            </span>
+          </label>
           <Button onClick={() => navigate(`/review-sets/${id}`)}>{results ? 'Back to review set' : 'Cancel'}</Button>
           <div className="row" style={{ gap: 8 }}>
             {runs.length > 0 ? (

@@ -229,6 +229,7 @@ export class GithubClient implements ForgeClient {
           }
           throw new ForgeError(response.status, message);
         }
+        if (response.status === 204 || response.headers.get('content-length') === '0') return undefined as T;
         return (await response.json()) as T;
       },
     );
@@ -645,6 +646,15 @@ export class GithubClient implements ForgeClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ref: `refs/heads/${target}`, sha: from.sha }),
     });
+  }
+
+  async deleteBranch(repo: string, branch: string): Promise<void> {
+    try {
+      await this.request(`/repos/${repo}/git/refs/heads/${branch}`, { method: 'DELETE' });
+    } catch (error) {
+      if (error instanceof ForgeError && (error.status === 404 || error.status === 422)) return;
+      throw error;
+    }
   }
 }
 

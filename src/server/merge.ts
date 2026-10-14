@@ -5,7 +5,7 @@ import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
 import { listUnsyncedComments } from './comments';
 import { invalidateForgeCaches } from './forges';
-import { HttpError, json } from './http';
+import { HttpError, json, readJson } from './http';
 import { buildMergePreview } from './mergePreview';
 import { canManageReviewSet } from './permissions';
 import { buildPrStatus, clientsForActor } from './pr';
@@ -69,6 +69,8 @@ export async function streamMergePreview(ctx: Ctx): Promise<Response> {
 
 export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
+  const body = await readJson<{ deleteBranches?: unknown }>(ctx.req).catch(() => ({ deleteBranches: undefined }));
+  const deleteBranches = body.deleteBranches === true;
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const reviewSet = access.reviewSet;
   const connections = connectionsFor(access.ownerId);
@@ -123,6 +125,15 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         continue;
       }
       if (layer.state === 'merged') {
+        if (deleteBranches && client.deleteBranch) {
+          try {
+            await client.deleteBranch(layer.repo, layer.branch!);
+            messages.push(`${layerName} was already merged, source branch deleted`);
+          } catch (error) {
+            messages.push(`${layerName} was already merged, but the source branch could not be deleted (${forgeErrorMessage(error)})`);
+          }
+          continue;
+        }
         messages.push(`${layerName} was already merged`);
         continue;
       }
@@ -192,9 +203,23 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         }
 
         const message = await client.mergePullRequest(layer.repo, pullRef, `Merge ${layer.branch} into ${target}`);
+        let branchNote = '';
+        if (deleteBranches) {
+          if (!client.deleteBranch) {
+            branchNote = 'the source branch was kept (this forge cannot delete branches)';
+          } else {
+            try {
+              await client.deleteBranch(layer.repo, layer.branch!);
+              branchNote = 'source branch deleted';
+            } catch (error) {
+              branchNote = `the source branch could not be deleted (${forgeErrorMessage(error)})`;
+            }
+          }
+        }
         const commentNote = [
           posted > 0 ? `${posted} late comment${posted === 1 ? '' : 's'} synced` : '',
           commentFailed > 0 ? `${commentFailed} comment${commentFailed === 1 ? '' : 's'} could not be synced` : '',
+          branchNote,
         ]
           .filter(Boolean)
           .join(' · ');

@@ -1564,3 +1564,11 @@ a.comment-mention:hover {
   margin-right: 4px;
   color: var(--fgColor-accent);
 }
+
+.merge-delete-branches {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  cursor: pointer;
+}
