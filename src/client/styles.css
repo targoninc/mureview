@@ -1310,7 +1310,6 @@ a.comment-mention:hover {
 }
 
 .single-file-nav {
-  padding: 8px 12px;
   background-color: var(--bgColor-muted);
 }
 
@@ -1328,10 +1327,9 @@ a.comment-mention:hover {
   gap: 10px;
   width: 100%;
   min-height: 44px;
-  padding: 8px 14px;
-  border: 1px solid var(--borderColor-default);
-  border-radius: 6px;
-  background-color: var(--bgColor-default);
+  padding: 8px 12px;
+  border: none;
+  background: none;
   color: var(--fgColor-default);
   font-size: 14px;
   font-family: var(--font-sans);
@@ -1341,7 +1339,6 @@ a.comment-mention:hover {
 
 .single-file-nav-button:hover:not(:disabled) {
   background-color: var(--bgColor-neutral-muted);
-  border-color: var(--borderColor-accent-emphasis);
 }
 
 .single-file-nav-button:disabled {
@@ -1391,21 +1388,6 @@ a.comment-mention:hover {
   font-weight: 600;
   line-height: 16px;
   text-align: center;
-}
-
-/* The previous/next bars are the tap target; no padding is wasted around them. */
-@media (max-width: 900px) {
-  .single-file-nav {
-    padding: 0;
-  }
-
-  .single-file-nav-button {
-    min-height: 44px;
-    padding: 8px 12px;
-    border: none;
-    border-radius: 0;
-    background-color: transparent;
-  }
 }
 
 /* On small screens the header icon buttons stretch to equal widths, so the

@@ -1,5 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, FileDirectoryIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, ForgeKind, PrStatus, RepoStatus } from '../../../shared/types';
@@ -49,14 +48,26 @@ interface FileTreePanelProps {
   stacked: boolean;
   reviewedItems: Set<string>;
   visibleItems: Set<string>;
+  /** The file open in the single file view; scrolled into view when it changes. */
+  focusedItemId?: string | null;
   onSelectItem: (itemId: string) => void;
   /** Sets the viewed mark; everyone keeps their own marks, also on shared sets. */
   onSetReviewed?: (itemIds: string[], reviewed: boolean) => void;
 }
 
-export function FileTreePanel({ pr, entries, stacked, reviewedItems, visibleItems, onSelectItem, onSetReviewed }: FileTreePanelProps) {
+export function FileTreePanel({
+  pr,
+  entries,
+  stacked,
+  reviewedItems,
+  visibleItems,
+  focusedItemId,
+  onSelectItem,
+  onSetReviewed,
+}: FileTreePanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     ensureFileIconSprite();
@@ -85,6 +96,58 @@ export function FileTreePanel({ pr, entries, stacked, reviewedItems, visibleItem
   );
 
   const tree = useMemo(() => buildFileTree(entriesForTree), [entriesForTree]);
+  const treeKey = useMemo(
+    () => entries.map((repo) => `${repo.position}:${repo.repo}:${repo.branch ?? ''}:${(repo.files ?? []).length}`).join('|'),
+    [entries],
+  );
+
+  // Opening a file in the single file view expands the directories on the way
+  // to it.
+  useEffect(() => {
+    if (!focusedItemId) return;
+    const ancestors: string[] = [];
+    const walk = (nodes: TreeNode<Entry>[], path: string[]): boolean => {
+      for (const node of nodes) {
+        if (node.kind === 'file') {
+          if (node.entry.itemId === focusedItemId) {
+            ancestors.push(...path);
+            return true;
+          }
+          continue;
+        }
+        if (walk(node.children, [...path, node.key])) return true;
+      }
+      return false;
+    };
+    walk(tree, []);
+    if (ancestors.length === 0) return;
+    setCollapsed((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (const key of ancestors) if (next.delete(key)) changed = true;
+      return changed ? next : current;
+    });
+  }, [focusedItemId, tree]);
+
+  // Scroll the row into sight after the tree renders. The retries cover the
+  // rows that directories expanded for this file add above it.
+  useLayoutEffect(() => {
+    if (!focusedItemId) return;
+    const scrollToRow = () => {
+      const row = treeRef.current?.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(focusedItemId)}"]`);
+      if (!row) return;
+      let scroll: HTMLElement | null = treeRef.current?.parentElement ?? null;
+      while (scroll && !/(auto|scroll)/.test(getComputedStyle(scroll).overflowY)) scroll = scroll.parentElement;
+      if (!scroll) return;
+      const view = scroll.getBoundingClientRect();
+      const rect = row.getBoundingClientRect();
+      if (rect.top < view.top) scroll.scrollTop += rect.top - view.top - 8;
+      else if (rect.bottom > view.bottom) scroll.scrollTop += rect.bottom - view.bottom + 8;
+    };
+    scrollToRow();
+    const timers = [150, 400].map((delay) => window.setTimeout(scrollToRow, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [focusedItemId, collapsed]);
 
   const toggleDir = (key: string) =>
     setCollapsed((current) => {
@@ -102,58 +165,74 @@ export function FileTreePanel({ pr, entries, stacked, reviewedItems, visibleItem
     [onSelectItem],
   );
 
-  const renderNodes = (nodes: TreeNode<Entry>[], depth: number): ReactNode[] =>
-    nodes.flatMap((node) => {
-      const indent = { paddingLeft: depth * 12 + 8 };
-      if (node.kind === 'dir') {
-        const isCollapsed = collapsed.has(node.key);
-        const allReviewed = node.fileIds.length > 0 && node.fileIds.every((id) => reviewedItems.has(id));
-        const someReviewed = !allReviewed && node.fileIds.some((id) => reviewedItems.has(id));
-        const repoKind = repoKinds.get(node.key);
-        return [
-          <div key={node.key} className="tree-row tree-dir" style={indent} onClick={() => toggleDir(node.key)}>
-            {onSetReviewed ? (
-              <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
-                <Checkbox
-                  checked={allReviewed}
-                  indeterminate={someReviewed}
-                  onChange={() => onSetReviewed(node.fileIds, !allReviewed)}
-                  aria-label={`Mark ${node.name} as reviewed`}
-                />
-              </span>
-            ) : null}
-            <span className="tree-chevron">{isCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}</span>
-            <span className={`tree-icon ${repoKind ? 'tree-icon-repo' : 'tree-icon-dir'}`}>
-              {repoKind ? <ServiceGlyph kind={repoKind} size={14} /> : <FileDirectoryIcon size={14} />}
-            </span>
-            <span className="tree-name" title={node.name}>
-              {node.name}
-            </span>
-          </div>,
-          ...(isCollapsed ? [] : renderNodes(node.children, depth + 1)),
-        ];
+  // The visible rows as one flat list: React reconciles a single keyed array
+  // reliably, and the tree is virtualized by the browser anyway.
+  const rows = useMemo(() => {
+    const list: Array<{ node: TreeNode<Entry>; depth: number }> = [];
+    const walk = (nodes: TreeNode<Entry>[], depth: number) => {
+      for (const node of nodes) {
+        list.push({ node, depth });
+        if (node.kind === 'dir' && !collapsed.has(node.key)) walk(node.children, depth + 1);
       }
+    };
+    walk(tree, 0);
+    return list;
+  }, [tree, collapsed]);
 
-      const entry = node.entry;
-      return [
-        <TreeFileRow
-          key={node.key}
-          itemId={entry.itemId}
-          name={node.name}
-          path={entry.path}
-          file={entry.file}
-          depth={depth}
-          reviewed={reviewedItems.has(entry.itemId)}
-          visible={visibleItems.has(entry.itemId)}
-          selected={selected === entry.itemId}
-          canReview={Boolean(onSetReviewed)}
-          onSelect={selectItem}
-          onReviewed={onSetReviewed}
-        />,
-      ];
-    });
+  const renderRow = ({ node, depth }: { node: TreeNode<Entry>; depth: number }) => {
+    const indent = { paddingLeft: depth * 12 + 8 };
+    if (node.kind === 'dir') {
+      const isCollapsed = collapsed.has(node.key);
+      const allReviewed = node.fileIds.length > 0 && node.fileIds.every((id) => reviewedItems.has(id));
+      const someReviewed = !allReviewed && node.fileIds.some((id) => reviewedItems.has(id));
+      const repoKind = repoKinds.get(node.key);
+      return (
+        <div key={node.key} className="tree-row tree-dir" style={indent} onClick={() => toggleDir(node.key)}>
+          {onSetReviewed ? (
+            <span className="tree-checkbox" onClick={(event) => event.stopPropagation()}>
+              <Checkbox
+                checked={allReviewed}
+                indeterminate={someReviewed}
+                onChange={() => onSetReviewed(node.fileIds, !allReviewed)}
+                aria-label={`Mark ${node.name} as reviewed`}
+              />
+            </span>
+          ) : null}
+          <span className="tree-chevron">{isCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}</span>
+          <span className={`tree-icon ${repoKind ? 'tree-icon-repo' : 'tree-icon-dir'}`}>
+            {repoKind ? <ServiceGlyph kind={repoKind} size={14} /> : <FileDirectoryIcon size={14} />}
+          </span>
+          <span className="tree-name" title={node.name}>
+            {node.name}
+          </span>
+        </div>
+      );
+    }
 
-  return <div className="tree">{renderNodes(tree, 0)}</div>;
+    const entry = node.entry;
+    return (
+      <TreeFileRow
+        key={node.key}
+        itemId={entry.itemId}
+        name={node.name}
+        path={entry.path}
+        file={entry.file}
+        depth={depth}
+        reviewed={reviewedItems.has(entry.itemId)}
+        visible={visibleItems.has(entry.itemId)}
+        selected={focusedItemId ? focusedItemId === entry.itemId : selected === entry.itemId}
+        canReview={Boolean(onSetReviewed)}
+        onSelect={selectItem}
+        onReviewed={onSetReviewed}
+      />
+    );
+  };
+
+  return (
+    <div className="tree" key={treeKey} ref={treeRef}>
+      {rows.map(renderRow)}
+    </div>
+  );
 }
 
 /**
@@ -189,6 +268,7 @@ const TreeFileRow = memo(function TreeFileRow({
   return (
     <div
       className={`tree-row tree-file${visible ? ' visible' : ''}${selected ? ' selected' : ''}`}
+      data-item-id={itemId}
       style={{ paddingLeft: depth * 12 + 8 }}
       onClick={() => onSelect(itemId)}
     >

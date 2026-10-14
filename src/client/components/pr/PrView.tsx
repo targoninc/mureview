@@ -484,11 +484,12 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
   const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest && repo.position >= 0);
 
-  // Alt+Arrow moves between files while the single file view is open.
+  // Ctrl+Shift+Arrow (Cmd+Shift+Arrow on macOS) moves between files while
+  // the single file view is open.
   useEffect(() => {
     if (fileMode !== 'single') return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return;
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
@@ -511,7 +512,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     >
       {direction === 'previous' ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
       <span className="single-file-nav-label">{direction === 'previous' ? 'Previous file' : 'Next file'}</span>
-      <span className="single-file-nav-hint">{direction === 'previous' ? 'Alt ↑' : 'Alt ↓'}</span>
+      <span className="single-file-nav-hint">{direction === 'previous' ? 'Ctrl+Shift+↑' : 'Ctrl+Shift+↓'}</span>
       {entry ? <span className="single-file-nav-path">{entry.path}</span> : null}
       <span className="single-file-nav-count">
         {activeIndex + 1} / {ordered.length}
@@ -542,6 +543,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           stacked={Boolean(pr.combined)}
           reviewedItems={reviewed}
           visibleItems={treeVisibleItems}
+          focusedItemId={fileMode === 'single' ? (activeEntry?.id ?? null) : null}
           onSelectItem={(itemId) => {
             if (fileMode === 'single') setFocusedId(itemId);
             else codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });
