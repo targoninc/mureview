@@ -1357,3 +1357,25 @@ a.comment-mention:hover {
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* Icon buttons with a count badge, for the compact header. */
+.icon-count {
+  position: relative;
+  display: inline-flex;
+}
+
+.icon-count-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background-color: var(--fgColor-accent);
+  color: var(--fgColor-onEmphasis);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}

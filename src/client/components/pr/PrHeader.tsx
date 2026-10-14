@@ -160,29 +160,28 @@ export function PrHeader({
         </div>
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
-            <Button
-              leadingVisual={checksFailing ? AlertIcon : GitPullRequestIcon}
-              onClick={onShowPullRequests}
-              title={checksFailing ? 'Some pull request checks are failing' : undefined}
-            >
-              {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
-            </Button>
-            {pr.state === 'open' && canManage ? (
-              <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
-                Merge
-              </Button>
-            ) : null}
             {compact ? (
               <>
-                <Button leadingVisual={FileDiffIcon} onClick={onOpenFiles}>
-                  Files
-                </Button>
-                <Button leadingVisual={GitCommitIcon} onClick={onOpenCommits}>
-                  Commits ({commitCount})
-                </Button>
-                <Button leadingVisual={CommentDiscussionIcon} onClick={onOpenConversation}>
-                  Conversation ({commentCount})
-                </Button>
+                <span className="icon-count">
+                  <IconButton
+                    icon={checksFailing ? AlertIcon : GitPullRequestIcon}
+                    aria-label={checksFailing ? 'Pull requests, some checks are failing' : 'Pull requests'}
+                    onClick={onShowPullRequests}
+                  />
+                  {openPullRequests > 0 ? <span className="icon-count-badge">{openPullRequests}</span> : null}
+                </span>
+                {pr.state === 'open' && canManage ? (
+                  <IconButton icon={GitMergeIcon} variant="primary" aria-label="Merge" onClick={onMerge} />
+                ) : null}
+                <IconButton icon={FileDiffIcon} aria-label="Files" onClick={onOpenFiles} />
+                <span className="icon-count">
+                  <IconButton icon={GitCommitIcon} aria-label={`Commits (${commitCount})`} onClick={onOpenCommits} />
+                  {commitCount > 0 ? <span className="icon-count-badge">{commitCount}</span> : null}
+                </span>
+                <span className="icon-count">
+                  <IconButton icon={CommentDiscussionIcon} aria-label={`Conversation (${commentCount})`} onClick={onOpenConversation} />
+                  {commentCount > 0 ? <span className="icon-count-badge">{commentCount}</span> : null}
+                </span>
                 {canManage ? (
                   <IconButton icon={GearIcon} aria-label="Review set settings" onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)} />
                 ) : null}
@@ -190,6 +189,18 @@ export function PrHeader({
               </>
             ) : (
               <>
+                <Button
+                  leadingVisual={checksFailing ? AlertIcon : GitPullRequestIcon}
+                  onClick={onShowPullRequests}
+                  title={checksFailing ? 'Some pull request checks are failing' : undefined}
+                >
+                  {openPullRequests > 0 ? `${openPullRequests} PR${openPullRequests === 1 ? '' : 's'} open` : 'No open PRs'}
+                </Button>
+                {pr.state === 'open' && canManage ? (
+                  <Button variant="primary" leadingVisual={GitMergeIcon} onClick={onMerge}>
+                    Merge
+                  </Button>
+                ) : null}
                 {canManage ? (
                   <Button leadingVisual={GearIcon} onClick={() => navigate(`/review-sets/${reviewSet.id}/settings`)}>
                     Settings
