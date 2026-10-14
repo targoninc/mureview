@@ -500,8 +500,17 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return;
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-      const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      // Only text entry swallows the shortcut; checkboxes and buttons keep it.
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.closest(
+            'textarea, input:not([type]), input[type="text"], input[type="search"], input[type="email"], input[type="password"], input[type="url"], input[type="tel"], input[type="number"]',
+          ) !== null)
+      ) {
+        return;
+      }
       const entry = event.key === 'ArrowUp' ? previousEntry : nextEntry;
       if (!entry) return;
       event.preventDefault();
