@@ -6,6 +6,7 @@ import { type ForgeConnectionRow, db } from './db';
 import { clientFor } from './forges';
 import { hostOf } from './forges/types';
 import { HttpError, json, readJson } from './http';
+import { publishForPr } from './live';
 import { markCommentSynced, repoPullRequest } from './pullRequests';
 import type { Ctx } from './router';
 
@@ -187,7 +188,9 @@ export async function createCommentRoute(ctx: Ctx): Promise<Response> {
   const row = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
   await syncCommentToPullRequest(user.id, pr.id, row);
   const synced = db.query<CommentRow, [number]>(`${SELECT_COMMENT} WHERE c.id = ?`).get(commentId)!;
-  return json({ comment: toComment(synced) }, 201);
+  const created = toComment(synced);
+  publishForPr(pr.id, { type: 'comment', action: 'created', comment: created });
+  return json({ comment: created }, 201);
 }
 
 /**
@@ -289,6 +292,7 @@ export async function resolveCommentRoute(ctx: Ctx): Promise<Response> {
       `${thread}:%`,
     ]);
   }
+  publishForPr(comment.pr_id, { type: 'comment', action: 'resolved', commentId: comment.id, resolved: input.resolved });
   return json({ ok: true, resolved: input.resolved });
 }
 
@@ -318,5 +322,6 @@ export async function deleteCommentRoute(ctx: Ctx): Promise<Response> {
   }
 
   db.run('DELETE FROM comments WHERE id = ?', [comment.id]);
+  publishForPr(comment.pr_id, { type: 'comment', action: 'deleted', commentId: comment.id });
   return json({ ok: true });
 }

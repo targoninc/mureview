@@ -1,4 +1,5 @@
 import { mapLimit } from './cache';
+import { publishForPr } from './live';
 import { db } from './db';
 import type { ForgeClient, ForgeComment } from './forges';
 
@@ -41,6 +42,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
   if (!force && Date.now() - last < syncIntervalMs) return;
   lastSyncByPr.set(prId, Date.now());
 
+  let imported = 0;
   await mapLimit(targets, 3, async (target) => {
     const client = clients.get(target.connectionId);
     if (!client) return;
@@ -133,6 +135,7 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
       if (!anchor && comment.replyToId) anchor = anchors.get(comment.replyToId) ?? null;
       const parent = comment.replyToId ? byForgeId.get(comment.replyToId) : undefined;
 
+      imported += 1;
       const inserted = db.run(
         `INSERT INTO comments (pr_id, author_id, author_name, author_avatar, connection_id, repo, position, path, line, side, body, synced_at, forge_comment_id, parent_id, resolved, source, created_at)
          VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, 'forge', ?)`,
@@ -166,4 +169,5 @@ export async function syncForgeComments(prId: number, clients: Map<number, Forge
       byForgeId.set(comment.id, row);
     }
   });
+  if (imported > 0) publishForPr(prId, { type: 'comments' });
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useAppContext } from '../../lib/appContext';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
@@ -19,6 +20,7 @@ import { api, post, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, repoStatusText } from '../../lib/format';
+import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { ServiceIcon, serviceDetail } from '../ServiceIcon';
 import { PrStatusBanner } from './PrStatusBanner';
@@ -95,6 +97,7 @@ interface PrViewProps {
 
 export function PrView({ detail, onReload, progress }: PrViewProps) {
   const { reviewSet, pr } = detail;
+  const { user } = useAppContext();
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
@@ -309,6 +312,60 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     }
     return counts;
   }, [comments]);
+
+  // Other tabs, devices and the forge itself push changes through the socket.
+  const liveReload = useRef<number | null>(null);
+  const onLiveEvent = useCallback(
+    (event: LiveEvent) => {
+      if (event.reviewSetId !== reviewSet.id) return;
+      if ('prId' in event && event.prId !== undefined && pr.prId !== null && event.prId !== pr.prId) return;
+      if (event.type === 'reviewed') {
+        if (event.userId !== user?.id) return;
+        setReviewedItems((current) => {
+          const next = new Set(current);
+          for (const id of event.itemIds) {
+            if (event.reviewed) next.add(id);
+            else next.delete(id);
+          }
+          return next;
+        });
+        return;
+      }
+      if (event.type === 'comment') {
+        if (event.action === 'created') {
+          const created = event.comment;
+          setComments((current) => (current.some((comment) => comment.id === created.id) ? current : [...current, created]));
+        } else if (event.action === 'deleted') {
+          setComments((current) => current.filter((comment) => comment.id !== event.commentId));
+        } else {
+          setComments((current) =>
+            current.map((comment) => (comment.id === event.commentId ? { ...comment, resolved: event.resolved ?? comment.resolved } : comment)),
+          );
+        }
+        return;
+      }
+      if (event.type === 'vote') {
+        if (event.userId !== user?.id) return;
+        setVotes((current) => new Map(current).set(`${event.connectionId}:${event.repo}:${event.position}`, event.vote));
+        return;
+      }
+      if (event.type === 'comments' && pr.prId) {
+        void api<{ comments: Comment[] }>(`/prs/${pr.prId}/comments`)
+          .then((data) => setComments(data.comments))
+          .catch(() => undefined);
+        return;
+      }
+      if (event.type === 'prs') {
+        if (liveReload.current !== null) return;
+        liveReload.current = window.setTimeout(() => {
+          liveReload.current = null;
+          onReload(false);
+        }, 800);
+      }
+    },
+    [reviewSet.id, pr.prId, user?.id, onReload],
+  );
+  useLiveReviewSet(reviewSet.id, onLiveEvent);
 
   const buildItem = useCallback(
     (entry: (typeof ordered)[number]): CodeViewItem<AnnotationMeta> => {

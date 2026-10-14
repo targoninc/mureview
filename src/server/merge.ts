@@ -7,6 +7,7 @@ import { listUnsyncedComments } from './comments';
 import { invalidateForgeCaches } from './forges';
 import { HttpError, json, readJson } from './http';
 import { buildMergePreview } from './mergePreview';
+import { publish } from './live';
 import { canManageReviewSet } from './permissions';
 import { buildPrStatus, clientsForActor } from './pr';
 import { markCommentSynced, reviewSetUrl } from './pullRequests';
@@ -234,5 +235,6 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
 
   invalidateForgeCaches();
   const detail = await buildDetail(user, reviewSet.id, true);
+  publish(reviewSet.id, { type: 'prs', reason: 'merged' });
   return json({ results, detail });
 }

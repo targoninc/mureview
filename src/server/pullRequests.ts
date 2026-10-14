@@ -3,6 +3,7 @@ import { repoLabel } from '../shared/types';
 import { mapLimit } from './cache';
 import { config } from './config';
 import { db } from './db';
+import { publish } from './live';
 import type { ForgeClient } from './forges';
 import { forgeErrorMessage } from './validate';
 
@@ -99,6 +100,11 @@ export function attachKnownPullRequests(clients: Map<number, ForgeClient>, repos
     const client = clients.get(repo.connectionId);
     if (row && client) repo.pullRequest = { ref: row.forge_pr_ref, url: client.pullRequestUrl(repo.repo, row.forge_pr_ref) };
   }
+}
+
+/** Tells watchers that the tracked pull requests changed. */
+export function publishPullRequestsChanged(reviewSetId: number): void {
+  publish(reviewSetId, { type: 'prs', reason: 'pull-requests' });
 }
 
 export function markCommentSynced(commentId: number, forgeCommentId?: string): void {

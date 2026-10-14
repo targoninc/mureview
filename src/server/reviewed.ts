@@ -3,6 +3,7 @@ import { requireUser } from './auth/session';
 import { loadReadablePr } from './comments';
 import { db } from './db';
 import { HttpError, json, readJson } from './http';
+import { publishForPr } from './live';
 import type { Ctx } from './router';
 
 /** The files the user marked as viewed; everyone keeps their own marks. */
@@ -83,5 +84,11 @@ export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
     }
   });
   apply(marks);
+  publishForPr(pr.id, {
+    type: 'reviewed',
+    userId: user.id,
+    reviewed,
+    itemIds: marks.map((mark) => `${mark.connectionId}:${mark.repo}:${mark.position}:${mark.path}`),
+  });
   return json({ ok: true, count: marks.length });
 }
