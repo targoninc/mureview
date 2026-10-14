@@ -675,27 +675,39 @@ export class AdoClient implements ForgeClient {
   }
 
   /**
-   * Azure DevOps stores mentions as `@<identity-id>`; the identities endpoint
-   * names the account so comments can show `@Display Name` like the web UI.
+   * Azure DevOps stores mentions as `@<identity-id>`. The identity APIs live
+   * on vssps (or the organization's vssps subdomain), not the organization's
+   * own host, and older organizations only answer the preview api-version.
    */
+  private identityBases(): string[] {
+    const org = organizationOf(this.baseUrl);
+    const bases: string[] = [];
+    if (this.host.endsWith('.visualstudio.com')) bases.push(`https://vssps.${this.host}`);
+    else if (org) bases.push(`https://vssps.${this.host}/${encodeURIComponent(org)}`);
+    bases.push(this.baseUrl);
+    return bases;
+  }
+
   async resolveMention(id: string): Promise<{ name: string; url?: string } | null> {
     if (!/^[0-9a-fA-F-]{36}$/.test(id)) return null;
-    // The identities API answered different api-versions over time; try the
-    // plain one first and the preview one if the organization rejects it.
-    for (const version of ['7.1', '7.1-preview.1']) {
-      try {
-        const identity = await this.request<{
-          providerDisplayName?: string;
-          customDisplayName?: string;
-          properties?: { Account?: { $value?: string } };
-        }>(`${this.baseUrl}/_apis/identities/${id}?api-version=${version}`);
-        const name = identity.customDisplayName ?? identity.providerDisplayName ?? identity.properties?.Account?.$value;
-        if (name) return { name };
-        return null;
-      } catch (error) {
-        console.error(`Could not resolve the mention ${id} (api-version ${version}):`, error);
+    let lastError: unknown = null;
+    for (const base of this.identityBases()) {
+      for (const version of ['7.1', '7.1-preview.1']) {
+        try {
+          const identity = await this.request<{
+            providerDisplayName?: string;
+            customDisplayName?: string;
+            properties?: { Account?: { $value?: string } };
+          }>(`${base}/_apis/identities/${id}?api-version=${version}`);
+          const name = identity.customDisplayName ?? identity.providerDisplayName ?? identity.properties?.Account?.$value;
+          if (name) return { name };
+          return null;
+        } catch (error) {
+          lastError = error;
+        }
       }
     }
+    console.error(`Could not resolve the Azure DevOps mention ${id}:`, lastError);
     return null;
   }
 

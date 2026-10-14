@@ -917,7 +917,6 @@ body.sidebar-resizing {
 
 .comment-body {
   padding: 12px;
-  white-space: pre-wrap;
   word-break: break-word;
   font-size: 14px;
 }
@@ -1259,4 +1258,8 @@ a.comment-mention:hover {
   margin: 10px 0;
   border: 0;
   border-top: 1px solid var(--borderColor-muted);
+}
+
+.comment-markdown p {
+  margin: 6px 0;
 }
