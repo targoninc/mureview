@@ -84,6 +84,10 @@ export function PrHeader({
     (repo.files ?? []).filter((file) => !file.patch).map((file) => `${repoLabel(repo)}: ${file.path}`),
   );
   const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
+  const stackCount = new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size;
+  const repoNoun =
+    reviewSet.mode === 'stack' ? (openRepos.length === 1 ? 'layer' : 'layers') : openRepos.length === 1 ? 'branch' : 'branches';
+  const targetLabel = <span className="mono">{reviewSet.targetBranch}</span>;
 
   return (
     <div className="pr-header">
@@ -109,41 +113,44 @@ export function PrHeader({
                 </span>
               </span>
             ) : openRepos.length > 0 ? (
-              <>
-                {reviewSet.mode === 'stack' ? (
-                  <>
-                    {openRepos.length} {openRepos.length === 1 ? 'layer' : 'layers'} across{' '}
-                    {new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size}{' '}
-                    {new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size === 1 ? 'stack' : 'stacks'}, merging
-                    bottom-up into <span className="mono">{reviewSet.targetBranch}</span>
-                  </>
-                ) : (
-                  <>
-                    Merging {openRepos.length} {openRepos.length === 1 ? 'branch' : 'branches'}{' '}
-                    {reviewSet.mode === 'per-repo' ? (
-                      'into their target branches'
-                    ) : (
-                      <>
-                        into <span className="mono">{reviewSet.targetBranch}</span>
-                      </>
-                    )}
-                  </>
-                )}{' '}
-                · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
-              </>
+              compact ? (
+                <>
+                  {openRepos.length} {repoNoun}
+                  {reviewSet.mode === 'stack' ? ` · ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'}` : ''} →{' '}
+                  {reviewSet.mode === 'per-repo' ? 'their targets' : targetLabel} · {reviewedCount}/{pr.stats.files} viewed
+                </>
+              ) : (
+                <>
+                  {reviewSet.mode === 'stack' ? (
+                    <>
+                      {openRepos.length} {repoNoun} across {stackCount} {stackCount === 1 ? 'stack' : 'stacks'}, merging
+                      bottom-up into {targetLabel}
+                    </>
+                  ) : (
+                    <>
+                      Merging {openRepos.length} {repoNoun}{' '}
+                      {reviewSet.mode === 'per-repo' ? 'into their target branches' : <>into {targetLabel}</>}
+                    </>
+                  )}{' '}
+                  · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
+                </>
+              )
+            ) : compact ? (
+              reviewSet.mode === 'stack' ? (
+                <>Watching stacks → {targetLabel}</>
+              ) : reviewSet.mode === 'per-repo' ? (
+                "Watching every repository's branch"
+              ) : (
+                <>Target: {targetLabel}</>
+              )
             ) : (
               <>
                 {reviewSet.mode === 'stack' ? (
-                  <>
-                    Watching the stacks of every repository, merging bottom-up into{' '}
-                    <span className="mono">{reviewSet.targetBranch}</span>
-                  </>
+                  <>Watching the stacks of every repository, merging bottom-up into {targetLabel}</>
                 ) : reviewSet.mode === 'per-repo' ? (
                   'Watching the selected branch of every repository'
                 ) : (
-                  <>
-                    Target branch <span className="mono">{reviewSet.targetBranch}</span>
-                  </>
+                  <>Target branch {targetLabel}</>
                 )}
               </>
             )}

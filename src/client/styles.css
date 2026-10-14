@@ -1134,6 +1134,14 @@ body.sidebar-resizing {
     flex-wrap: wrap;
   }
 
+  .pr-header-right {
+    width: 100%;
+  }
+
+  .pr-header-right .row {
+    justify-content: flex-end;
+  }
+
   .pr-header-actions {
     flex-wrap: wrap;
   }
