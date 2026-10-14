@@ -624,6 +624,22 @@ export class ForgejoClient implements ForgeClient {
     });
   }
 
+  async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
+    try {
+      const pull = await this.request<{ state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }>(
+        `/repos/${repo}/pulls/${ref}`,
+      );
+      return {
+        state: pull.merged ? 'merged' : pull.state === 'closed' ? 'closed' : 'open',
+        head: pull.head?.ref ?? '',
+        base: pull.base?.ref ?? '',
+      };
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   private login: string | null = null;
 
   private async currentLogin(): Promise<string> {

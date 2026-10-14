@@ -758,7 +758,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         >
           <div className="stack" style={{ gap: 20 }}>
             <div className="stack" style={{ gap: 0 }}>
-              <strong style={{ fontSize: 12 }}>Open pull requests</strong>
+              <strong style={{ fontSize: 12 }}>Pull requests</strong>
               {voteError ? <Flash variant="danger">{voteError}</Flash> : null}
               {pullRequests.length === 0 ? (
                 <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No pull requests yet.</span>
@@ -807,8 +807,12 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                       >
                         PR #{repo.pullRequest!.ref}
                       </Button>
+                      {repo.pullRequest!.state === 'closed' ? <Label variant="secondary">Already closed</Label> : null}
+                      {repo.pullRequest!.state === 'merged' ? <Label variant="success">Merged</Label> : null}
                     </div>
-                    {repo.pullRequest?.review !== undefined ? (
+                    {repo.pullRequest?.review !== undefined &&
+                    repo.pullRequest.state !== 'closed' &&
+                    repo.pullRequest.state !== 'merged' ? (
                       <div className="row" style={{ gap: 4, paddingLeft: 8 }}>
                         <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>Your review</span>
                         <Button

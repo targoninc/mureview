@@ -146,6 +146,8 @@ export interface ForgeClient {
   pullRequestReview?(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null>;
   /** Records the acting user's review decision on a pull request. */
   reviewPullRequest?(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void>;
+  /** The pull request's current state and branches on the forge. */
+  pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null>;
   /** When the stored credentials expire, if the forge reports it. */
   tokenExpiry?(): Promise<{ displayName: string; validTo: string } | null>;
   /**

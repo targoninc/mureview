@@ -160,7 +160,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         }
 
         const pullRef =
-          layer.pullRequest?.ref ??
+          (layer.pullRequest?.state === 'closed' ? undefined : layer.pullRequest?.ref) ??
           (
             await client.ensurePullRequest(
               layer.repo,

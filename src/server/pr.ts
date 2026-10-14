@@ -302,9 +302,29 @@ export async function buildPrStatus(
       else attachKnownPullRequests(clients, repos, lifecycle.prId);
       await mapLimit(repos, 4, async (repo) => {
         const client = clients.get(repo.connectionId);
-        if (!repo.pullRequest || !client?.pullRequestReview) return;
+        if (!repo.pullRequest || !client) return;
+        const ref = repo.pullRequest.ref;
         try {
-          repo.pullRequest = { ...repo.pullRequest, review: await client.pullRequestReview(repo.repo, repo.pullRequest.ref) };
+          const state = await client.pullRequestState?.(repo.repo, ref);
+          if (state) {
+            repo.pullRequest = { ...repo.pullRequest, state: state.state, head: state.head, base: state.base };
+            const notes: string[] = [];
+            if (state.state === 'closed') notes.push('the pull request was closed on the forge');
+            if (state.head && repo.branch && state.head !== repo.branch) {
+              notes.push(`the pull request now points at ${state.head} instead of ${repo.branch}`);
+            }
+            const target = repo.target || reviewSet.targetBranch;
+            if (state.base && target && state.base !== target) {
+              notes.push(`the pull request now targets ${state.base} instead of ${target}`);
+            }
+            if (notes.length > 0) repo.note = [repo.note, `${notes.join('; ')}.`].filter(Boolean).join(' ');
+          }
+        } catch (error) {
+          console.error(`Could not read the pull request state for ${repoLabel(repo)}:`, error);
+        }
+        if (!client.pullRequestReview) return;
+        try {
+          repo.pullRequest = { ...repo.pullRequest, review: await client.pullRequestReview(repo.repo, ref) };
         } catch (error) {
           console.error(`Could not read the review state for ${repoLabel(repo)}:`, error);
         }

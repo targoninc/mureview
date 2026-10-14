@@ -178,7 +178,16 @@ export interface RepoStatus {
   deletions?: number;
   truncated?: boolean;
   headSha?: string;
-  pullRequest?: { ref: string; url: string; review?: ReviewVote | null };
+  pullRequest?: {
+    ref: string;
+    url: string;
+    review?: ReviewVote | null;
+    /** The pull request's state on the forge. */
+    state?: 'open' | 'closed' | 'merged';
+    /** Where the forge says the pull request points now. */
+    head?: string;
+    base?: string;
+  };
   /** Why creating the forge pull request failed, when it did. */
   prError?: string;
   commits?: CommitInfo[];
@@ -301,7 +310,16 @@ export interface MergePreviewRepo {
   /** Whether the acting account may complete pull requests in this repository. */
   canComplete: 'yes' | 'no' | 'unknown';
   checks: ChecksSummary;
-  pullRequest?: { ref: string; url: string; review?: ReviewVote | null };
+  pullRequest?: {
+    ref: string;
+    url: string;
+    review?: ReviewVote | null;
+    /** The pull request's state on the forge. */
+    state?: 'open' | 'closed' | 'merged';
+    /** Where the forge says the pull request points now. */
+    head?: string;
+    base?: string;
+  };
   error?: string;
 }
 

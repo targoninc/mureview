@@ -94,7 +94,7 @@ export async function ensureRepoPullRequests(
 export function attachKnownPullRequests(clients: Map<number, ForgeClient>, repos: RepoStatus[], prId: number | null): void {
   if (!prId) return;
   for (const repo of repos) {
-    if (repo.state !== 'open' || !repo.targetExists || repo.position < 0 || repo.pullRequest) continue;
+    if (repo.position < 0 || repo.pullRequest) continue;
     const row = repoPullRequest(prId, repo.connectionId, repo.repo, repo.position);
     const client = clients.get(repo.connectionId);
     if (row && client) repo.pullRequest = { ref: row.forge_pr_ref, url: client.pullRequestUrl(repo.repo, row.forge_pr_ref) };

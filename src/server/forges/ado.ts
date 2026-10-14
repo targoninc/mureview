@@ -833,6 +833,23 @@ export class AdoClient implements ForgeClient {
     });
   }
 
+  async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
+    try {
+      const pull = await this.request<{ status?: string; sourceRefName?: string; targetRefName?: string }>(
+        `${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`,
+      );
+      const strip = (name?: string) => (name ?? '').replace(/^refs\/heads\//, '');
+      return {
+        state: pull.status === 'completed' ? 'merged' : pull.status === 'abandoned' ? 'closed' : 'open',
+        head: strip(pull.sourceRefName),
+        base: strip(pull.targetRefName),
+      };
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   private identity: { id: string; uniqueName: string } | null = null;
 
   private async currentIdentity(): Promise<{ id: string; uniqueName: string }> {

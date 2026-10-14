@@ -431,6 +431,22 @@ export class GithubClient implements ForgeClient {
     });
   }
 
+  async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
+    try {
+      const pull = await this.request<{ state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }>(
+        `/repos/${repo}/pulls/${pullNumber(ref)}`,
+      );
+      return {
+        state: pull.merged ? 'merged' : pull.state === 'closed' ? 'closed' : 'open',
+        head: pull.head?.ref ?? '',
+        base: pull.base?.ref ?? '',
+      };
+    } catch (error) {
+      if (error instanceof ForgeError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
   private async currentLogin(): Promise<string> {
     if (this.login) return this.login;
     const user = await this.request<{ login: string }>('/user');
