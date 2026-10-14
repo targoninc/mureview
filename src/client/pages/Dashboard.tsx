@@ -10,6 +10,8 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
   const repos = [...new Map(reviewSet.repos.map((repo) => [`${repo.connectionId}:${repo.repo}`, repo])).values()];
   const layers = reviewSet.mode === 'stack' ? reviewSet.repos.length : 0;
   const branches = reviewSet.repos.filter((repo) => repo.branch);
+  const perRepoTargets = new Set(branches.map((repo) => repo.target ?? reviewSet.targetBranch));
+  const sharedTarget = perRepoTargets.size === 1 ? [...perRepoTargets][0] : null;
   // Each mode selects branches differently; show what actually happens.
   const branchPairs = branches
     .map((repo) => `${repo.host}/${repo.repo}: ${repo.branch} → ${repo.target ?? reviewSet.targetBranch}`)
@@ -36,7 +38,18 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
         <Label variant="secondary">per-repo</Label>
         <span className="row" title={branchPairs}>
           <GitBranchIcon size={14} />
-          {branches.length} {branches.length === 1 ? 'branch' : 'branches'} → their own targets
+          {branches.length === 1 ? (
+            <>
+              <span className="mono">{branches[0].branch}</span> →{' '}
+              <span className="mono">{branches[0].target ?? reviewSet.targetBranch}</span>
+            </>
+          ) : sharedTarget !== null ? (
+            <>
+              {branches.length} branches → <span className="mono">{sharedTarget}</span>
+            </>
+          ) : (
+            <>{branches.length} branches → their own targets</>
+          )}
         </span>
       </>
     );

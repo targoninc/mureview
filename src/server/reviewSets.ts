@@ -152,7 +152,12 @@ function parseInput(user: UserRow, body: unknown, resolveConnection?: Connection
   }
 
   const branchRegex = mode === 'pattern' ? requireString(record.branchRegex, 'branchRegex', 500) : '';
-  const targetBranch = requireString(record.targetBranch, 'targetBranch', 255);
+  // Per-repo sets target each repository separately, so the set-level target
+  // is optional there; pattern and stack sets need one.
+  const targetBranch =
+    mode === 'per-repo'
+      ? (typeof record.targetBranch === 'string' ? record.targetBranch.trim().slice(0, 255) : '')
+      : requireString(record.targetBranch, 'targetBranch', 255);
   return { name, repos, mode, branchRegex, targetBranch };
 }
 
