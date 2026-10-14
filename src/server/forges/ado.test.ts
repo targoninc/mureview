@@ -24,6 +24,10 @@ const server = Bun.serve({
     const url = new URL(req.url);
     requests.push(url.pathname + url.search);
 
+    if (url.pathname === '/_apis/identities/8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f') {
+      return Response.json({ id: '8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f', providerDisplayName: 'Lena Muster' });
+    }
+
     if (url.pathname.endsWith('/_apis/connectionData')) {
       const credentials = req.headers.get('authorization') ?? '';
       const plain = credentials === `Basic ${Buffer.from(':no-avatar').toString('base64')}`;
@@ -206,6 +210,15 @@ test('deletes a thread comment on the forge', async () => {
   await client.deleteComment('Proj/Repo', '7', '12:35');
   expect(requests[0]).toContain('/pullrequests/7/threads/12/comments/35');
   expect(requests[0]).toContain('api-version=7.1');
+});
+
+test('names the account behind a mention id', async () => {
+  requests.length = 0;
+  const mention = await client.resolveMention('8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f');
+  expect(mention).toEqual({ name: 'Lena Muster' });
+  expect(requests[0]).toContain('/_apis/identities/8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f');
+  expect(requests[0]).toContain('api-version=7.1');
+  expect(await client.resolveMention('not-an-id')).toBeNull();
 });
 
 test('finds the account avatar from connectionData', async () => {

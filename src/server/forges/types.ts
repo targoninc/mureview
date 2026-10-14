@@ -159,6 +159,11 @@ export interface ForgeClient {
   retargetPullRequest?(repo: string, ref: string, base: string): Promise<void>;
   /** Resolves or reactivates the thread a comment belongs to, when supported. */
   setCommentResolved?(repo: string, ref: string, commentId: string, resolved: boolean): Promise<void>;
+  /**
+   * Names the account behind a forge-specific mention, like Azure DevOps's
+   * `@<identity-id>`, so comment bodies can show it like the forge does.
+   */
+  resolveMention?(id: string): Promise<{ name: string; url?: string } | null>;
 }
 
 export function hostOf(baseUrl: string): string {

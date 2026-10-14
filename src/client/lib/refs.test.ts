@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test';
 import type { RepoStatus } from '../../shared/types';
-import { fallbackRefUrl, findItemRefs } from './refs';
+import { fallbackRefUrl, findItemRefs, findMentions } from './refs';
 
 const repo = (overrides: Partial<RepoStatus>): RepoStatus => ({
   connectionId: 1,
@@ -52,4 +52,18 @@ test('offsets survive other text and markdown images are not references', () => 
 
 test('no repository context means no references', () => {
   expect(findItemRefs('See #12.', undefined)).toEqual([]);
+});
+
+test('azure devops mentions are found, and only for azure devops', () => {
+  const ado = repo({ kind: 'ado', host: 'dev.azure.com', org: 'quibig', repo: 'NMD/SST_Massenimport' });
+  const mentions = findMentions('Thanks @<8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f> for the fix.', ado);
+  expect(mentions.map((mention) => [mention.text, mention.id])).toEqual([
+    ['@<8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f>', '8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f'],
+  ]);
+  expect(findMentions('Thanks @<8c8c8c8c-1a2b-3c4d-5e6f-7a8b9c0d1e2f>.', repo({}))).toEqual([]);
+  expect(findMentions('not a mention @<nope>', ado)).toEqual([]);
+});
+
+test('references inside code spans stay literal', () => {
+  expect(findItemRefs('use `#12` not #13', repo({ kind: 'forgejo' })).map((ref) => ref.text)).toEqual(['#13']);
 });

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import { GitPullRequestIcon, IssueOpenedIcon } from '@primer/octicons-react';
 import type { RefInfo, RepoStatus } from '../../../shared/types';
 import { api } from '../../lib/api';
-import { fallbackRefUrl, findItemRefs, type ItemRef } from '../../lib/refs';
+import { renderInlineMarkdown, splitCodeFences } from '../../lib/markdown';
+import { fallbackRefUrl, findItemRefs, findMentions, type ItemRef, type MentionRef } from '../../lib/refs';
 
 const resolutions = new Map<string, Promise<RefInfo | null>>();
 
@@ -15,6 +16,20 @@ function resolveRef(connectionId: number, repo: string, ref: ItemRef): Promise<R
       .then((result) => result.ref)
       .catch(() => null);
     resolutions.set(key, promise);
+  }
+  return promise;
+}
+
+const mentionResolutions = new Map<string, Promise<{ name: string; url?: string } | null>>();
+
+function resolveMention(connectionId: number, id: string): Promise<{ name: string; url?: string } | null> {
+  const key = `${connectionId}#${id}`;
+  let promise = mentionResolutions.get(key);
+  if (!promise) {
+    promise = api<{ mention: { name: string; url?: string } | null }>(`/mentions?connectionId=${connectionId}&id=${encodeURIComponent(id)}`)
+      .then((result) => result.mention)
+      .catch(() => null);
+    mentionResolutions.set(key, promise);
   }
   return promise;
 }
@@ -56,7 +71,35 @@ function RefChip({ connectionId, repo, ref, status }: { connectionId: number; re
   );
 }
 
-/** A comment body with references like `#123` and `!123` linked to their forge. */
+/** A forge mention like Azure DevOps's `@<identity-id>`, shown as `@Name`. */
+function MentionChip({ connectionId, mention }: { connectionId: number; mention: MentionRef }) {
+  const [info, setInfo] = useState<{ name: string; url?: string } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    resolveMention(connectionId, mention.id).then((result) => {
+      if (active) setInfo(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [connectionId, mention.id]);
+
+  if (!info) return <>{mention.text}</>;
+  const label = `@${info.name}`;
+  if (!info.url) return <span className="comment-mention">{label}</span>;
+  return (
+    <a className="comment-mention" href={info.url} target="_blank" rel="noreferrer">
+      {label}
+    </a>
+  );
+}
+
+/**
+ * A comment body: fenced code blocks, then the forge's own syntax — references
+ * like `#123` and `!123`, Azure DevOps `@<identity-id>` mentions — and the
+ * markdown around them.
+ */
 export function CommentBody({
   body,
   repos,
@@ -70,17 +113,55 @@ export function CommentBody({
     repos && repo.connectionId !== null && repo.repo
       ? repos.find((entry) => entry.connectionId === repo.connectionId && entry.repo === repo.repo)
       : undefined;
-  const refs = findItemRefs(body, status);
-  if (!refs.length || !status) return <>{body}</>;
 
-  const parts = [];
-  let cursor = 0;
-  for (const ref of refs) {
-    if (ref.start > cursor) parts.push(body.slice(cursor, ref.start));
-    parts.push(<RefChip key={ref.start} connectionId={status.connectionId} repo={status.repo} ref={ref} status={status} />);
-    cursor = ref.end;
-  }
-  if (cursor < body.length) parts.push(body.slice(cursor));
+  const nodes: ReactNode[] = [];
+  splitCodeFences(body).forEach((segment, segmentIndex) => {
+    if (segment.kind === 'code') {
+      nodes.push(
+        <pre className="comment-code-block" key={`code-${segmentIndex}`}>
+          <code>{segment.code}</code>
+        </pre>,
+      );
+      return;
+    }
+    if (!status) {
+      nodes.push(<Fragment key={`text-${segmentIndex}`}>{renderInlineMarkdown(segment.text, `s${segmentIndex}`)}</Fragment>);
+      return;
+    }
 
-  return <>{parts}</>;
+    const tokens: (ItemRef | MentionRef)[] = [...findItemRefs(segment.text, status), ...findMentions(segment.text, status)].sort(
+      (a, b) => a.start - b.start,
+    );
+    let cursor = 0;
+    tokens.forEach((token, tokenIndex) => {
+      if (token.start > cursor) {
+        nodes.push(
+          <Fragment key={`t-${segmentIndex}-${tokenIndex}`}>
+            {renderInlineMarkdown(segment.text.slice(cursor, token.start), `s${segmentIndex}t${tokenIndex}`)}
+          </Fragment>,
+        );
+      }
+      if ('type' in token) {
+        nodes.push(
+          <RefChip
+            key={`ref-${segmentIndex}-${tokenIndex}`}
+            connectionId={status.connectionId}
+            repo={status.repo}
+            ref={token}
+            status={status}
+          />,
+        );
+      } else {
+        nodes.push(<MentionChip key={`mention-${segmentIndex}-${tokenIndex}`} connectionId={status.connectionId} mention={token} />);
+      }
+      cursor = token.end;
+    });
+    if (cursor < segment.text.length) {
+      nodes.push(
+        <Fragment key={`tail-${segmentIndex}`}>{renderInlineMarkdown(segment.text.slice(cursor), `s${segmentIndex}tail`)}</Fragment>,
+      );
+    }
+  });
+
+  return <>{nodes}</>;
 }

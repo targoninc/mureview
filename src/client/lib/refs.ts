@@ -21,13 +21,43 @@ export function findItemRefs(body: string, repo: RepoStatus | undefined): ItemRe
   const refs: ItemRef[] = [];
 
   if (repo.kind === 'ado') {
-    collect(body, /!(\d+)/g, (match) => ({ id: match[1], type: 'pr' }), refs);
-    collect(body, /#(\d+)/g, (match) => ({ id: match[1], type: 'work' }), refs);
+    collect<ItemRef>(body, /!(\d+)/g, (match) => ({ id: match[1], type: 'pr' }), refs);
+    collect<ItemRef>(body, /#(\d+)/g, (match) => ({ id: match[1], type: 'work' }), refs);
   } else {
-    collect(body, /#(\d+)/g, (match) => ({ id: match[1], type: 'issue' }), refs);
+    collect<ItemRef>(body, /#(\d+)/g, (match) => ({ id: match[1], type: 'issue' }), refs);
   }
 
   return refs.sort((a, b) => a.start - b.start);
+}
+
+export interface MentionRef {
+  /** Start offset in the body. */
+  start: number;
+  /** End offset (exclusive). */
+  end: number;
+  /** The text as written, e.g. "@<8c8c8c8c-…>". */
+  text: string;
+  id: string;
+}
+
+/**
+ * Azure DevOps writes mentions as `@<identity-id>`; the id names the account.
+ * Other forges write plain `@handle` text, which needs no resolution.
+ */
+export function findMentions(body: string, repo: RepoStatus | undefined): MentionRef[] {
+  if (!repo || repo.kind !== 'ado') return [];
+  const mentions: MentionRef[] = [];
+  collect<MentionRef>(body, /@<([0-9a-fA-F-]{36})>/g, (match) => ({ id: match[1] }), mentions);
+  return mentions;
+}
+
+/** Whether an offset sits inside an inline code span (odd backticks before it). */
+function inCodeSpan(body: string, index: number): boolean {
+  let backticks = 0;
+  for (let cursor = 0; cursor < index; cursor++) {
+    if (body[cursor] === '`') backticks++;
+  }
+  return backticks % 2 === 1;
 }
 
 /**
@@ -43,13 +73,15 @@ export function fallbackRefUrl(ref: ItemRef, repo: RepoStatus): string | null {
   return ref.type === 'pr' ? `${base}/_git/${name}/pullrequest/${ref.id}` : `${base}/_workitems/edit/${ref.id}`;
 }
 
-function collect(
+function collect<T extends { start: number; end: number; text: string }>(
   body: string,
   pattern: RegExp,
-  build: (match: RegExpExecArray) => Pick<ItemRef, 'id' | 'type'>,
-  refs: ItemRef[],
+  build: (match: RegExpExecArray) => Omit<T, 'start' | 'end' | 'text'>,
+  refs: T[],
 ): void {
   for (let match = pattern.exec(body); match; match = pattern.exec(body)) {
-    refs.push({ start: match.index, end: match.index + match[0].length, text: match[0], ...build(match) });
+    // A reference inside `code` stays literal.
+    if (inCodeSpan(body, match.index)) continue;
+    refs.push({ start: match.index, end: match.index + match[0].length, text: match[0], ...build(match) } as T);
   }
 }

@@ -228,8 +228,7 @@ export class AdoClient implements ForgeClient {
    * organization-scoped tokens, which are the default when creating a PAT.
    * connectionData is scoped to the organization and works for both kinds.
    */
-  async currentUser(): Promise<{ id: string; name: string; avatarUrl: string }> {
-    const data = await this.request<{
+  async currentUser(): Promise<{ id: string; name: string; avatarUrl: string }> {    const data = await this.request<{
       authenticatedUser?: {
         id: string;
         providerDisplayName?: string;
@@ -673,6 +672,22 @@ export class AdoClient implements ForgeClient {
       pull.repository?.webUrl ?? (org && project && name ? `https://${this.host}/${org}/${encodeURIComponent(project)}/_git/${name}` : null);
     if (!web) return null;
     return { url: `${web.replace(/\/+$/, '')}/pullrequest/${pull.pullRequestId ?? id}`, title: pull.title ?? '', kind: 'pr' };
+  }
+
+  /**
+   * Azure DevOps stores mentions as `@<identity-id>`; the identities endpoint
+   * names the account so comments can show `@Display Name` like the web UI.
+   */
+  async resolveMention(id: string): Promise<{ name: string; url?: string } | null> {
+    if (!/^[0-9a-fA-F-]{36}$/.test(id)) return null;
+    const identity = await this.request<{
+      providerDisplayName?: string;
+      customDisplayName?: string;
+      properties?: { Account?: { $value?: string } };
+    }>(`${this.baseUrl}/_apis/identities/${id}?api-version=7.1`);
+    const name = identity.customDisplayName ?? identity.providerDisplayName ?? identity.properties?.Account?.$value;
+    if (!name) return null;
+    return { name };
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
