@@ -11,6 +11,7 @@ import { ReviewSetPage } from './pages/ReviewSetPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { api, basename, post } from './lib/api';
 import { AppContext } from './lib/appContext';
+import { monoFontFamily } from '../shared/fonts';
 
 export function App() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -24,6 +25,12 @@ export function App() {
   }, []);
 
   useEffect(refresh, [refresh]);
+
+  // The user's monospace font drives every code surface, including the
+  // diffs library through --diffs-font-family.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--font-mono', monoFontFamily(me?.user?.monoFont));
+  }, [me]);
 
   const signOut = useCallback(() => {
     post('/auth/logout', {}).catch(() => undefined);

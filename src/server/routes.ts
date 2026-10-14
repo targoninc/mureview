@@ -19,6 +19,7 @@ import { createCommentRoute, deleteCommentRoute, listCommentsRoute, resolveComme
 import { forgeAvatarRoute } from './avatars';
 import { resolveMentionRoute, resolveReferenceRoute } from './refs';
 import { config } from './config';
+import { updatePreferences } from './preferences';
 import { mergeReviewSet, streamMergePreview } from './merge';
 import { listAvailableRepos, listRepoBranches } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
@@ -42,6 +43,7 @@ import { listWarnings } from './warnings';
 export const api = new Router();
 
 api.get('/api/me', me, true);
+api.put('/api/me/preferences', updatePreferences);
 api.get('/api/warnings', listWarnings);
 api.post('/api/auth/register', register, true);
 api.post('/api/auth/login', passwordLogin, true);

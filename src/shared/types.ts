@@ -6,6 +6,8 @@ export interface User {
   id: number;
   name: string;
   avatarUrl: string;
+  /** Bundled monospace font id; null means the default. */
+  monoFont: string | null;
 }
 
 export interface IdentityInfo {

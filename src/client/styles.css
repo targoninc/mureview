@@ -2,6 +2,11 @@ html {
   color-scheme: dark;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif, 'Apple Color Emoji',
     'Segoe UI Emoji';
+  /* Bundled fonts live in src/client/fonts; the app swaps this variable for
+     the user's choice from the settings. */
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  /* The diffs library reads its own variables; keep code in the chosen font. */
+  --diffs-font-family: var(--font-mono);
   /* File icon colours, copied from @pierre/trees' colored icon theme. */
   --trees-icon-gray: light-dark(#84848a, #adadb1);
   --trees-icon-red: light-dark(#d52c36, #ff6762);
@@ -1429,4 +1434,69 @@ a.comment-mention:hover {
   .pr-header-diff-row {
     width: 100%;
   }
+}
+
+/* Monospace font picker in the settings. */
+.font-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.font-options-label {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+}
+
+.font-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background-color: var(--bgColor-default);
+  color: var(--fgColor-default);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.font-option:hover:not(:disabled) {
+  background-color: var(--bgColor-neutral-muted);
+}
+
+.font-option[aria-pressed='true'] {
+  border-color: var(--borderColor-accent-emphasis);
+  box-shadow: inset 0 0 0 1px var(--borderColor-accent-emphasis);
+}
+
+.font-option:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.font-option-check {
+  flex: none;
+  width: 16px;
+  color: var(--fgColor-accent);
+}
+
+.font-option-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.font-option-preview {
+  margin-left: auto;
+  min-width: 0;
+  color: var(--fgColor-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

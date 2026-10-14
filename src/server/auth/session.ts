@@ -6,7 +6,7 @@ import { HttpError, clearCookie, parseCookies, setCookie } from '../http';
 import type { Ctx } from '../router';
 
 export function publicUser(row: UserRow): User {
-  return { id: row.id, name: row.name, avatarUrl: row.avatar_url };
+  return { id: row.id, name: row.name, avatarUrl: row.avatar_url, monoFont: row.mono_font ?? null };
 }
 
 export function getSessionUser(req: Request): UserRow | null {

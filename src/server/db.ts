@@ -15,6 +15,7 @@ export interface UserRow {
   id: number;
   name: string;
   avatar_url: string;
+  mono_font: string | null;
   created_at: string;
 }
 
@@ -590,7 +591,11 @@ if (userVersion() < 12) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
-db.exec('PRAGMA user_version = 12;');
+const userColumns = hasTable('users') ? db.query<{ name: string }, []>('PRAGMA table_info(users)').all() : [];
+if (userColumns.length && !userColumns.some((column) => column.name === 'mono_font')) {
+  db.exec('ALTER TABLE users ADD COLUMN mono_font TEXT');
+}
+db.exec('PRAGMA user_version = 13;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

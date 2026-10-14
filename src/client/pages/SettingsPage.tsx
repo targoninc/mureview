@@ -1,8 +1,9 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Avatar, Button, Flash, Heading, Spinner, useConfirm } from '@primer/react';
-import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
+import { CheckIcon, ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
-import { api, basePath, del } from '../lib/api';
+import { DEFAULT_MONO_FONT, MONO_FONTS, SYSTEM_MONO_FONT, monoFontFamily, type MonoFontOption } from '../../shared/fonts';
+import { api, basePath, del, put } from '../lib/api';
 import { connectionAvatarUrl } from '../lib/format';
 import { AdoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail, serviceNames } from '../components/ServiceIcon';
@@ -37,6 +38,7 @@ export function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState<ConnectTarget | null>(null);
+  const [savingFont, setSavingFont] = useState<string | null>(null);
   const confirm = useConfirm();
 
   const load = useCallback(() => {
@@ -60,7 +62,43 @@ export function SettingsPage() {
     window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
   }, []);
 
+  const chooseFont = async (font: MonoFontOption) => {
+    if (savingFont) return;
+    setSavingFont(font.id);
+    setError(null);
+    try {
+      await put('/me/preferences', { monoFont: font.id });
+      document.documentElement.style.setProperty('--font-mono', monoFontFamily(font.id));
+      setMe((current) =>
+        current ? { ...current, user: current.user ? { ...current.user, monoFont: font.id } : null } : current,
+      );
+      setNotice(`${font.label} is now the monospace font.`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSavingFont(null);
+    }
+  };
+
   if (!me) return <div className="centered">{error ? <Flash variant="danger">{error}</Flash> : <Spinner aria-label="Loading" />}</div>;
+
+  const currentFont = me.user?.monoFont ?? DEFAULT_MONO_FONT;
+  const fontOption = (font: MonoFontOption) => (
+    <button
+      type="button"
+      key={font.id}
+      className="font-option"
+      aria-pressed={currentFont === font.id}
+      disabled={savingFont !== null}
+      onClick={() => chooseFont(font)}
+    >
+      <span className="font-option-check">{currentFont === font.id ? <CheckIcon /> : null}</span>
+      <span className="font-option-name">{font.label}</span>
+      <span className="font-option-preview" style={{ fontFamily: font.family }}>
+        const total = items.length + 1; // 0123456789
+      </span>
+    </button>
+  );
 
   const hasGithub = me.connections.some((connection) => connection.kind === 'github');
   const connectOptions: ConnectOption[] = [
@@ -240,6 +278,23 @@ export function SettingsPage() {
                 ) : null}
               </Fragment>
             ))}
+          </div>
+        </div>
+
+        <div className="stack">
+          <Heading as="h2" variant="small">
+            Monospace font
+          </Heading>
+          <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+            Used for diffs, file paths and code. All fonts are bundled with mureview, so nothing is loaded from
+            another site.
+          </span>
+          <div className="font-options">
+            {MONO_FONTS.filter((font) => !font.niche).map(fontOption)}
+            <span className="font-options-label">More fonts</span>
+            {MONO_FONTS.filter((font) => font.niche).map(fontOption)}
+            <span className="font-options-label">Fallback</span>
+            {fontOption(SYSTEM_MONO_FONT)}
           </div>
         </div>
 

@@ -5,6 +5,7 @@ import '@primer/primitives/dist/css/base/size/size.css';
 import '@primer/primitives/dist/css/base/typography/typography.css';
 import '@primer/primitives/dist/css/functional/themes/light.css';
 import '@primer/primitives/dist/css/functional/themes/dark.css';
+import './fonts/fonts.css';
 import './styles.css';
 import { App } from './App';
 
