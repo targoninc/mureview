@@ -1201,3 +1201,62 @@ a.comment-mention:hover {
 .comment-link {
   color: var(--fgColor-accent);
 }
+
+/* Markdown comment bodies. */
+.comment-markdown {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.comment-markdown > :first-child {
+  margin-top: 0;
+}
+
+.comment-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.comment-markdown h1,
+.comment-markdown h2,
+.comment-markdown h3,
+.comment-markdown h4,
+.comment-markdown h5,
+.comment-markdown h6 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.comment-markdown ul,
+.comment-markdown ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.comment-markdown li {
+  margin: 2px 0;
+}
+
+.comment-markdown blockquote {
+  margin: 6px 0;
+  padding: 0 10px;
+  border-left: 3px solid var(--borderColor-muted);
+  color: var(--fgColor-muted);
+}
+
+.comment-markdown table {
+  margin: 6px 0;
+  border-collapse: collapse;
+}
+
+.comment-markdown th,
+.comment-markdown td {
+  padding: 3px 8px;
+  border: 1px solid var(--borderColor-muted);
+}
+
+.comment-markdown hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--borderColor-muted);
+}

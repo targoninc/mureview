@@ -1,9 +1,12 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import Markdown, { defaultUrlTransform } from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
+import remarkGfm from 'remark-gfm';
 import { GitPullRequestIcon, IssueOpenedIcon } from '@primer/octicons-react';
 import type { RefInfo, RepoStatus } from '../../../shared/types';
 import { api } from '../../lib/api';
-import { renderInlineMarkdown, splitCodeFences } from '../../lib/markdown';
-import { fallbackRefUrl, findItemRefs, findMentions, type ItemRef, type MentionRef } from '../../lib/refs';
+import { MENTION_SCHEME, REF_SCHEME, preprocessBody } from '../../lib/markdown';
+import { fallbackRefUrl, type ItemRef, type MentionRef } from '../../lib/refs';
 
 const resolutions = new Map<string, Promise<RefInfo | null>>();
 
@@ -95,10 +98,36 @@ function MentionChip({ connectionId, mention }: { connectionId: number; mention:
   );
 }
 
+/** Links the preprocessor rewrote become chips; the rest stay ordinary links. */
+function BodyLink({ href, children, status }: { href?: string; children?: ReactNode; status: RepoStatus | undefined }) {
+  if (href?.startsWith(REF_SCHEME)) {
+    const [type, id] = href.slice(REF_SCHEME.length).split(':');
+    if (!status || !id || (type !== 'pr' && type !== 'issue' && type !== 'work')) return <>{children}</>;
+    return (
+      <RefChip
+        connectionId={status.connectionId}
+        repo={status.repo}
+        ref={{ start: 0, end: 0, text: String(children ?? ''), id, type }}
+        status={status}
+      />
+    );
+  }
+  if (href?.startsWith(MENTION_SCHEME)) {
+    if (!status) return <>{children}</>;
+    return <MentionChip connectionId={status.connectionId} mention={{ start: 0, end: 0, text: String(children ?? ''), id: href.slice(MENTION_SCHEME.length) }} />;
+  }
+  if (!href) return <>{children}</>;
+  return (
+    <a className="comment-link" href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  );
+}
+
 /**
- * A comment body: fenced code blocks, then the forge's own syntax — references
- * like `#123` and `!123`, Azure DevOps `@<identity-id>` mentions — and the
- * markdown around them.
+ * A comment body rendered as the markdown it was written in (GitHub-flavoured,
+ * with single newlines as breaks), with the forge's references and mentions
+ * resolved into chips.
  */
 export function CommentBody({
   body,
@@ -114,54 +143,22 @@ export function CommentBody({
       ? repos.find((entry) => entry.connectionId === repo.connectionId && entry.repo === repo.repo)
       : undefined;
 
-  const nodes: ReactNode[] = [];
-  splitCodeFences(body).forEach((segment, segmentIndex) => {
-    if (segment.kind === 'code') {
-      nodes.push(
-        <pre className="comment-code-block" key={`code-${segmentIndex}`}>
-          <code>{segment.code}</code>
-        </pre>,
-      );
-      return;
-    }
-    if (!status) {
-      nodes.push(<Fragment key={`text-${segmentIndex}`}>{renderInlineMarkdown(segment.text, `s${segmentIndex}`)}</Fragment>);
-      return;
-    }
+  const markdown = useMemo(() => preprocessBody(body, status), [body, status]);
+  const components = useMemo(
+    () => ({ a: (props: { href?: string; children?: ReactNode }) => <BodyLink {...props} status={status} /> }),
+    [status],
+  );
 
-    const tokens: (ItemRef | MentionRef)[] = [...findItemRefs(segment.text, status), ...findMentions(segment.text, status)].sort(
-      (a, b) => a.start - b.start,
-    );
-    let cursor = 0;
-    tokens.forEach((token, tokenIndex) => {
-      if (token.start > cursor) {
-        nodes.push(
-          <Fragment key={`t-${segmentIndex}-${tokenIndex}`}>
-            {renderInlineMarkdown(segment.text.slice(cursor, token.start), `s${segmentIndex}t${tokenIndex}`)}
-          </Fragment>,
-        );
-      }
-      if ('type' in token) {
-        nodes.push(
-          <RefChip
-            key={`ref-${segmentIndex}-${tokenIndex}`}
-            connectionId={status.connectionId}
-            repo={status.repo}
-            ref={token}
-            status={status}
-          />,
-        );
-      } else {
-        nodes.push(<MentionChip key={`mention-${segmentIndex}-${tokenIndex}`} connectionId={status.connectionId} mention={token} />);
-      }
-      cursor = token.end;
-    });
-    if (cursor < segment.text.length) {
-      nodes.push(
-        <Fragment key={`tail-${segmentIndex}`}>{renderInlineMarkdown(segment.text.slice(cursor), `s${segmentIndex}tail`)}</Fragment>,
-      );
-    }
-  });
-
-  return <>{nodes}</>;
+  return (
+    <div className="comment-markdown">
+      <Markdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        // Our own chip schemes must survive the default url sanitiser.
+        urlTransform={(url) => (url.startsWith(REF_SCHEME) || url.startsWith(MENTION_SCHEME) ? url : defaultUrlTransform(url))}
+        components={components}
+      >
+        {markdown}
+      </Markdown>
+    </div>
+  );
 }

@@ -680,14 +680,23 @@ export class AdoClient implements ForgeClient {
    */
   async resolveMention(id: string): Promise<{ name: string; url?: string } | null> {
     if (!/^[0-9a-fA-F-]{36}$/.test(id)) return null;
-    const identity = await this.request<{
-      providerDisplayName?: string;
-      customDisplayName?: string;
-      properties?: { Account?: { $value?: string } };
-    }>(`${this.baseUrl}/_apis/identities/${id}?api-version=7.1`);
-    const name = identity.customDisplayName ?? identity.providerDisplayName ?? identity.properties?.Account?.$value;
-    if (!name) return null;
-    return { name };
+    // The identities API answered different api-versions over time; try the
+    // plain one first and the preview one if the organization rejects it.
+    for (const version of ['7.1', '7.1-preview.1']) {
+      try {
+        const identity = await this.request<{
+          providerDisplayName?: string;
+          customDisplayName?: string;
+          properties?: { Account?: { $value?: string } };
+        }>(`${this.baseUrl}/_apis/identities/${id}?api-version=${version}`);
+        const name = identity.customDisplayName ?? identity.providerDisplayName ?? identity.properties?.Account?.$value;
+        if (name) return { name };
+        return null;
+      } catch (error) {
+        console.error(`Could not resolve the mention ${id} (api-version ${version}):`, error);
+      }
+    }
+    return null;
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
