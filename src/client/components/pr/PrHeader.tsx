@@ -73,7 +73,9 @@ export function PrHeader({
   const state = stateVariant(pr.state);
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
-  const skipped = pr.repos.reduce((count, repo) => count + (repo.files?.filter((file) => !file.patch).length ?? 0), 0);
+  const skippedFiles = pr.repos.flatMap((repo) =>
+    (repo.files ?? []).filter((file) => !file.patch).map((file) => `${repo.host}/${repo.repo}: ${file.path}`),
+  );
   const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
 
   return (
@@ -138,7 +140,14 @@ export function PrHeader({
                 )}
               </>
             )}
-            {skipped > 0 ? ` · ${skipped} non-text files skipped` : ''}
+            {skippedFiles.length > 0 ? (
+              <>
+                {' · '}
+                <span title={skippedFiles.join('\n')} style={{ cursor: 'help' }}>
+                  {skippedFiles.length} non-text {skippedFiles.length === 1 ? 'file' : 'files'} skipped
+                </span>
+              </>
+            ) : null}
             {!owned && detail.owner ? ` · shared by ${detail.owner.name}` : ''}
           </span>
         </div>
