@@ -65,7 +65,7 @@ export function FontPickerDialog({
   return (
     <Dialog
       title="Monospace font"
-      width="xlarge"
+      width="90vw"
       height="auto"
       onClose={onClose}
       footerButtons={[
