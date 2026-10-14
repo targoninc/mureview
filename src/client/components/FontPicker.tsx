@@ -98,6 +98,7 @@ export function FontPickerDialog({
                     type="button"
                     className="font-picker-item"
                     aria-pressed={font.id === current}
+                    data-preview={font.id === preview.id ? 'true' : undefined}
                     onMouseEnter={() => setPreviewId(font.id)}
                     onFocus={() => setPreviewId(font.id)}
                     onClick={() => setPreviewId(font.id)}

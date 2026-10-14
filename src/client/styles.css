@@ -1493,9 +1493,15 @@ a.comment-mention:hover {
   background-color: var(--bgColor-neutral-muted);
 }
 
-.font-picker-item[aria-pressed='true'] {
+/* The font shown in the preview is the highlighted row; the active font
+   keeps its check mark. */
+.font-picker-item[data-preview='true'] {
   border-color: var(--borderColor-accent-emphasis);
   background-color: var(--bgColor-accent-muted);
+}
+
+.font-picker-item[aria-pressed='true'] .font-picker-name {
+  font-weight: 600;
 }
 
 .font-picker-check {
