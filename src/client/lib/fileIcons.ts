@@ -1,11 +1,32 @@
 import { createFileTreeIconResolver, getBuiltInSpriteSheet } from '@pierre/trees';
 
 /**
+ * Icons the built-in set is missing. Each symbol is appended to the injected
+ * sprite and mapped below; the C# mark is the MIT-licensed one from
+ * vscode-material-icon-theme, without its fill so the themed colour applies.
+ */
+const customSymbols = `
+  <symbol id="mureview-icon-csharp" viewBox="0 0 32 32"><path d="M30 14v-2h-2V8h-2v4h-2V8h-2v4h-2v2h2v2h-2v2h2v4h2v-4h2v4h2v-4h2v-2h-2v-2Zm-4 2h-2v-2h2Zm-12.437 6A5.57 5.57 0 0 1 8 16.437v-2.873A5.57 5.57 0 0 1 13.563 8H18V2h-4.437A11.563 11.563 0 0 0 2 13.563v2.873A11.564 11.564 0 0 0 13.563 28H18v-6Z"/></symbol>
+`;
+
+const customColors: Record<string, string> = {
+  'mureview-icon-csharp': 'var(--trees-icon-purple)',
+};
+
+/**
  * The file icons T3 Code uses: the colored "complete" set from
  * @pierre/trees. The sprite is injected into the document once and the
  * resolver maps a file path to its icon symbol and colour.
  */
-const resolver = createFileTreeIconResolver({ set: 'complete', colored: true });
+const resolver = createFileTreeIconResolver({
+  set: 'complete',
+  colored: true,
+  // The complete set knows no C#; .cs (and its script variant) get its mark.
+  byFileExtension: {
+    cs: { name: 'mureview-icon-csharp' },
+    csx: { name: 'mureview-icon-csharp' },
+  },
+});
 let spriteInjected = false;
 
 export function ensureFileIconSprite(): void {
@@ -13,7 +34,7 @@ export function ensureFileIconSprite(): void {
   spriteInjected = true;
   const holder = document.createElement('div');
   holder.style.display = 'none';
-  holder.innerHTML = getBuiltInSpriteSheet('complete');
+  holder.innerHTML = getBuiltInSpriteSheet('complete').replace('</svg>', `${customSymbols}</svg>`);
   document.body.appendChild(holder);
 }
 
@@ -79,5 +100,8 @@ export interface FileIcon {
 /** The icon symbol and colour for a file path. */
 export function fileIconFor(path: string): FileIcon {
   const icon = resolver.resolveIcon('file-tree-icon-file', path);
-  return { name: icon.name, color: tokenColors[icon.token ?? 'default'] ?? tokenColors.default };
+  const color = icon.token
+    ? (tokenColors[icon.token] ?? tokenColors.default)
+    : (customColors[icon.name] ?? tokenColors.default);
+  return { name: icon.name, color };
 }
