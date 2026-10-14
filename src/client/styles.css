@@ -1288,3 +1288,72 @@ a.comment-mention:hover {
   color: var(--fgColor-muted);
   font-family: var(--font-mono);
 }
+
+/* Single file view: one diff at a time with large previous/next buttons. */
+.single-file-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.single-file-nav {
+  padding: 8px 12px;
+  background-color: var(--bgColor-muted);
+}
+
+.single-file-nav:first-child {
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.single-file-nav:last-child {
+  border-top: 1px solid var(--borderColor-default);
+}
+
+.single-file-nav-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background-color: var(--bgColor-default);
+  color: var(--fgColor-default);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  text-align: left;
+  cursor: pointer;
+}
+
+.single-file-nav-button:hover:not(:disabled) {
+  background-color: var(--bgColor-neutral-muted);
+  border-color: var(--borderColor-accent-emphasis);
+}
+
+.single-file-nav-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.single-file-nav-label {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.single-file-nav-path {
+  color: var(--fgColor-muted);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.single-file-nav-count {
+  margin-left: auto;
+  color: var(--fgColor-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}

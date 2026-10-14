@@ -8,6 +8,7 @@ import { Button, Checkbox, Dialog, IconButton, Label } from '@primer/react';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  ChevronUpIcon,
   CommentDiscussionIcon,
   FileDiffIcon,
   GitCommitIcon,
@@ -130,6 +131,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>(
     () => (window.localStorage.getItem('mureview:diff-style') === 'split' ? 'split' : 'unified'),
   );
+  const [fileMode, setFileMode] = useState<'all' | 'single'>(
+    () => (window.localStorage.getItem('mureview:file-mode') === 'single' ? 'single' : 'all'),
+  );
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const toggleDiffStyle = useCallback(() => {
     setDiffStyle((current) => {
       const next = current === 'unified' ? 'split' : 'unified';
@@ -267,38 +272,64 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     return () => clearTimeout(timer);
   }, [ordered, updateVisibleItems]);
 
+  // The single file view shows one file; focus follows the tree, the deep
+  // link and the previous/next buttons.
+  const focusedEntry = ordered.find((entry) => entry.id === focusedId);
+  const activeEntry = focusedEntry ?? ordered[0];
+  const activeIndex = activeEntry ? ordered.indexOf(activeEntry) : -1;
+  const previousEntry = activeIndex > 0 ? ordered[activeIndex - 1] : undefined;
+  const nextEntry = activeIndex >= 0 && activeIndex < ordered.length - 1 ? ordered[activeIndex + 1] : undefined;
+  const toggleFileMode = useCallback(() => {
+    setFileMode((current) => {
+      const next = current === 'all' ? 'single' : 'all';
+      window.localStorage.setItem('mureview:file-mode', next);
+      if (next === 'single') {
+        const visible = ordered.find((entry) => visibleItems.has(entry.id));
+        setFocusedId(visible?.id ?? ordered[0]?.id ?? null);
+      }
+      return next;
+    });
+  }, [ordered, visibleItems]);
+
+  const treeVisibleItems = fileMode === 'single' && activeEntry ? new Set([activeEntry.id]) : visibleItems;
+
   const parsedById = useMemo(() => new Map(parsed.map((entry) => [entry.id, entry])), [parsed]);
   const parsedRef = useRef(parsedById);
   parsedRef.current = parsedById;
 
   const threadsByItem = useMemo(() => groupThreads(comments), [comments]);
 
-  const items = useMemo<CodeViewItem<AnnotationMeta>[]>(
-    () =>
-      ordered.map((entry) => {
-        const threads = threadsByItem.get(entry.id) ?? [];
-        const annotations: DiffLineAnnotation<AnnotationMeta>[] = threads.map((thread) => ({
-          side: thread.side,
-          lineNumber: thread.line,
-          metadata: thread,
-        }));
-        if (draft?.itemId === entry.id) {
-          const draftMeta: DraftMeta = {
-            draft: true,
-            threadKey: `${entry.id}:draft`,
-            connectionId: entry.connectionId,
-            repo: entry.repo,
-            position: entry.position,
-            path: entry.path,
-            side: draft.side,
-            line: draft.line,
-            comments: [],
-          };
-          annotations.push({ side: draft.side, lineNumber: draft.line, metadata: draftMeta });
-        }
-        return { id: entry.id, type: 'diff', fileDiff: entry.fileDiff, annotations, version: threadVersion(threads, draft?.itemId ?? null, entry.id) };
-      }),
-    [ordered, threadsByItem, draft],
+  const buildItem = useCallback(
+    (entry: (typeof ordered)[number]): CodeViewItem<AnnotationMeta> => {
+      const threads = threadsByItem.get(entry.id) ?? [];
+      const annotations: DiffLineAnnotation<AnnotationMeta>[] = threads.map((thread) => ({
+        side: thread.side,
+        lineNumber: thread.line,
+        metadata: thread,
+      }));
+      if (draft?.itemId === entry.id) {
+        const draftMeta: DraftMeta = {
+          draft: true,
+          threadKey: `${entry.id}:draft`,
+          connectionId: entry.connectionId,
+          repo: entry.repo,
+          position: entry.position,
+          path: entry.path,
+          side: draft.side,
+          line: draft.line,
+          comments: [],
+        };
+        annotations.push({ side: draft.side, lineNumber: draft.line, metadata: draftMeta });
+      }
+      return { id: entry.id, type: 'diff', fileDiff: entry.fileDiff, annotations, version: threadVersion(threads, draft?.itemId ?? null, entry.id) };
+    },
+    [threadsByItem, draft],
+  );
+
+  const items = useMemo<CodeViewItem<AnnotationMeta>[]>(() => ordered.map(buildItem), [ordered, buildItem]);
+  const singleItems = useMemo<CodeViewItem<AnnotationMeta>[]>(
+    () => (activeEntry ? [buildItem(activeEntry)] : []),
+    [activeEntry, buildItem],
   );
 
   const options = useMemo<CodeViewReactOptions<AnnotationMeta, undefined>>(
@@ -430,6 +461,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     const file = params.get('file');
     if (!file || !parsed.some((entry) => entry.id === file)) return;
     restoredFromUrl.current = true;
+    if (fileMode === 'single') {
+      setFocusedId(file);
+      return;
+    }
     const offset = Number(params.get('y') ?? 0);
     const timer = window.setTimeout(() => {
       codeViewRef.current?.scrollTo({ type: 'item', id: file, align: 'start' });
@@ -441,13 +476,37 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       }
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [hasFiles, parsed]);
+  }, [hasFiles, parsed, fileMode]);
   const reviewedCount = parsed.filter((entry) => reviewed.has(entry.id)).length;
   const commitCount = pr.repos.reduce((count, repo) => count + (repo.commits?.length ?? 0), 0);
   const checksByRepo = useMemo(() => new Map(checks.map((entry) => [`${entry.connectionId}:${entry.repo}`, entry.checks])), [checks]);
   const checksFailing = checks.some((entry) => entry.checks.state === 'failure');
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
   const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest && repo.position >= 0);
+
+  const fileNavButton = (entry: (typeof ordered)[number] | undefined, direction: 'previous' | 'next') => (
+    <button
+      type="button"
+      className="single-file-nav-button"
+      disabled={!entry}
+      aria-label={entry ? `${direction === 'previous' ? 'Previous' : 'Next'} file: ${entry.path}` : `No ${direction} file`}
+      onClick={() => entry && setFocusedId(entry.id)}
+    >
+      {direction === 'previous' ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
+      <span className="single-file-nav-label">{direction === 'previous' ? 'Previous file' : 'Next file'}</span>
+      {entry ? <span className="single-file-nav-path">{entry.path}</span> : null}
+      <span className="single-file-nav-count">
+        {activeIndex + 1} / {ordered.length}
+      </span>
+    </button>
+  );
+
+  const codeViewStyle = {
+    height: '100%',
+    overflow: 'auto',
+    '--diffs-font-size': '15px',
+    '--diffs-line-height': '22px',
+  } as CSSProperties;
 
   const openPanel = (next: 'files' | 'commits' | 'conversation') => {
     setTab(next);
@@ -464,9 +523,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           entries={view === 'combined' ? (pr.combined ?? []) : pr.repos}
           stacked={Boolean(pr.combined)}
           reviewedItems={reviewed}
-          visibleItems={visibleItems}
+          visibleItems={treeVisibleItems}
           onSelectItem={(itemId) => {
-            codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });
+            if (fileMode === 'single') setFocusedId(itemId);
+            else codeViewRef.current?.scrollTo({ type: 'item', id: itemId, align: 'start' });
             if (isMobile) setPanel(null);
           }}
           onSetReviewed={applyReviewed}
@@ -506,6 +566,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         commitCount={commitCount}
         diffStyle={diffStyle}
         onToggleDiffStyle={toggleDiffStyle}
+        fileMode={fileMode}
+        onToggleFileMode={toggleFileMode}
         progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}
         onOpenCommits={() => openPanel('commits')}
@@ -576,23 +638,35 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           ) : null}
           <div className="pr-diffs">
             {hasFiles ? (
-              <CodeView
-                ref={codeViewRef}
-                items={items}
-                options={options}
-                containerRef={scrollRef}
-                onScroll={updateVisibleItems}
-                renderAnnotation={renderAnnotation}
-                renderHeaderMetadata={renderHeaderMetadata}
-                style={
-                  {
-                    height: '100%',
-                    overflow: 'auto',
-                    '--diffs-font-size': '15px',
-                    '--diffs-line-height': '22px',
-                  } as CSSProperties
-                }
-              />
+              fileMode === 'single' ? (
+                <div className="single-file-view">
+                  <div className="single-file-nav">{fileNavButton(previousEntry, 'previous')}</div>
+                  <CodeView
+                    key={`single:${activeEntry?.id ?? ''}`}
+                    ref={codeViewRef}
+                    items={singleItems}
+                    options={options}
+                    containerRef={scrollRef}
+                    onScroll={updateVisibleItems}
+                    renderAnnotation={renderAnnotation}
+                    renderHeaderMetadata={renderHeaderMetadata}
+                    style={codeViewStyle}
+                  />
+                  <div className="single-file-nav">{fileNavButton(nextEntry, 'next')}</div>
+                </div>
+              ) : (
+                <CodeView
+                  key="all"
+                  ref={codeViewRef}
+                  items={items}
+                  options={options}
+                  containerRef={scrollRef}
+                  onScroll={updateVisibleItems}
+                  renderAnnotation={renderAnnotation}
+                  renderHeaderMetadata={renderHeaderMetadata}
+                  style={codeViewStyle}
+                />
+              )
             ) : (
               <div className="empty-state">There are no reviewable file changes in this pull request.</div>
             )}

@@ -4,10 +4,12 @@ import {
   CommentDiscussionIcon,
   ColumnsIcon,
   FileDiffIcon,
+  FileIcon,
   GitCommitIcon,
   GitMergeIcon,
   GitPullRequestIcon,
   GearIcon,
+  ListUnorderedIcon,
   RowsIcon,
   SyncIcon,
 } from '@primer/octicons-react';
@@ -42,6 +44,8 @@ interface PrHeaderProps {
   commitCount: number;
   diffStyle: 'unified' | 'split';
   onToggleDiffStyle: () => void;
+  fileMode: 'all' | 'single';
+  onToggleFileMode: () => void;
   progress: { loaded: number; total: number } | null;
   checksFailing: boolean;
   onOpenFiles: () => void;
@@ -60,6 +64,8 @@ export function PrHeader({
   commitCount,
   diffStyle,
   onToggleDiffStyle,
+  fileMode,
+  onToggleFileMode,
   progress,
   checksFailing,
   onOpenFiles,
@@ -209,6 +215,13 @@ export function PrHeader({
                 variant="invisible"
                 size="small"
                 onClick={onToggleDiffStyle}
+              />
+              <IconButton
+                icon={fileMode === 'all' ? FileIcon : ListUnorderedIcon}
+                aria-label={fileMode === 'all' ? 'Switch to single file view' : 'Switch to all files at once'}
+                variant="invisible"
+                size="small"
+                onClick={onToggleFileMode}
               />
             </div>
           ) : null}
