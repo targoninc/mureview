@@ -1387,3 +1387,18 @@ a.comment-mention:hover {
   line-height: 16px;
   text-align: center;
 }
+
+/* The previous/next bars are the tap target; no padding is wasted around them. */
+@media (max-width: 900px) {
+  .single-file-nav {
+    padding: 0;
+  }
+
+  .single-file-nav-button {
+    min-height: 44px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 0;
+    background-color: transparent;
+  }
+}
