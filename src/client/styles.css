@@ -1402,3 +1402,31 @@ a.comment-mention:hover {
     background-color: transparent;
   }
 }
+
+/* On small screens the header icon buttons stretch to equal widths, so the
+   rows span the whole width and every button is a bigger tap target. */
+@media (max-width: 900px) {
+  .pr-header-actions > * {
+    flex: 1 1 0;
+  }
+
+  .pr-header-actions .icon-count {
+    display: flex;
+  }
+
+  .pr-header-actions > button,
+  .pr-header-actions .icon-count > button {
+    width: 100%;
+  }
+
+  .pr-header-diff-row button {
+    flex: 1 1 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .pr-header-actions,
+  .pr-header-diff-row {
+    width: 100%;
+  }
+}

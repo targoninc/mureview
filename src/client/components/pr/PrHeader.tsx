@@ -218,7 +218,7 @@ export function PrHeader({
             )}
           </div>
           {pr.state === 'loading' || pr.stats.files > 0 ? (
-            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+            <div className="row pr-header-diff-row" style={{ gap: 6, alignItems: 'center' }}>
               {pr.state === 'loading' ? (
                 <span className="skeleton skeleton-diff" role="status" aria-label="Calculating the total diff" />
               ) : (
