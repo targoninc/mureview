@@ -243,19 +243,33 @@ export function SettingsPage() {
                       <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>{option.detail}</span>
                     </div>
                   </div>
-                  <Button
-                    size="small"
-                    onClick={() => {
-                      setNotice(null);
-                      if (option.key === 'github' || option.key === 'entra') {
-                        window.location.href = `${basePath}/api/auth/login/${option.key}?mode=connect`;
-                        return;
-                      }
-                      setAdding(adding === option.key ? null : option.key);
-                    }}
-                  >
-                    {option.key === 'github' && hasGithub ? 'Connect another account' : `Connect ${option.name}`}
-                  </Button>
+                  <div className="row" style={{ gap: 8 }}>
+                    {option.key === 'github' && me.githubAppSlug ? (
+                      <Button
+                        as="a"
+                        href={`https://github.com/apps/${me.githubAppSlug}/installations/new`}
+                        target="_blank"
+                        rel="noreferrer"
+                        size="small"
+                        variant="invisible"
+                      >
+                        Install the GitHub App
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setNotice(null);
+                        if (option.key === 'github' || option.key === 'entra') {
+                          window.location.href = `${basePath}/api/auth/login/${option.key}?mode=connect`;
+                          return;
+                        }
+                        setAdding(adding === option.key ? null : option.key);
+                      }}
+                    >
+                      {option.key === 'github' && hasGithub ? 'Connect another account' : `Connect ${option.name}`}
+                    </Button>
+                  </div>
                 </div>
                 {adding === option.key ? (
                   <div className="settings-panel" style={{ marginBottom: 8 }}>

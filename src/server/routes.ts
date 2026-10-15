@@ -20,7 +20,7 @@ import { forgeAvatarRoute } from './avatars';
 import { resolveMentionRoute, resolveReferenceRoute } from './refs';
 import { config } from './config';
 import { reviewPullRequestRoute } from './reviews';
-import { forgeWebhook } from './webhooks';
+import { forgeWebhook, githubAppWebhook } from './webhooks';
 import { updatePreferences } from './preferences';
 import { mergeReviewSet, streamMergePreview } from './merge';
 import { listAvailableRepos, listRepoBranches } from './repoSearch';
@@ -88,6 +88,7 @@ api.get('/api/review-sets/:id/merge', streamMergePreview);
 api.post('/api/review-sets/:id/merge', mergeReviewSet);
 api.post('/api/review-sets/:id/review', reviewPullRequestRoute);
 api.post('/api/webhooks/forge/:connectionId', forgeWebhook, true);
+api.post('/api/webhooks/github-app', githubAppWebhook, true);
 
 api.get('/api/prs/:id/comments', listCommentsRoute);
 api.post('/api/prs/:id/comments', createCommentRoute);

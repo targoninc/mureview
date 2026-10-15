@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { syncForgeComments, type SyncTarget } from './commentSync';
 import { config } from './config';
+import { forgetInstallation, installationToken, verifyAppSignature } from './githubApp';
+import { GithubClient } from './forges/github';
 import { db, type ForgeConnectionRow } from './db';
 import { clientFor, invalidateForgeCaches } from './forges';
 import { HttpError, json } from './http';
@@ -124,6 +126,88 @@ export async function forgeWebhook(ctx: Ctx): Promise<Response> {
   return json({ ok: true });
 }
 
+/**
+ * The GitHub App's webhook: one endpoint for every installed repository. The
+ * installation events attach or clear the installation on the matching
+ * connections; repository events reach the review sets that track the repo.
+ */
+export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
+  const body = await ctx.req.text();
+  if (!verifyAppSignature(body, ctx.req.headers.get('x-hub-signature-256') ?? '')) {
+    throw new HttpError(401, 'Invalid webhook signature');
+  }
+  const event = ctx.req.headers.get('x-github-event') ?? '';
+  let payload: {
+    action?: string;
+    installation?: { id?: number; account?: { login?: string } };
+    repository?: { full_name?: string };
+  };
+  try {
+    payload = JSON.parse(body) as typeof payload;
+  } catch {
+    throw new HttpError(400, 'Webhook body must be JSON');
+  }
+
+  if (event === 'installation' || event === 'installation_repositories') {
+    syncInstallation(payload);
+    return json({ ok: true });
+  }
+  if (!commentEvents.has(event) && !stateEvents.has(event)) return json({ ok: true, ignored: event });
+
+  const repo = payload.repository?.full_name ?? '';
+  if (!repo) return json({ ok: true, ignored: 'no repository' });
+  const rows = db
+    .query<{ review_set_id: number }, [string, string]>(
+      `SELECT DISTINCT rsr.review_set_id FROM review_set_repos rsr
+       JOIN forge_connections fc ON fc.id = rsr.connection_id
+       WHERE fc.kind = 'github' AND (rsr.repo = ? OR rsr.repo LIKE '%/' || ?)`,
+    )
+    .all(repo, repo);
+  if (rows.length === 0) return json({ ok: true, ignored: 'no review set' });
+
+  invalidateForgeCaches();
+  const reviewSetIds = rows.map((row) => row.review_set_id);
+  if (commentEvents.has(event)) {
+    const installationId = String(payload.installation?.id ?? '');
+    try {
+      const client = new GithubClient(await installationToken(installationId), { refresh: () => installationToken(installationId) });
+      for (const reviewSetId of reviewSetIds) {
+        const pr = db
+          .query<{ id: number }, [number]>('SELECT id FROM pull_requests WHERE review_set_id = ? AND closed_at IS NULL ORDER BY id DESC LIMIT 1')
+          .get(reviewSetId);
+        if (!pr) continue;
+        const targets = db
+          .query<SyncTarget, [number]>(
+            `SELECT rp.connection_id AS connectionId, rp.repo, rp.position, rp.forge_pr_ref AS pullRequestRef
+             FROM pull_request_repos rp JOIN pull_requests p ON p.id = rp.pr_id
+             WHERE p.review_set_id = ? AND p.closed_at IS NULL`,
+          )
+          .all(reviewSetId);
+        await syncForgeComments(pr.id, new Map([[0, client]]), targets, true);
+      }
+    } catch (error) {
+      console.error('Could not import GitHub comments after an app webhook:', error);
+    }
+  }
+  await publishToSets(reviewSetIds, commentEvents.has(event) ? { type: 'comments', reason: 'github-app' } : { type: 'prs', reason: 'github-app' });
+  return json({ ok: true });
+}
+
+function syncInstallation(payload: { action?: string; installation?: { id?: number; account?: { login?: string } } }): void {
+  const id = String(payload.installation?.id ?? '');
+  const login = payload.installation?.account?.login ?? '';
+  if (!id) return;
+  if (payload.action === 'deleted') {
+    db.run("UPDATE forge_connections SET installation_id = NULL WHERE kind = 'github' AND installation_id = ?", [id]);
+    forgetInstallation(id);
+    invalidateForgeCaches();
+    return;
+  }
+  if (!login) return;
+  db.run("UPDATE forge_connections SET installation_id = ? WHERE kind = 'github' AND lower(login) = lower(?)", [id, login]);
+  invalidateForgeCaches();
+}
+
 /** Registers webhooks for a review set's repositories where the token may. */
 const attempted = new Set<string>();
 
@@ -142,6 +226,8 @@ export async function ensureWebhooksForReviewSet(reviewSetId: number): Promise<v
     if (!connection) continue;
     const client = clientFor(connection);
     if (!client?.registerWebhook) continue;
+    // The GitHub App delivers webhooks for its installations already.
+    if (connection.kind === 'github' && connection.installation_id) continue;
     let secret = connection.webhook_secret;
     if (!secret) {
       secret = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');

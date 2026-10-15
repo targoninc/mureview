@@ -48,6 +48,8 @@ export interface MeResponse {
   connections: ForgeConnectionInfo[];
   providers: AuthProvider[];
   githubOAuthAppUrl: string | null;
+  /** The GitHub App's slug, when the installation offers one. */
+  githubAppSlug: string | null;
 }
 
 export interface TokenWarning {

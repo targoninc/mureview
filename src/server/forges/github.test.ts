@@ -197,3 +197,47 @@ test('pullRequestState reports merged, closed and changed branches', async () =>
   expect(await client.pullRequestState('acme/repo', '6')).toEqual({ state: 'closed', head: 'topic', base: 'main' });
   expect(await client.pullRequestState('acme/repo', '7')).toBeNull();
 });
+
+test('the GitHub App signs JWTs and caches installation tokens', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  process.env.GITHUB_APP_ID = '12345';
+  process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+  process.env.GITHUB_APP_WEBHOOK_SECRET = 'app-secret';
+  const app = await import('../githubApp');
+  app.resetGithubApp();
+  const jwt = app.appJwt();
+  const [header, payload] = jwt.split('.');
+  expect(JSON.parse(Buffer.from(header, 'base64url').toString())).toEqual({ alg: 'RS256', typ: 'JWT' });
+  const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { iss: string; exp: number };
+  expect(claims.iss).toBe('12345');
+  expect(claims.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  expect(app.appJwt()).toBe(jwt);
+
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return Response.json({ token: 'installation-token', expires_at: new Date(Date.now() + 3600_000).toISOString() });
+  }) as unknown as typeof fetch;
+  expect(await app.installationToken('999')).toBe('installation-token');
+  expect(await app.installationToken('999')).toBe('installation-token');
+  expect(calls).toBe(1);
+  expect(app.cachedInstallationToken('999')).toBe('installation-token');
+  app.forgetInstallation('999');
+  expect(app.cachedInstallationToken('999')).toBeNull();
+
+  const { createHmac } = await import('node:crypto');
+  const body = '{"action":"created"}';
+  const signature = `sha256=${createHmac('sha256', 'app-secret').update(body).digest('hex')}`;
+  expect(app.verifyAppSignature(body, signature)).toBe(true);
+  expect(app.verifyAppSignature(body, 'sha256=nope')).toBe(false);
+
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  delete process.env.GITHUB_APP_WEBHOOK_SECRET;
+  app.resetGithubApp();
+});

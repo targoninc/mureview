@@ -1,0 +1,94 @@
+import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
+
+export interface GithubAppConfig {
+  appId: string;
+  privateKey: string;
+  webhookSecret: string;
+  slug: string | null;
+}
+
+let cached: GithubAppConfig | null | undefined;
+
+/** Re-reads the environment; used by tests after changing it. */
+export function resetGithubApp(): void {
+  cached = undefined;
+}
+
+/**
+ * The optional GitHub App. When it is configured, mureview prefers
+ * installation tokens for GitHub API calls and receives webhooks for every
+ * installed repository through one endpoint. Without it, installations keep
+ * using their OAuth tokens exactly as before.
+ */
+export function githubApp(): GithubAppConfig | null {
+  if (cached !== undefined) return cached;
+  const appId = (process.env.GITHUB_APP_ID ?? '').trim();
+  const privateKey = (process.env.GITHUB_APP_PRIVATE_KEY ?? '').replaceAll('\\n', '\n').trim();
+  if (!appId || !privateKey) {
+    cached = null;
+    return cached;
+  }
+  cached = {
+    appId,
+    privateKey,
+    webhookSecret: (process.env.GITHUB_APP_WEBHOOK_SECRET ?? '').trim(),
+    slug: (process.env.GITHUB_APP_SLUG ?? '').trim() || null,
+  };
+  return cached;
+}
+
+function base64url(value: string): string {
+  return Buffer.from(value).toString('base64url');
+}
+
+let jwtCache: { token: string; expires: number } | null = null;
+
+/** A short-lived app JWT, as GitHub requires for app-level requests. */
+export function appJwt(): string {
+  const app = githubApp();
+  if (!app) throw new Error('the GitHub App is not configured');
+  const now = Math.floor(Date.now() / 1000);
+  if (jwtCache && jwtCache.expires > now + 60) return jwtCache.token;
+  const header = base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const payload = base64url(JSON.stringify({ iat: now - 30, exp: now + 540, iss: app.appId }));
+  const sign = createSign('RSA-SHA256');
+  sign.update(`${header}.${payload}`);
+  sign.end();
+  const signature = sign.sign(app.privateKey).toString('base64url');
+  jwtCache = { token: `${header}.${payload}.${signature}`, expires: now + 540 };
+  return jwtCache.token;
+}
+
+const installationTokens = new Map<string, { token: string; expires: number }>();
+
+/** A token for one installation; GitHub issues them for an hour. */
+export async function installationToken(installationId: string): Promise<string> {
+  const cachedToken = installationTokens.get(installationId);
+  if (cachedToken && cachedToken.expires - Date.now() > 5 * 60_000) return cachedToken.token;
+  const response = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+  });
+  if (!response.ok) throw new Error(`GitHub refused an installation token (${response.status})`);
+  const data = (await response.json()) as { token: string; expires_at: string };
+  installationTokens.set(installationId, { token: data.token, expires: new Date(data.expires_at).getTime() });
+  return data.token;
+}
+
+export function cachedInstallationToken(installationId: string): string | null {
+  const cachedToken = installationTokens.get(installationId);
+  return cachedToken && cachedToken.expires - Date.now() > 60_000 ? cachedToken.token : null;
+}
+
+export function forgetInstallation(installationId: string): void {
+  installationTokens.delete(installationId);
+}
+
+export function verifyAppSignature(body: string, signature: string): boolean {
+  const app = githubApp();
+  if (!app?.webhookSecret || !signature) return false;
+  const expected = `sha256=${createHmac('sha256', app.webhookSecret).update(body).digest('hex')}`;
+  const left = Buffer.from(expected);
+  const right = Buffer.from(signature);
+  return left.length === right.length && timingSafeEqual(left, right);
+}

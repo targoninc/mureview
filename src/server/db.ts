@@ -43,6 +43,8 @@ export interface ForgeConnectionRow {
   avatar_url: string;
   /** Secret for forge webhooks that push live updates into mureview. */
   webhook_secret: string | null;
+  /** The GitHub App installation covering this account, when there is one. */
+  installation_id: string | null;
 }
 
 const SCHEMA_V2 = `
@@ -601,7 +603,10 @@ const connectionColumns = hasTable('forge_connections') ? db.query<{ name: strin
 if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'webhook_secret')) {
   db.exec('ALTER TABLE forge_connections ADD COLUMN webhook_secret TEXT');
 }
-db.exec('PRAGMA user_version = 14;');
+if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'installation_id')) {
+  db.exec('ALTER TABLE forge_connections ADD COLUMN installation_id TEXT');
+}
+db.exec('PRAGMA user_version = 15;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);
