@@ -4,7 +4,7 @@ import { Cache } from '../cache';
 import { config } from '../config';
 import { decrypt } from '../crypto';
 import { type ForgeConnectionRow, db } from '../db';
-import { ForgeError, organizationOf } from '../forges';
+import { ForgeError, invalidateForgeCaches, organizationOf } from '../forges';
 import { AdoClient, normalizeAdoOrganization } from '../forges/ado';
 import { getForgejoUser } from '../forges/forgejo';
 import { getUser as getGithubUser } from '../forges/github';
@@ -162,7 +162,20 @@ export async function githubCallback(ctx: Ctx): Promise<Response> {
 async function githubCallbackInner(ctx: Ctx): Promise<Response> {
   const code = ctx.url.searchParams.get('code');
   const state = ctx.url.searchParams.get('state');
-  if (!code || !state) throw new HttpError(400, 'GitHub did not return a code.');
+  const installationId = ctx.url.searchParams.get('installation_id');
+  if (!code) throw new HttpError(400, 'GitHub did not return a code.');
+  // Installing the app with user authorization sends a code but no state, so
+  // the installation id stands in for it: GitHub only sends the one it just
+  // created, and it is attached to the connection below.
+  if (!state) {
+    if (!installationId) throw new HttpError(400, 'GitHub did not return a code.');
+    const { connection, profile } = await exchangeGithubCode(code);
+    const owner = findUserByIdentity('github', profile.subject) ?? ctx.user ?? loginOrCreate(profile).user;
+    const stored = upsertConnection(owner.id, connection);
+    db.run('UPDATE forge_connections SET installation_id = ? WHERE id = ?', [installationId, stored.id]);
+    invalidateForgeCaches();
+    return redirect(appUrl('/settings?connected=github'), startSession(owner.id));
+  }
   let pending: PendingAuth;
   try {
     pending = takeState(state, 'github');
@@ -170,6 +183,14 @@ async function githubCallbackInner(ctx: Ctx): Promise<Response> {
     throw new HttpError(400, (error as Error).message);
   }
 
+  const { user: ghUser, connection, profile } = await exchangeGithubCode(code);
+  return completeAuth(profile, connection, pending);
+}
+
+/** Exchanges an authorization code for the account and its connection. */
+async function exchangeGithubCode(
+  code: string,
+): Promise<{ user: { id: number; login: string; avatar_url: string }; connection: ConnectionInput; profile: IdentityProfile }> {
   const response = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -184,21 +205,23 @@ async function githubCallbackInner(ctx: Ctx): Promise<Response> {
   if (!body.access_token) throw new HttpError(400, body.error_description ?? 'GitHub did not return an access token.');
 
   const ghUser = await getGithubUser(body.access_token);
-  const profile: IdentityProfile = {
-    provider: 'github',
-    subject: String(ghUser.id),
-    displayName: ghUser.login,
-    avatarUrl: ghUser.avatar_url,
+  return {
+    user: ghUser,
+    profile: {
+      provider: 'github',
+      subject: String(ghUser.id),
+      displayName: ghUser.login,
+      avatarUrl: ghUser.avatar_url,
+    },
+    connection: {
+      kind: 'github',
+      baseUrl: 'https://github.com',
+      accessToken: body.access_token,
+      refreshToken: body.refresh_token,
+      login: ghUser.login,
+      avatarUrl: ghUser.avatar_url,
+    },
   };
-  const connection: ConnectionInput = {
-    kind: 'github',
-    baseUrl: 'https://github.com',
-    accessToken: body.access_token,
-    refreshToken: body.refresh_token,
-    login: ghUser.login,
-    avatarUrl: ghUser.avatar_url,
-  };
-  return completeAuth(profile, connection, pending);
 }
 
 // --- Entra ID ----------------------------------------------------------------
