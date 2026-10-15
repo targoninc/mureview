@@ -54,3 +54,20 @@ export function forgeCommentLink(repos: RepoStatus[], comment: Comment): { url: 
   const threadId = id.split(':')[0];
   return { url: `${pull.url}?discussionId=${threadId}&_a=${anchored ? 'files' : 'discussion'}`, kind: repo.kind };
 }
+
+/** The key that identifies one repository (and stack layer) in a review set. */
+export function repoItemKey(repo: Pick<RepoStatus, 'connectionId' | 'repo' | 'position'>): string {
+  return `${repo.connectionId}:${repo.repo}:${repo.position}`;
+}
+
+/** Splits a file item id back into its parts. */
+export function parseItemId(itemId: string): { connectionId: number; repo: string; position: number; path: string } {
+  const [connectionId, repo, position, ...rest] = itemId.split(':');
+  return { connectionId: Number(connectionId), repo, position: Number(position), path: rest.join(':') };
+}
+
+/** Avatars on the forge host itself (Azure DevOps) need the connection's credentials. */
+export function forgeAvatarUrl(kind: ForgeKind, connectionId: number, url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  return kind === 'ado' ? `/api/forge-avatar?connectionId=${connectionId}&url=${encodeURIComponent(url)}` : url;
+}

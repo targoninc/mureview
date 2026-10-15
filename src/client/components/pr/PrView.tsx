@@ -5,7 +5,8 @@ import { useAppContext } from '../../lib/appContext';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { Avatar, Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
+import { Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
+import { UserAvatar } from '../UserAvatar';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -19,7 +20,7 @@ import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewMarkBy, ReviewSet
 import { api, post, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
-import { fileItemId, fileSegments, repoStatusText } from '../../lib/format';
+import { fileItemId, fileSegments, forgeAvatarUrl, parseItemId, repoItemKey, repoStatusText } from '../../lib/format';
 import { repoLabel } from '../../../shared/types';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
 import { useIsMobile } from '../../lib/useIsMobile';
@@ -343,8 +344,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           });
           if (event.reviewed) {
             for (const itemId of event.itemIds) {
-              const [connectionId, repo, position, ...rest] = itemId.split(':');
-              next.push({ connectionId: Number(connectionId), repo, position: Number(position), path: rest.join(':'), user: viewer });
+                const parsed = parseItemId(itemId);
+              next.push({ ...parsed, user: viewer });
             }
           }
           return next;
@@ -375,7 +376,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       }
       if (event.type === 'vote') {
         if (event.userId !== user?.id) return;
-        setVotes((current) => new Map(current).set(`${event.connectionId}:${event.repo}:${event.position}`, event.vote));
+        setVotes((current) => new Map(current).set(repoItemKey(event), event.vote));
         return;
       }
       if (event.type === 'comments' && pr.prId) {
@@ -545,7 +546,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           {viewers.length > 0 ? (
             <span className="viewed-avatars" title={viewers.map((viewer) => viewer.name).join(', ')}>
               {viewers.slice(0, 5).map((viewer) => (
-                <Avatar key={viewer.id} src={viewer.avatarUrl} size={18} alt={viewer.name} />
+                <UserAvatar key={viewer.id} src={viewer.avatarUrl} name={viewer.name} size={18} />
               ))}
               {viewers.length > 5 ? <span className="viewed-avatars-more">+{viewers.length - 5}</span> : null}
             </span>
@@ -644,7 +645,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     '--diffs-line-height': '22px',
   } as CSSProperties;
 
-  const voteKey = (repo: RepoStatus) => `${repo.connectionId}:${repo.repo}:${repo.position}`;
+  const voteKey = repoItemKey;
   const voteOf = (repo: RepoStatus): ReviewVote => votes.get(voteKey(repo)) ?? repo.pullRequest?.review ?? 'waiting';
   const castVote = async (repo: RepoStatus, vote: ReviewVote) => {
     setVoteError(null);
@@ -769,11 +770,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           vote: voteOf(repo),
           reviewers: repo.pullRequest?.reviewers?.map((reviewer) => ({
             ...reviewer,
-            // Azure DevOps avatars need the connection's credentials.
-            avatarUrl:
-              reviewer.avatarUrl && repo.kind === 'ado'
-                ? `/api/forge-avatar?connectionId=${repo.connectionId}&url=${encodeURIComponent(reviewer.avatarUrl)}`
-                : reviewer.avatarUrl,
+            avatarUrl: forgeAvatarUrl(repo.kind, repo.connectionId, reviewer.avatarUrl),
           })),
         }))}
         progress={progress ?? null}

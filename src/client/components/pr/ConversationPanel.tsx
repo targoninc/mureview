@@ -3,6 +3,7 @@ import type { Comment, RepoStatus } from '../../../shared/types';
 import { repoLabel } from '../../../shared/types';
 import { groupThreads } from './annotations';
 import { CommentComposer, CommentThread } from './Comments';
+import { parseItemId, repoItemKey } from '../../lib/format';
 import { codeSnippet } from '../../lib/snippet';
 
 interface ConversationPanelProps {
@@ -32,7 +33,7 @@ export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }:
     const byKey = new Map<string, ConversationGroup>();
 
     for (const comment of general) {
-      const key = comment.connectionId === null || !comment.repo ? 'review-set' : `${comment.connectionId}:${comment.repo}:${comment.position}`;
+      const key = comment.connectionId === null || !comment.repo ? 'review-set' : repoItemKey({ connectionId: comment.connectionId, repo: comment.repo, position: comment.position });
       const group = byKey.get(key) ?? {
         key,
         label: null,
@@ -67,7 +68,7 @@ export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }:
     const byKey = new Map<string, Map<string, Array<{ threadKey: string; line: number; side: 'additions' | 'deletions'; comments: Comment[] }>>>();
     for (const list of threads.values()) {
       for (const thread of list) {
-        const key = `${thread.connectionId}:${thread.repo}:${thread.position}`;
+        const key = repoItemKey(thread);
         const files = byKey.get(key) ?? new Map();
         const entries = files.get(thread.path) ?? [];
         entries.push({ threadKey: thread.threadKey, line: thread.line, side: thread.side, comments: thread.comments });
@@ -138,9 +139,9 @@ export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }:
         </div>
       ))}
       {lineKeys.map((key) => {
-        const [connectionId, repo, position] = key.split(':');
+        const { connectionId, repo, position } = parseItemId(`${key}:`);
         const status = repos?.find(
-          (entry) => entry.connectionId === Number(connectionId) && entry.repo === repo && entry.position === Number(position),
+          (entry) => entry.connectionId === connectionId && entry.repo === repo && entry.position === position,
         );
         const stacked = (repos ?? []).some((entry) => entry.position > 0);
         const where = status ? repoLabel(status) : repo;

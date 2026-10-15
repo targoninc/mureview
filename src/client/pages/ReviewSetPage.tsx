@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { repoItemKey } from '../lib/format';
 import { useParams } from 'react-router-dom';
 import { Flash } from '@primer/react';
 import type { RepoCommits, ReviewSetDiscussion } from '../../shared/types';
@@ -49,8 +50,7 @@ export function ReviewSetPage() {
 
   const merged = useMemo(() => {
     if (!detail) return null;
-    const keyOf = (entry: { connectionId: number; repo: string; position: number }) =>
-      `${entry.connectionId}:${entry.repo}:${entry.position}`;
+    const keyOf = repoItemKey;
     const pullsByRepo = new Map((discussion?.pullRequests ?? []).map((pull) => [keyOf(pull), pull]));
     const prErrors = new Map((discussion?.prErrors ?? []).map((entry) => [keyOf(entry), entry.message]));
     const commitsByRepo = new Map((commits ?? []).map((bundle) => [keyOf(bundle), bundle.commits]));

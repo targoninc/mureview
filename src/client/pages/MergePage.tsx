@@ -13,7 +13,7 @@ import type {
 import { post } from '../lib/api';
 import { checkTone } from '../lib/checks';
 import { streamJson } from '../lib/ndjson';
-import { repoStatusText } from '../lib/format';
+import { repoItemKey, repoStatusText } from '../lib/format';
 import { MergeResultsFlash } from '../components/pr/merge';
 import { ReviewSetLoading } from '../components/pr/ReviewSetLoading';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
@@ -40,7 +40,7 @@ interface RepoCardInfo {
 }
 
 function cardKey(entry: { connectionId: number; repo: string; position: number }): string {
-  return `${entry.connectionId}:${entry.repo}:${entry.position}`;
+  return repoItemKey(entry);
 }
 
 function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone } {

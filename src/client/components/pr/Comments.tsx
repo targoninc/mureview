@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Avatar, Button, Flash, IconButton, Label, Textarea, useConfirm } from '@primer/react';
+import { Button, Flash, IconButton, Label, Textarea, useConfirm } from '@primer/react';
+import { UserAvatar } from '../UserAvatar';
 import {
   CheckCircleIcon,
   ChevronDownIcon,
@@ -143,7 +144,7 @@ export function CommentThread({
                 size="small"
                 onClick={() => toggleCollapsed(comment.id)}
               />
-              <Avatar src={comment.author.avatarUrl} size={20} alt={comment.author.name} />
+              <UserAvatar src={comment.author.avatarUrl} name={comment.author.name} />
               <strong>{comment.author.name}</strong>
               <span>{timeAgo(comment.createdAt)}</span>
               {comment.source === 'forge' ? (

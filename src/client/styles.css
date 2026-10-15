@@ -1690,15 +1690,6 @@ a.comment-mention:hover {
   white-space: pre;
 }
 
-/* Avatars stay circular even when their row wraps or stretches. */
-.comment-header [data-component='Avatar'],
-.comment-header img,
-.viewed-avatars [data-component='Avatar'],
-.viewed-avatars img {
-  flex: none;
-  border-radius: 50%;
-}
-
 .comment-header strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1760,14 +1751,19 @@ a.comment-mention:hover {
   font-size: 12px;
 }
 
-.vote-popover-person [data-component='Avatar'],
-.vote-popover-person img {
-  flex: none;
-  border-radius: 50%;
-}
-
 .vote-popover-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* One place decides how avatars look, so no row can squash them. */
+.user-avatar {
+  display: inline-flex;
+  flex: none;
+}
+
+.user-avatar [data-component='Avatar'],
+.user-avatar img {
+  border-radius: 50%;
 }

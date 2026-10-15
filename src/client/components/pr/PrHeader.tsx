@@ -1,4 +1,5 @@
-import { ActionList, ActionMenu, Avatar, Button, IconButton, Label, Spinner } from '@primer/react';
+import { ActionList, ActionMenu, Button, IconButton, Label, Spinner } from '@primer/react';
+import { UserAvatar } from '../UserAvatar';
 import {
   AlertIcon,
   ChevronDownIcon,
@@ -223,7 +224,7 @@ export function PrHeader({
                                         key={reviewer.name}
                                         title={`${reviewer.name}: ${state.label}`}
                                       >
-                                        <Avatar src={reviewer.avatarUrl ?? ''} size={16} alt={reviewer.name} />
+                                        <UserAvatar src={reviewer.avatarUrl} name={reviewer.name} size={16} />
                                         <span className={state.className}>
                                           <state.icon size={12} />
                                         </span>

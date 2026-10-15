@@ -3,7 +3,7 @@ import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, CommentDiscussionIcon, FileDirectoryIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, ForgeKind, PrStatus, RepoStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
-import { fileItemId, fileSegments } from '../../lib/format';
+import { fileItemId, fileSegments, repoItemKey } from '../../lib/format';
 import { ServiceGlyph } from '../ServiceIcon';
 import { fileIconFor, ensureFileIconSprite } from '../../lib/fileIcons';
 
@@ -94,7 +94,7 @@ export function FileTreePanel({
   }, [entries, stacked]);
 
   const repoKinds = useMemo(
-    () => new Map<string, ForgeKind>(entries.map((repo) => [`${repo.host}/${repo.repo}`, repo.kind])),
+    () => new Map<string, ForgeKind>(entries.map((repo) => [repoItemKey(repo), repo.kind])),
     [entries],
   );
 
