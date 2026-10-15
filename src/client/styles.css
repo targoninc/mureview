@@ -1406,8 +1406,13 @@ a.comment-mention:hover {
     width: 100%;
   }
 
+  /* The diff totals and the toggles beside them stay right aligned. */
+  .pr-header-diff-row {
+    justify-content: flex-end;
+  }
+
   .pr-header-diff-row button {
-    flex: 1 1 0;
+    flex: none;
   }
 }
 
