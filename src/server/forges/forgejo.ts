@@ -681,6 +681,25 @@ export class ForgejoClient implements ForgeClient {
     return 'waiting';
   }
 
+  async pullRequestReviews(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>> {
+    const login = await this.currentLogin().catch(() => '');
+    const reviews = await this.request<Array<{ user?: { login?: string; avatar_url?: string } | null; state?: string }>>(
+      `/repos/${repo}/pulls/${ref}/reviews`,
+    );
+    const latest = new Map<string, { name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>();
+    for (const review of reviews) {
+      const name = review.user?.login;
+      if (!name) continue;
+      latest.set(name, {
+        name,
+        avatarUrl: review.user?.avatar_url,
+        vote: review.state === 'APPROVED' ? 'approve' : review.state === 'REQUEST_CHANGES' ? 'reject' : 'waiting',
+        you: name === login,
+      });
+    }
+    return [...latest.values()];
+  }
+
   async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
     if (vote === 'waiting') {
       const login = await this.currentLogin();

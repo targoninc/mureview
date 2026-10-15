@@ -1738,3 +1738,36 @@ a.comment-mention:hover {
 .comment-header > span {
   flex: none;
 }
+
+/* Reviewers listed under each pull request in the decisions dropdown. */
+.vote-popover-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vote-popover-people {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vote-popover-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fgColor-muted);
+  font-size: 12px;
+}
+
+.vote-popover-person [data-component='Avatar'],
+.vote-popover-person img {
+  flex: none;
+  border-radius: 50%;
+}
+
+.vote-popover-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

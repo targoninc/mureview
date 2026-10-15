@@ -317,3 +317,25 @@ test('a repository only the app installation can see uses its token', async () =
   delete process.env.GITHUB_APP_PRIVATE_KEY;
   app.resetGithubApp();
 });
+
+test('pullRequestReviews lists everyone\'s latest decision', async () => {
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.endsWith('/user')) return Response.json({ login: 'me' });
+    if (url.includes('/pulls/5/reviews')) {
+      return Response.json([
+        { user: { login: 'me', avatar_url: 'https://a/me.png' }, state: 'COMMENTED' },
+        { user: { login: 'me', avatar_url: 'https://a/me.png' }, state: 'APPROVED' },
+        { user: { login: 'lena', avatar_url: 'https://a/lena.png' }, state: 'CHANGES_REQUESTED' },
+      ]);
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('token');
+  const reviewers = await client.pullRequestReviews('acme/repo', '5');
+  expect(reviewers).toEqual([
+    { name: 'me', avatarUrl: 'https://a/me.png', vote: 'approve', you: true },
+    { name: 'lena', avatarUrl: 'https://a/lena.png', vote: 'reject', you: false },
+  ]);
+});

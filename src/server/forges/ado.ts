@@ -931,6 +931,25 @@ export class AdoClient implements ForgeClient {
     return 'waiting';
   }
 
+  async pullRequestReviews(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>> {
+    const data = await this.request<{
+      reviewers?: Array<{ id?: string; uniqueName?: string; displayName?: string; imageUrl?: string; vote?: number }>;
+    }>(`${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`);
+    const identity = await this.currentIdentity().catch(() => null);
+    const login = this.login.toLowerCase();
+    return (data.reviewers ?? []).map((reviewer) => {
+      const vote = reviewer.vote ?? 0;
+      return {
+        name: reviewer.displayName || reviewer.uniqueName || 'Reviewer',
+        avatarUrl: reviewer.imageUrl,
+        vote: vote >= 5 ? 'approve' : vote <= -10 ? 'reject' : 'waiting',
+        you:
+          (identity ? reviewer.id === identity.id : false) ||
+          (login !== '' && (reviewer.uniqueName ?? '').toLowerCase() === login),
+      };
+    });
+  }
+
   async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
     const value = { vote: vote === 'approve' ? 10 : vote === 'reject' ? -10 : 0 };
     const own = await this.ownReviewer(repo, ref);

@@ -146,6 +146,8 @@ export interface ForgeClient {
   pullRequestReview?(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null>;
   /** Records the acting user's review decision on a pull request. */
   reviewPullRequest?(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void>;
+  /** Everyone's review decision on a pull request, when the forge reports them. */
+  pullRequestReviews?(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>>;
   /** The pull request's current state and branches on the forge. */
   pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null>;
   /** Registers a webhook that pushes live updates into mureview. */

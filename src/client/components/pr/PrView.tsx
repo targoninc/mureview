@@ -767,6 +767,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           key: voteKey(repo),
           label: repo.position > 0 ? `${repoLabel(repo)} · layer ${repo.position + 1}` : repoLabel(repo),
           vote: voteOf(repo),
+          reviewers: repo.pullRequest?.reviewers,
         }))}
         progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}

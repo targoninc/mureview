@@ -1,4 +1,4 @@
-import { ActionList, ActionMenu, Button, IconButton, Label, Spinner } from '@primer/react';
+import { ActionList, ActionMenu, Avatar, Button, IconButton, Label, Spinner } from '@primer/react';
 import {
   AlertIcon,
   ChevronDownIcon,
@@ -55,7 +55,12 @@ interface PrHeaderProps {
   voting?: boolean;
   pendingVote?: ReviewVote | null;
   /** One row per underlying pull request, for the review state popover. */
-  reviewRows?: Array<{ key: string; label: string; vote: ReviewVote }>;
+  reviewRows?: Array<{
+    key: string;
+    label: string;
+    vote: ReviewVote;
+    reviewers?: Array<{ name: string; avatarUrl?: string; vote: ReviewVote; you?: boolean }>;
+  }>;
   progress: { loaded: number; total: number } | null;
   checksFailing: boolean;
   onOpenFiles: () => void;
@@ -207,7 +212,27 @@ export function PrHeader({
                                   <option.icon size={14} />
                                 </span>
                               </ActionList.LeadingVisual>
-                              <span className="mono">{row.label}</span>
+                              <div className="vote-popover-row">
+                                <span className="mono">{row.label}</span>
+                                <span className="vote-popover-people">
+                                  {(row.reviewers ?? []).map((reviewer) => {
+                                    const state = voteOptions.find((entry) => entry.vote === reviewer.vote) ?? voteOptions[1];
+                                    return (
+                                      <span
+                                        className="vote-popover-person"
+                                        key={reviewer.name}
+                                        title={`${reviewer.name}: ${state.label}`}
+                                      >
+                                        <Avatar src={reviewer.avatarUrl ?? ''} size={16} alt={reviewer.name} />
+                                        <span className={state.className}>
+                                          <state.icon size={12} />
+                                        </span>
+                                        <span className="vote-popover-name">{reviewer.you ? `${reviewer.name} (you)` : reviewer.name}</span>
+                                      </span>
+                                    );
+                                  })}
+                                </span>
+                              </div>
                               <ActionList.TrailingVisual>{option.label}</ActionList.TrailingVisual>
                             </ActionList.Item>
                           );

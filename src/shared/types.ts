@@ -191,6 +191,8 @@ export interface RepoStatus {
     /** Where the forge says the pull request points now. */
     head?: string;
     base?: string;
+    /** Everyone's decisions, when the forge reports them. */
+    reviewers?: Array<{ name: string; avatarUrl?: string; vote: ReviewVote; you?: boolean }>;
   };
   /** Why creating the forge pull request failed, when it did. */
   prError?: string;

@@ -438,6 +438,25 @@ export class GithubClient implements ForgeClient {
     return 'waiting';
   }
 
+  async pullRequestReviews(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>> {
+    const login = await this.currentLogin().catch(() => '');
+    const reviews = await this.paginate<{ user?: { login?: string; avatar_url?: string }; state?: string }>(
+      `/repos/${repo}/pulls/${pullNumber(ref)}/reviews`,
+    );
+    const latest = new Map<string, { name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>();
+    for (const review of reviews) {
+      const name = review.user?.login;
+      if (!name) continue;
+      latest.set(name, {
+        name,
+        avatarUrl: review.user?.avatar_url,
+        vote: review.state === 'APPROVED' ? 'approve' : review.state === 'CHANGES_REQUESTED' ? 'reject' : 'waiting',
+        you: name === login,
+      });
+    }
+    return [...latest.values()];
+  }
+
   async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
     const number = pullNumber(ref);
     if (vote === 'waiting') {

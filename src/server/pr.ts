@@ -328,6 +328,13 @@ export async function buildPrStatus(
         } catch (error) {
           console.error(`Could not read the review state for ${repoLabel(repo)}:`, error);
         }
+        if (client.pullRequestReviews) {
+          try {
+            repo.pullRequest = { ...repo.pullRequest, reviewers: await client.pullRequestReviews(repo.repo, ref) };
+          } catch (error) {
+            console.error(`Could not read the reviewers for ${repoLabel(repo)}:`, error);
+          }
+        }
       });
       return {
         state: 'open',
