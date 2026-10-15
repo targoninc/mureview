@@ -79,6 +79,10 @@ deleted by its own author, so the two sides cannot drift apart.
 | `GITHUB_CLIENT_ID` | | GitHub OAuth app client id. |
 | `GITHUB_CLIENT_SECRET` | | GitHub OAuth app client secret. |
 | `GITHUB_REDIRECT_URI` | `${BASE_URL}/api/auth/callback/github` | Override when the OAuth app has a different callback URL registered. |
+| `GITHUB_APP_ID` | | GitHub App id (optional, see below). |
+| `GITHUB_APP_PRIVATE_KEY` | | GitHub App private key (PEM; `\n` escapes are fine). |
+| `GITHUB_APP_WEBHOOK_SECRET` | | GitHub App webhook secret, for verifying its deliveries. |
+| `GITHUB_APP_SLUG` | | GitHub App slug, shown as an "Install the GitHub App" link in the settings. |
 | `ENTRA_CLIENT_ID` | | Microsoft Entra ID app client id (optional sign-in method). |
 | `ENTRA_CLIENT_SECRET` | | Microsoft Entra ID app client secret. |
 | `ENTRA_TENANT` | `common` | Entra tenant: `common`, `organizations`, `consumers` or a tenant id. |
@@ -95,6 +99,60 @@ credentials the other providers still work.
 If your app still has the legacy `${BASE_URL}/api/auth/callback` registered
 (that route is still served), set `GITHUB_REDIRECT_URI` to it so the authorize
 request uses the URL GitHub knows.
+
+### GitHub App (optional)
+
+A GitHub App is not required, but it makes two things better: mureview uses
+short-lived installation tokens instead of the account's OAuth token, and one
+webhook endpoint covers every installed repository, so comments, reviews and
+pull request changes made on GitHub reach open mureview sessions without
+polling. Existing installations migrate by adding the variables below and
+installing the app — without them, nothing changes.
+
+1. Create an app at <https://github.com/settings/apps/new>.
+   - **Homepage URL**: `${BASE_URL}`
+   - **Callback URL**: `${BASE_URL}/api/auth/callback/github`
+   - **Webhook URL**: `${BASE_URL}/api/webhooks/github-app`
+   - **Webhook secret**: any random string, also set as
+     `GITHUB_APP_WEBHOOK_SECRET`.
+   - **Setup URL** (optional): `${BASE_URL}/settings`.
+   - **Repository permissions**: Metadata (read, mandatory), Contents (read),
+     Pull requests (write, for merging and reviews), Issues (write, for
+     general pull request comments), Checks (read), Commit statuses (read).
+   - **Subscribe to events**: Pull request, Pull request review, Issue
+     comment, Installation, Installation repositories. Everything else is
+     acknowledged and ignored.
+   - *Request user authorization (OAuth) during installation*: checking it
+     sends the user through the callback above, so installing also signs them
+     in and creates their GitHub connection in one step. Leaving it off works
+     too — mureview learns installations from the webhook and, when someone
+     connects GitHub later, looks up their installation.
+2. Generate a private key on the app page and set `GITHUB_APP_ID`,
+   `GITHUB_APP_PRIVATE_KEY` and `GITHUB_APP_WEBHOOK_SECRET`
+   (`GITHUB_APP_SLUG` is optional, it only adds the install link to the
+   settings).
+3. Restart mureview and install the app on the account or organization whose
+   repositories you review. The installation attaches itself to the matching
+   connections; per-repository webhooks are skipped from then on because the
+   app delivers them already.
+
+The app's client id and secret can also be used as `GITHUB_CLIENT_ID` /
+`GITHUB_CLIENT_SECRET` for sign-in — the OAuth flow is the same. Running both
+an OAuth app for sign-in and the GitHub App for installations is fine too.
+
+### Live updates without the GitHub App
+
+Forgejo and GitHub connections without an installation register per-repository
+webhooks automatically when the acting token may manage them; otherwise the
+registration is logged and skipped, and mureview keeps polling. Azure DevOps
+service hooks have to be created by hand (project settings → Service hooks →
+Web Hooks): the URL is `${BASE_URL}/api/webhooks/forge/<connectionId>` and the
+basic auth password must be the connection's webhook secret, which mureview
+generates on first use and stores in the database:
+
+```sql
+SELECT id, kind, login, webhook_secret FROM forge_connections;
+```
 
 ## Development
 
