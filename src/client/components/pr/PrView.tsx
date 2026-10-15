@@ -384,9 +384,6 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         return;
       }
       if (event.type === 'prs') {
-        // The device that voted already shows the decision; refreshing here
-        // would only blink the buttons away while the detail streams back in.
-        if (event.reason === 'review' && event.userId === user?.id) return;
         if (liveReload.current !== null) return;
         liveReload.current = window.setTimeout(() => {
           liveReload.current = null;

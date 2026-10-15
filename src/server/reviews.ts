@@ -50,6 +50,6 @@ export async function reviewPullRequestRoute(ctx: Ctx): Promise<Response> {
   });
   // The forge is the source of truth for the decision, so everyone (this
   // device included) refreshes what it actually recorded.
-  await publish(access.reviewSet.id, { type: 'prs', reason: 'review', userId: user.id });
+  await publish(access.reviewSet.id, { type: 'prs', reason: 'review' });
   return json({ ok: true, vote });
 }

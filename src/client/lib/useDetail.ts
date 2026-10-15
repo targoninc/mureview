@@ -36,6 +36,8 @@ export function useDetail(id: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<LoadCount | null>(null);
   const controllerRef = useRef<AbortController | null>(null);
+  const detailRef = useRef<ReviewSetDetail | null>(null);
+  detailRef.current = detail;
 
   const reload = useCallback(
     (fresh = false) => {
@@ -44,6 +46,9 @@ export function useDetail(id: string | undefined) {
       const controller = new AbortController();
       controllerRef.current = controller;
 
+      // While a reload streams in, the repositories of the previous detail
+      // stay visible until their replacements arrive, so nothing blinks away.
+      const previousRepos = detailRef.current?.pr.repos ?? [];
       let reviewSet: ReviewSet | null = null;
       let owned = true;
       let owner: ReviewSetDetail['owner'] = null;
@@ -74,7 +79,11 @@ export function useDetail(id: string | undefined) {
         } else if ('repo' in event) {
           repoEvents.push(event.repo);
           setLoading({ loaded: repoEvents.length, total: reviewSet?.repos.length ?? repoEvents.length });
-          commit({ ...loadingPr(), repos: [...repoEvents] });
+          const replaced = (repo: (typeof previousRepos)[number]) =>
+            repoEvents.some(
+              (entry) => entry.connectionId === repo.connectionId && entry.repo === repo.repo && entry.position === repo.position,
+            );
+          commit({ ...loadingPr(), repos: [...repoEvents, ...previousRepos.filter((repo) => !replaced(repo))] });
         } else if ('done' in event) {
           commit(event.done);
           setLoading(null);
