@@ -5,7 +5,7 @@ import { useAppContext } from '../../lib/appContext';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
+import { Avatar, Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -15,7 +15,7 @@ import {
   GitCommitIcon,
   GitPullRequestIcon,
 } from '@primer/octicons-react';
-import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewSetDetail, ReviewVote } from '../../../shared/types';
+import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewMarkBy, ReviewSetDetail, ReviewVote } from '../../../shared/types';
 import { api, post, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
@@ -28,6 +28,7 @@ import { PrHeader } from './PrHeader';
 import { CommitList } from './CommitList';
 import { FileTreePanel } from './FileTreePanel';
 import { ConversationPanel } from './ConversationPanel';
+import { ReviewVoteButtons } from './ReviewVoteButtons';
 import { CommentComposer, CommentThread } from './Comments';
 import { type AnnotationMeta, type DraftMeta, groupThreads, isDraft, threadVersion } from './annotations';
 
@@ -131,6 +132,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.position, mark.path))),
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const [reviewedBy, setReviewedBy] = useState<ReviewMarkBy[]>(pr.reviewedBy ?? []);
   const [view, setView] = useState<'layers' | 'combined'>('layers');
   const [checks, setChecks] = useState<RepoChecks[]>([]);
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>(
@@ -303,6 +305,15 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   parsedRef.current = parsedById;
 
   const threadsByItem = useMemo(() => groupThreads(comments), [comments]);
+  const viewersByItem = useMemo(() => {
+    const map = new Map<string, ReviewMarkBy['user'][]>();
+    for (const mark of reviewedBy) {
+      const id = fileItemId(mark.connectionId, mark.repo, mark.position, mark.path);
+      map.set(id, [...(map.get(id) ?? []), mark.user]);
+    }
+    return map;
+  }, [reviewedBy]);
+
   const commentCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const comment of comments) {
@@ -320,6 +331,21 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       if (event.reviewSetId !== reviewSet.id) return;
       if ('prId' in event && event.prId !== undefined && pr.prId !== null && event.prId !== pr.prId) return;
       if (event.type === 'reviewed') {
+        setReviewedBy((current) => {
+          const viewer = { id: event.userId, name: event.userName ?? 'Someone', avatarUrl: event.userAvatar ?? '' };
+          const ids = new Set(event.itemIds);
+          const next = current.filter((mark) => {
+            const id = fileItemId(mark.connectionId, mark.repo, mark.position, mark.path);
+            return !(ids.has(id) && mark.user.id === event.userId);
+          });
+          if (event.reviewed) {
+            for (const itemId of event.itemIds) {
+              const [connectionId, repo, position, ...rest] = itemId.split(':');
+              next.push({ connectionId: Number(connectionId), repo, position: Number(position), path: rest.join(':'), user: viewer });
+            }
+          }
+          return next;
+        });
         if (event.userId !== user?.id) return;
         setReviewedItems((current) => {
           const next = new Set(current);
@@ -510,14 +536,25 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       const entry = parsedRef.current.get(item.id);
       // Viewed marks belong to layers; the cumulative view is read-only.
       if (!entry || !pr.prId || entry.combined) return null;
+      const viewers = viewersByItem.get(entry.id) ?? [];
       return (
-        <label className="viewed-toggle" title="Mark this file as reviewed">
-          <Checkbox checked={reviewed.has(entry.id)} onChange={() => applyReviewed([entry.id], !reviewed.has(entry.id))} />
-          Viewed
-        </label>
+        <>
+          {viewers.length > 0 ? (
+            <span className="viewed-avatars" title={viewers.map((viewer) => viewer.name).join(', ')}>
+              {viewers.slice(0, 5).map((viewer) => (
+                <Avatar key={viewer.id} src={viewer.avatarUrl} size={18} alt={viewer.name} />
+              ))}
+              {viewers.length > 5 ? <span className="viewed-avatars-more">+{viewers.length - 5}</span> : null}
+            </span>
+          ) : null}
+          <label className="viewed-toggle" title="Mark this file as reviewed">
+            <Checkbox checked={reviewed.has(entry.id)} onChange={() => applyReviewed([entry.id], !reviewed.has(entry.id))} />
+            Viewed
+          </label>
+        </>
       );
     },
-    [reviewed, applyReviewed, pr.prId],
+    [reviewed, applyReviewed, pr.prId, viewersByItem],
   );
 
   const hasFiles = parsed.length > 0;
@@ -626,6 +663,30 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     }
   };
 
+  const reviewable = pr.repos.filter((repo) => repo.pullRequest?.review !== undefined && repo.position >= 0);
+  const reviewState: ReviewVote | null =
+    reviewable.length > 0 && reviewable.every((repo) => voteOf(repo) === voteOf(reviewable[0])) ? voteOf(reviewable[0]) : null;
+  const [voting, setVoting] = useState(false);
+  const voteOnAll = async (vote: ReviewVote) => {
+    setVoting(true);
+    setVoteError(null);
+    try {
+      for (const repo of reviewable) {
+        await post(`/review-sets/${reviewSet.id}/review`, {
+          connectionId: repo.connectionId,
+          repo: repo.repo,
+          position: repo.position,
+          vote,
+        });
+        setVotes((current) => new Map(current).set(voteKey(repo), vote));
+      }
+    } catch (err) {
+      setVoteError((err as Error).message);
+    } finally {
+      setVoting(false);
+    }
+  };
+
   const openPanel = (next: 'files' | 'commits' | 'conversation') => {
     setTab(next);
     setPanel(next);
@@ -688,6 +749,9 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         onToggleDiffStyle={toggleDiffStyle}
         fileMode={fileMode}
         onToggleFileMode={toggleFileMode}
+        reviewState={reviewable.length > 0 ? reviewState : undefined}
+        onVoteAll={reviewable.length > 0 ? voteOnAll : undefined}
+        voting={voting}
         progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}
         onOpenCommits={() => openPanel('commits')}
@@ -870,29 +934,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                     {repo.pullRequest?.review !== undefined &&
                     repo.pullRequest.state !== 'closed' &&
                     repo.pullRequest.state !== 'merged' ? (
-                      <div className="row" style={{ gap: 4, paddingLeft: 8 }}>
-                        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>Your review</span>
-                        <Button
-                          size="small"
-                          variant={voteOf(repo) === 'approve' ? 'primary' : 'default'}
-                          onClick={() => castVote(repo, 'approve')}
-                        >
-                          Approve
-                        </Button>
-                        <Button
-                          size="small"
-                          variant={voteOf(repo) === 'waiting' ? 'primary' : 'default'}
-                          onClick={() => castVote(repo, 'waiting')}
-                        >
-                          Waiting
-                        </Button>
-                        <Button
-                          size="small"
-                          variant={voteOf(repo) === 'reject' ? 'primary' : 'default'}
-                          onClick={() => castVote(repo, 'reject')}
-                        >
-                          Reject
-                        </Button>
+                      <div style={{ paddingLeft: 8 }}>
+                        <ReviewVoteButtons vote={voteOf(repo)} onVote={(vote) => castVote(repo, vote)} />
                       </div>
                     ) : null}
                     {repoChecks ? (

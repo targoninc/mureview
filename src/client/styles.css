@@ -1572,3 +1572,51 @@ a.comment-mention:hover {
   margin-right: auto;
   cursor: pointer;
 }
+
+/* Who marked a file as viewed, shown in the diff header. */
+.viewed-avatars {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 8px;
+}
+
+.viewed-avatars > * {
+  margin-left: -6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--bgColor-default);
+}
+
+.viewed-avatars > *:first-child {
+  margin-left: 0;
+}
+
+.viewed-avatars-more {
+  padding: 0 4px;
+  border-radius: 999px;
+  background-color: var(--bgColor-neutral-muted);
+  color: var(--fgColor-muted);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* Review decisions: coloured icons on otherwise plain buttons. */
+.vote-buttons .vote-button {
+  font-weight: 400;
+}
+
+.vote-button-active {
+  border-color: var(--borderColor-emphasis);
+  background-color: var(--bgColor-neutral-muted);
+}
+
+.vote-icon-approve {
+  color: var(--fgColor-success);
+}
+
+.vote-icon-waiting {
+  color: var(--fgColor-attention);
+}
+
+.vote-icon-reject {
+  color: var(--fgColor-danger);
+}

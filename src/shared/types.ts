@@ -248,6 +248,11 @@ export interface ReviewMark {
   path: string;
 }
 
+/** A file one user marked as viewed, for showing who reviewed what. */
+export interface ReviewMarkBy extends ReviewMark {
+  user: { id: number; name: string; avatarUrl: string };
+}
+
 export interface PrStatus {
   state: PrLifecycle;
   errors: string[];
@@ -257,6 +262,8 @@ export interface PrStatus {
   prId: number | null;
   comments: Comment[];
   reviewed: ReviewMark[];
+  /** Who marked what as viewed, for the avatars in the file headers. */
+  reviewedBy: ReviewMarkBy[];
   stats: { repos: number; files: number; additions: number; deletions: number };
 }
 

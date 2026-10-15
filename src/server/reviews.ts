@@ -2,7 +2,9 @@ import { connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
 import { HttpError, json, readJson } from './http';
 import { publish } from './live';
+import { ForgeError } from './forges';
 import { clientsForActor } from './pr';
+import { forgeErrorMessage } from './validate';
 import { reviewSetPullRequest } from './pullRequests';
 import { loadReadableReviewSet, requireId } from './reviewSets';
 
@@ -30,7 +32,14 @@ export async function reviewPullRequestRoute(ctx: Ctx): Promise<Response> {
   const ref = reviewSetPullRequest(access.reviewSet.id, connectionId, repo, position);
   if (!ref) throw new HttpError(400, 'There is no pull request for this layer yet.');
 
-  await client.reviewPullRequest(repo, ref, vote as ReviewVote);
+  try {
+    await client.reviewPullRequest(repo, ref, vote as ReviewVote);
+  } catch (error) {
+    if (error instanceof ForgeError) {
+      throw new HttpError(502, `The forge refused the review decision: ${forgeErrorMessage(error)}`);
+    }
+    throw error;
+  }
   publish(access.reviewSet.id, {
     type: 'vote',
     userId: user.id,

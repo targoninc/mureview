@@ -14,7 +14,8 @@ import {
   SyncIcon,
 } from '@primer/octicons-react';
 import { useNavigate } from 'react-router-dom';
-import type { PrStatus, ReviewSetDetail } from '../../../shared/types';
+import type { PrStatus, ReviewSetDetail, ReviewVote } from '../../../shared/types';
+import { ReviewVoteButtons } from './ReviewVoteButtons';
 import { repoLabel } from '../../../shared/types';
 
 type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done' | 'secondary';
@@ -46,6 +47,10 @@ interface PrHeaderProps {
   onToggleDiffStyle: () => void;
   fileMode: 'all' | 'single';
   onToggleFileMode: () => void;
+  /** Present when the review set has pull requests that take a decision. */
+  reviewState?: ReviewVote | null;
+  onVoteAll?: (vote: ReviewVote) => void;
+  voting?: boolean;
   progress: { loaded: number; total: number } | null;
   checksFailing: boolean;
   onOpenFiles: () => void;
@@ -66,6 +71,9 @@ export function PrHeader({
   onToggleDiffStyle,
   fileMode,
   onToggleFileMode,
+  reviewState,
+  onVoteAll,
+  voting,
   progress,
   checksFailing,
   onOpenFiles,
@@ -167,6 +175,9 @@ export function PrHeader({
         </div>
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
+            {onVoteAll ? (
+              <ReviewVoteButtons vote={reviewState ?? null} busy={voting} onVote={onVoteAll} />
+            ) : null}
             {compact ? (
               <>
                 <span className="icon-count">

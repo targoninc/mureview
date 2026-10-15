@@ -21,6 +21,7 @@ const loadingPr = (): PrStatus => ({
   prId: null,
   comments: [],
   reviewed: [],
+  reviewedBy: [],
   stats: { repos: 0, files: 0, additions: 0, deletions: 0 },
 });
 

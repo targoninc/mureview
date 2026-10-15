@@ -9,7 +9,7 @@ import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
 import { beginRun, finishRun, setPhase } from './progress';
 import { attachKnownPullRequests, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
-import { listReviewed } from './reviewed';
+import { listReviewed, listReviewedBy } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
@@ -296,7 +296,7 @@ export async function buildPrStatus(
       zeroStats(),
     );
 
-    const empty = { comments: [], reviewed: [], prId: null, stats: zeroStats() };
+    const empty = { comments: [], reviewed: [], reviewedBy: [], prId: null, stats: zeroStats() };
     if (hasOpen && lifecycle) {
       if (lifecycle.prId && ensurePulls) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
       else attachKnownPullRequests(clients, repos, lifecycle.prId);
@@ -337,6 +337,7 @@ export async function buildPrStatus(
         prId: lifecycle.prId,
         comments: includeDiscussions && lifecycle.prId ? listComments(lifecycle.prId) : [],
         reviewed: includeDiscussions && lifecycle.prId && options.viewerId ? listReviewed(lifecycle.prId, options.viewerId) : [],
+        reviewedBy: includeDiscussions && lifecycle.prId ? listReviewedBy(lifecycle.prId) : [],
         stats,
       };
     }

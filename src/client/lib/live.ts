@@ -3,7 +3,16 @@ import type { Comment, ReviewVote } from '../../shared/types';
 import { basePath } from './api';
 
 export type LiveEvent =
-  | { type: 'reviewed'; reviewSetId: number; prId: number; userId: number; reviewed: boolean; itemIds: string[] }
+  | {
+      type: 'reviewed';
+      reviewSetId: number;
+      prId: number;
+      userId: number;
+      userName?: string;
+      userAvatar?: string;
+      reviewed: boolean;
+      itemIds: string[];
+    }
   | { type: 'comment'; reviewSetId: number; prId: number; action: 'created'; comment: Comment }
   | { type: 'comment'; reviewSetId: number; prId: number; action: 'deleted' | 'resolved'; commentId: number; resolved?: boolean }
   | { type: 'comments'; reviewSetId: number; prId: number }

@@ -1,4 +1,4 @@
-import type { ReviewMark } from '../shared/types';
+import type { ReviewMark, ReviewMarkBy } from '../shared/types';
 import { requireUser } from './auth/session';
 import { loadReadablePr } from './comments';
 import { db } from './db';
@@ -13,6 +13,29 @@ export function listReviewed(prId: number, userId: number): ReviewMark[] {
       'SELECT connection_id AS connectionId, repo, position, path FROM reviewed_files WHERE pr_id = ? AND user_id = ? ORDER BY connection_id, repo, position, path',
     )
     .all(prId, userId);
+}
+
+/** Everyone's viewed marks on a pull request, newest user first. */
+export function listReviewedBy(prId: number): ReviewMarkBy[] {
+  return db
+    .query<
+      { connectionId: number; repo: string; position: number; path: string; userId: number; name: string; avatarUrl: string },
+      [number]
+    >(
+      `SELECT rf.connection_id AS connectionId, rf.repo, rf.position, rf.path,
+              u.id AS userId, u.name, u.avatar_url AS avatarUrl
+       FROM reviewed_files rf JOIN users u ON u.id = rf.user_id
+       WHERE rf.pr_id = ?
+       ORDER BY rf.connection_id, rf.repo, rf.position, rf.path, u.name`,
+    )
+    .all(prId)
+    .map((row) => ({
+      connectionId: row.connectionId,
+      repo: row.repo,
+      position: row.position,
+      path: row.path,
+      user: { id: row.userId, name: row.name, avatarUrl: row.avatarUrl },
+    }));
 }
 
 interface ReviewedInput {
@@ -87,6 +110,8 @@ export async function setReviewedRoute(ctx: Ctx): Promise<Response> {
   publishForPr(pr.id, {
     type: 'reviewed',
     userId: user.id,
+    userName: user.name,
+    userAvatar: user.avatar_url,
     reviewed,
     itemIds: marks.map((mark) => `${mark.connectionId}:${mark.repo}:${mark.position}:${mark.path}`),
   });
