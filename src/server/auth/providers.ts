@@ -24,7 +24,7 @@ import {
   userById,
 } from './identities';
 import { type OAuthMode, type PendingAuth, createState, takeState } from './oauthState';
-import { githubApp } from '../githubApp';
+import { attachGithubInstallation, githubApp } from '../githubApp';
 import { endSession, publicUser, requireUser, startSession } from './session';
 
 export function enabledProviders(): AuthProvider[] {
@@ -75,13 +75,19 @@ export function completeAuth(profile: IdentityProfile, connection: ConnectionInp
     } else if (!existing) {
       addIdentity(current.id, profile);
     }
-    if (connection) upsertConnection(current.id, connection);
+    if (connection) {
+      const stored = upsertConnection(current.id, connection);
+      if (connection.kind === 'github') void attachGithubInstallation(stored.id, stored.login);
+    }
     // Land on the settings page with a confirmation of what was connected.
     return redirect(appUrl(`/settings?connected=${connection?.kind ?? profile.provider}`), startSession(current.id));
   }
 
   const { user } = loginOrCreate(profile);
-  if (connection) upsertConnection(user.id, connection);
+  if (connection) {
+    const stored = upsertConnection(user.id, connection);
+    if (connection.kind === 'github') void attachGithubInstallation(stored.id, stored.login);
+  }
   return redirect(appUrl('/'), startSession(user.id));
 }
 

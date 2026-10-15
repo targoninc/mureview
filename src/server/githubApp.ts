@@ -80,6 +80,28 @@ export function cachedInstallationToken(installationId: string): string | null {
   return cachedToken && cachedToken.expires - Date.now() > 60_000 ? cachedToken.token : null;
 }
 
+/**
+ * Attaches the account's installation to a connection, so a connection made
+ * after the app was installed still uses installation tokens.
+ */
+export async function attachGithubInstallation(connectionId: number, login: string): Promise<void> {
+  if (!githubApp() || !login) return;
+  try {
+    const response = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}/installation`, {
+      headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+    });
+    if (!response.ok) return;
+    const data = (await response.json()) as { id?: number };
+    if (!data.id) return;
+    const { db } = await import('./db');
+    const { invalidateForgeCaches } = await import('./forges');
+    db.run('UPDATE forge_connections SET installation_id = ? WHERE id = ?', [String(data.id), connectionId]);
+    invalidateForgeCaches();
+  } catch (error) {
+    console.error('Could not look up the GitHub App installation:', error);
+  }
+}
+
 export function forgetInstallation(installationId: string): void {
   installationTokens.delete(installationId);
 }
