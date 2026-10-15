@@ -26,7 +26,7 @@ export type LiveEvent =
       position: number;
       vote: ReviewVote;
     }
-  | { type: 'prs'; reviewSetId: number; prId?: number; reason?: string }
+  | { type: 'prs'; reviewSetId: number; prId?: number; reason?: string; userId?: number }
   | { type: 'pong'; reviewSetId?: number };
 
 /**
