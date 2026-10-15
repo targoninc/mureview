@@ -2,7 +2,7 @@ import { Button, Spinner } from '@primer/react';
 import { CheckCircleIcon, ClockIcon, XCircleIcon } from '@primer/octicons-react';
 import type { ReviewVote } from '../../../shared/types';
 
-const options: Array<{ vote: ReviewVote; label: string; icon: typeof CheckCircleIcon; className: string }> = [
+export const voteOptions: Array<{ vote: ReviewVote; label: string; icon: typeof CheckCircleIcon; className: string }> = [
   { vote: 'approve', label: 'Approve', icon: CheckCircleIcon, className: 'vote-icon-approve' },
   { vote: 'waiting', label: 'Waiting', icon: ClockIcon, className: 'vote-icon-waiting' },
   { vote: 'reject', label: 'Reject', icon: XCircleIcon, className: 'vote-icon-reject' },
@@ -23,7 +23,7 @@ export function ReviewVoteButtons({
 }) {
   return (
     <div className="row vote-buttons" style={{ gap: 4 }}>
-      {options.map((option) => (
+      {voteOptions.map((option) => (
         <Button
           key={option.vote}
           size="small"

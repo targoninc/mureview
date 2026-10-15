@@ -1,6 +1,7 @@
-import { Button, IconButton, Label, Spinner } from '@primer/react';
+import { ActionList, ActionMenu, Button, IconButton, Label, Spinner } from '@primer/react';
 import {
   AlertIcon,
+  ChevronDownIcon,
   CommentDiscussionIcon,
   ColumnsIcon,
   FileDiffIcon,
@@ -13,9 +14,10 @@ import {
   RowsIcon,
   SyncIcon,
 } from '@primer/octicons-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, ReviewSetDetail, ReviewVote } from '../../../shared/types';
-import { ReviewVoteButtons } from './ReviewVoteButtons';
+import { ReviewVoteButtons, voteOptions } from './ReviewVoteButtons';
 import { repoLabel } from '../../../shared/types';
 
 type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done' | 'secondary';
@@ -52,6 +54,8 @@ interface PrHeaderProps {
   onVoteAll?: (vote: ReviewVote) => void;
   voting?: boolean;
   pendingVote?: ReviewVote | null;
+  /** One row per underlying pull request, for the review state popover. */
+  reviewRows?: Array<{ key: string; label: string; vote: ReviewVote }>;
   progress: { loaded: number; total: number } | null;
   checksFailing: boolean;
   onOpenFiles: () => void;
@@ -76,6 +80,7 @@ export function PrHeader({
   onVoteAll,
   voting,
   pendingVote,
+  reviewRows,
   progress,
   checksFailing,
   onOpenFiles,
@@ -84,6 +89,7 @@ export function PrHeader({
   onShowPullRequests,
 }: PrHeaderProps) {
   const navigate = useNavigate();
+  const [reviewOpen, setReviewOpen] = useState(false);
   const { reviewSet, pr } = detail;
   const owned = detail.owned !== false;
   const canManage = detail.canManage;
@@ -178,7 +184,39 @@ export function PrHeader({
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
             {onVoteAll ? (
-              <ReviewVoteButtons vote={reviewState ?? null} busy={voting} pending={pendingVote} onVote={onVoteAll} />
+              <>
+                <ReviewVoteButtons vote={reviewState ?? null} busy={voting} pending={pendingVote} onVote={onVoteAll} />
+                {reviewRows && reviewRows.length > 1 ? (
+                  <ActionMenu open={reviewOpen} onOpenChange={setReviewOpen}>
+                    <ActionMenu.Anchor>
+                      <IconButton
+                        icon={ChevronDownIcon}
+                        aria-label="Show the review state of every pull request"
+                        variant="invisible"
+                        size="small"
+                      />
+                    </ActionMenu.Anchor>
+                    <ActionMenu.Overlay width="medium">
+                      <ActionList>
+                        {reviewRows.map((row) => {
+                          const option = voteOptions.find((entry) => entry.vote === row.vote) ?? voteOptions[1];
+                          return (
+                            <ActionList.Item key={row.key} onSelect={(event) => event.preventDefault()}>
+                              <ActionList.LeadingVisual>
+                                <span className={option.className}>
+                                  <option.icon size={14} />
+                                </span>
+                              </ActionList.LeadingVisual>
+                              <span className="mono">{row.label}</span>
+                              <ActionList.TrailingVisual>{option.label}</ActionList.TrailingVisual>
+                            </ActionList.Item>
+                          );
+                        })}
+                      </ActionList>
+                    </ActionMenu.Overlay>
+                  </ActionMenu>
+                ) : null}
+              </>
             ) : null}
             {compact ? (
               <>

@@ -20,6 +20,7 @@ import { api, post, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, repoStatusText } from '../../lib/format';
+import { repoLabel } from '../../../shared/types';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { ServiceIcon, serviceDetail } from '../ServiceIcon';
@@ -762,6 +763,11 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         onVoteAll={reviewable.length > 0 ? voteOnAll : undefined}
         voting={voting}
         pendingVote={pendingVote}
+        reviewRows={reviewable.map((repo) => ({
+          key: voteKey(repo),
+          label: repo.position > 0 ? `${repoLabel(repo)} · layer ${repo.position + 1}` : repoLabel(repo),
+          vote: voteOf(repo),
+        }))}
         progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}
         onOpenCommits={() => openPanel('commits')}
