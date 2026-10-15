@@ -120,8 +120,9 @@ installing the app — without them, nothing changes.
      Pull requests (write, for merging and reviews), Issues (write, for
      general pull request comments), Checks (read), Commit statuses (read).
    - **Subscribe to events**: Pull request, Pull request review, Issue
-     comment, Installation, Installation repositories. Everything else is
-     acknowledged and ignored.
+     comment, Installation, Installation repositories and Delete (branch
+     deletions change what a review set can still compare). Everything else
+     is acknowledged and ignored.
    - *Request user authorization (OAuth) during installation*: checking it
      sends the user through the callback above, so installing also signs them
      in and creates their GitHub connection in one step. Leaving it off works

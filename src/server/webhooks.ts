@@ -15,6 +15,8 @@ const stateEvents = new Set([
   'pull_request',
   'pull_request_review',
   'push',
+  // Branch deletions change what the review set can still compare.
+  'delete',
   'git.pull-request-updated',
   'git.pull-request-merged',
   'git.push',
