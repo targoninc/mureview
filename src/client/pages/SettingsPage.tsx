@@ -226,6 +226,47 @@ export function SettingsPage() {
           )}
         </div>
 
+        {me.githubAppSlug ? (
+          <div className="stack">
+            <Heading as="h2" variant="small">
+              GitHub App installations
+            </Heading>
+            <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+              Repositories an installation covers get webhooks and installation tokens; everything else stays on your
+              account's own access.
+            </span>
+            <div className="repo-list">
+              {me.githubInstallations.length === 0 ? (
+                <div className="repo-list-item" style={{ cursor: 'default' }}>
+                  <span style={{ color: 'var(--fgColor-muted)' }}>No installations yet.</span>
+                </div>
+              ) : (
+                me.githubInstallations.map((installation) => (
+                  <div className="repo-list-item" key={installation.id} style={{ cursor: 'default' }}>
+                    <div className="row">
+                      <ServiceGlyph kind="github" />
+                      <span>
+                        <strong>{installation.account}</strong>{' '}
+                        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>({installation.selection})</span>
+                      </span>
+                    </div>
+                    <Button
+                      as="a"
+                      href={`https://github.com/settings/installations/${installation.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      size="small"
+                      variant="invisible"
+                    >
+                      Manage
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+
         <div className="stack">
           <Heading as="h2" variant="small">
             Add a connection

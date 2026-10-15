@@ -139,6 +139,49 @@ export function forgetRepoInstallation(repo: string): void {
   repoInstallations.delete(repo);
 }
 
+export interface GithubInstallation {
+  id: number;
+  account: string;
+  selection: string;
+}
+
+let installations: GithubInstallation[] = [];
+let installationsAt = 0;
+
+/** The app's installations, cached and refreshed in the background. */
+export function githubInstallations(): GithubInstallation[] {
+  if (githubApp() && Date.now() - installationsAt > 60_000) void refreshGithubInstallations();
+  return installations;
+}
+
+export async function refreshGithubInstallations(): Promise<GithubInstallation[]> {
+  const app = githubApp();
+  if (!app) return [];
+  try {
+    const response = await fetch('https://api.github.com/app/installations?per_page=100', {
+      headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+    });
+    if (!response.ok) return installations;
+    const data = (await response.json()) as Array<{
+      id?: number;
+      account?: { login?: string };
+      repository_selection?: string;
+    }>;
+    installations = data
+      .filter((entry) => entry.id && entry.account?.login)
+      .map((entry) => ({
+        id: entry.id!,
+        account: entry.account!.login!,
+        selection: entry.repository_selection === 'all' ? 'all repositories' : 'selected repositories',
+      }));
+    installationsAt = Date.now();
+    return installations;
+  } catch (error) {
+    console.error('Could not list the GitHub App installations:', error);
+    return installations;
+  }
+}
+
 let resolvedSlug: string | null = null;
 
 /**

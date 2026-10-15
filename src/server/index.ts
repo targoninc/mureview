@@ -1,6 +1,6 @@
 import { atprotoMetadata } from './auth/atproto';
 import { getSessionUser } from './auth/session';
-import { resolveGithubAppSlug } from './githubApp';
+import { refreshGithubInstallations, resolveGithubAppSlug } from './githubApp';
 import { config } from './config';
 import './db';
 import { json } from './http';
@@ -47,3 +47,4 @@ console.log(`mureview listening on ${config.baseUrl} (port ${server.port})`);
 
 // Fill in the GitHub App slug for the settings link without requiring the env.
 void resolveGithubAppSlug();
+void refreshGithubInstallations();
