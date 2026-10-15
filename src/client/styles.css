@@ -1610,8 +1610,9 @@ a.comment-mention:hover {
 }
 
 .vote-button-active {
-  border-color: var(--borderColor-emphasis);
-  background-color: var(--bgColor-neutral-muted);
+  border-color: var(--borderColor-accent-emphasis);
+  background-color: var(--bgColor-accent-muted);
+  font-weight: 600;
 }
 
 .vote-icon-approve {
