@@ -767,7 +767,14 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           key: voteKey(repo),
           label: repo.position > 0 ? `${repoLabel(repo)} · layer ${repo.position + 1}` : repoLabel(repo),
           vote: voteOf(repo),
-          reviewers: repo.pullRequest?.reviewers,
+          reviewers: repo.pullRequest?.reviewers?.map((reviewer) => ({
+            ...reviewer,
+            // Azure DevOps avatars need the connection's credentials.
+            avatarUrl:
+              reviewer.avatarUrl && repo.kind === 'ado'
+                ? `/api/forge-avatar?connectionId=${repo.connectionId}&url=${encodeURIComponent(reviewer.avatarUrl)}`
+                : reviewer.avatarUrl,
+          })),
         }))}
         progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}
