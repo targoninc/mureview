@@ -1711,13 +1711,22 @@ a.comment-mention:hover {
 
 /* On small screens the review decisions get their own full-width line. */
 @media (max-width: 900px) {
-  .vote-buttons {
+  /* The decisions and their state dropdown share one full-width line. */
+  .pr-header-actions .vote-group {
     flex: 1 1 100%;
+  }
+
+  .vote-group .vote-buttons {
+    flex: 1;
   }
 
   .vote-buttons .vote-button {
     flex: 1;
     justify-content: center;
+  }
+
+  .vote-group > button {
+    flex: none;
   }
 }
 

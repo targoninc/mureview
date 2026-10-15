@@ -184,7 +184,7 @@ export function PrHeader({
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
             {onVoteAll ? (
-              <>
+              <div className="row vote-group" style={{ gap: 4 }}>
                 <ReviewVoteButtons vote={reviewState ?? null} busy={voting} pending={pendingVote} onVote={onVoteAll} />
                 {reviewRows && reviewRows.length > 1 ? (
                   <ActionMenu open={reviewOpen} onOpenChange={setReviewOpen}>
@@ -216,7 +216,7 @@ export function PrHeader({
                     </ActionMenu.Overlay>
                   </ActionMenu>
                 ) : null}
-              </>
+              </div>
             ) : null}
             {compact ? (
               <>
