@@ -80,7 +80,7 @@ deleted by its own author, so the two sides cannot drift apart.
 | `GITHUB_CLIENT_SECRET` | | GitHub OAuth app client secret. |
 | `GITHUB_REDIRECT_URI` | `${BASE_URL}/api/auth/callback/github` | Override when the OAuth app has a different callback URL registered. |
 | `GITHUB_APP_ID` | | GitHub App id (optional, see below). |
-| `GITHUB_APP_PRIVATE_KEY` | | GitHub App private key (PEM; `\n` escapes are fine). |
+| `GITHUB_APP_PRIVATE_KEY` | | GitHub App private key. PEM, PEM with `\n` escapes, or base64-encoded (`base64 -w0 key.pem`). |
 | `GITHUB_APP_WEBHOOK_SECRET` | | GitHub App webhook secret, for verifying its deliveries. |
 | `GITHUB_APP_SLUG` | | GitHub App slug, shown as an "Install the GitHub App" link in the settings. |
 | `ENTRA_CLIENT_ID` | | Microsoft Entra ID app client id (optional sign-in method). |

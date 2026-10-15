@@ -20,10 +20,20 @@ export function resetGithubApp(): void {
  * installed repository through one endpoint. Without it, installations keep
  * using their OAuth tokens exactly as before.
  */
+/** Accepts a PEM with real newlines, with \\n escapes, or base64-encoded. */
+function readPrivateKey(raw: string): string {
+  const value = raw.trim();
+  if (!value) return '';
+  if (value.includes('BEGIN')) return value;
+  const decoded = Buffer.from(value, 'base64').toString('utf8');
+  if (decoded.includes('BEGIN')) return decoded.trim();
+  return value.replaceAll('\\n', '\n');
+}
+
 export function githubApp(): GithubAppConfig | null {
   if (cached !== undefined) return cached;
   const appId = (process.env.GITHUB_APP_ID ?? '').trim();
-  const privateKey = (process.env.GITHUB_APP_PRIVATE_KEY ?? '').replaceAll('\\n', '\n').trim();
+  const privateKey = readPrivateKey(process.env.GITHUB_APP_PRIVATE_KEY ?? '');
   if (!appId || !privateKey) {
     cached = null;
     return cached;

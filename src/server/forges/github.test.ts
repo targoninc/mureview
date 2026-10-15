@@ -241,3 +241,22 @@ test('the GitHub App signs JWTs and caches installation tokens', async () => {
   delete process.env.GITHUB_APP_WEBHOOK_SECRET;
   app.resetGithubApp();
 });
+
+test('the app private key accepts escaped and base64 encodings', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  const app = await import('../githubApp');
+  for (const encoded of [privateKey, privateKey.replaceAll('\n', '\\n'), Buffer.from(privateKey).toString('base64')]) {
+    process.env.GITHUB_APP_ID = '12345';
+    process.env.GITHUB_APP_PRIVATE_KEY = encoded;
+    app.resetGithubApp();
+    expect(app.appJwt().split('.')).toHaveLength(3);
+  }
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  app.resetGithubApp();
+});
