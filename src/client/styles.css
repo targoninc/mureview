@@ -1620,3 +1620,66 @@ a.comment-mention:hover {
 .vote-icon-reject {
   color: var(--fgColor-danger);
 }
+
+/* Line comments in the conversation: the commented code above the thread. */
+.conversation-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conversation-file-label {
+  padding: 0 2px;
+  color: var(--fgColor-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-snippet {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.code-snippet {
+  border: 1px solid var(--borderColor-muted);
+  border-radius: 6px;
+  background-color: var(--bgColor-muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow: hidden;
+}
+
+.code-snippet-line {
+  display: flex;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.code-snippet-line.code-snippet-target {
+  background-color: var(--bgColor-accent-muted);
+}
+
+.code-snippet-line.code-snippet-addition .code-snippet-text {
+  color: var(--fgColor-success);
+}
+
+.code-snippet-line.code-snippet-deletion .code-snippet-text {
+  color: var(--fgColor-danger);
+}
+
+.code-snippet-number {
+  flex: none;
+  width: 32px;
+  color: var(--fgColor-muted);
+  text-align: right;
+  user-select: none;
+}
+
+.code-snippet-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}

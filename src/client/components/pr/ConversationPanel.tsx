@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
 import type { Comment, RepoStatus } from '../../../shared/types';
 import { repoLabel } from '../../../shared/types';
+import { groupThreads } from './annotations';
 import { CommentComposer, CommentThread } from './Comments';
+import { codeSnippet } from '../../lib/snippet';
 
 interface ConversationPanelProps {
   prId: number | null;
@@ -21,7 +23,8 @@ interface ConversationGroup {
 /**
  * General comments belong to the pull request they were written on, so the
  * conversation shows one thread per repository (and stack layer) instead of
- * mixing comments from different pull requests together.
+ * mixing comments from different pull requests together. Line comments keep
+ * their code snippet above the thread, the way Azure DevOps shows them.
  */
 export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }: ConversationPanelProps) {
   const groups = useMemo(() => {
@@ -58,8 +61,65 @@ export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }:
     return ordered;
   }, [comments, repos]);
 
+  // Line comments, grouped by pull request and then by file.
+  const lineGroups = useMemo(() => {
+    const threads = groupThreads(comments);
+    const byKey = new Map<string, Map<string, Array<{ threadKey: string; line: number; side: 'additions' | 'deletions'; comments: Comment[] }>>>();
+    for (const list of threads.values()) {
+      for (const thread of list) {
+        const key = `${thread.connectionId}:${thread.repo}:${thread.position}`;
+        const files = byKey.get(key) ?? new Map();
+        const entries = files.get(thread.path) ?? [];
+        entries.push({ threadKey: thread.threadKey, line: thread.line, side: thread.side, comments: thread.comments });
+        files.set(thread.path, entries);
+        byKey.set(key, files);
+      }
+    }
+    return byKey;
+  }, [comments]);
+
+  const snippetFor = (repo: RepoStatus | undefined, path: string, line: number, side: 'additions' | 'deletions') => {
+    const file = repo?.files?.find((entry) => entry.path === path);
+    if (!file?.patch) return null;
+    return codeSnippet(file.patch, line, side);
+  };
+
+  const fileThreads = (key: string, repo: RepoStatus | undefined) => {
+    const files = lineGroups.get(key);
+    if (!files) return null;
+    return [...files.entries()].map(([path, entries]) => (
+      <div className="conversation-file" key={path}>
+        <div className="conversation-file-label mono" title={path}>
+          {path}
+        </div>
+        {entries.map((entry) => {
+          const snippet = snippetFor(repo, path, entry.line, entry.side);
+          return (
+            <div className="conversation-snippet" key={entry.threadKey}>
+              {snippet ? (
+                <div className="code-snippet mono">
+                  {snippet.lines.map((line) => (
+                    <div
+                      key={`${line.number}:${line.kind}`}
+                      className={`code-snippet-line${line.target ? ' code-snippet-target' : ''}${line.kind === 'addition' ? ' code-snippet-addition' : ''}${line.kind === 'deletion' ? ' code-snippet-deletion' : ''}`}
+                    >
+                      <span className="code-snippet-number">{line.number}</span>
+                      <span className="code-snippet-text">{line.text || ' '}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              <CommentThread prId={prId} comments={entry.comments} repos={repos} onAdded={onAdded} onDeleted={onDeleted} />
+            </div>
+          );
+        })}
+      </div>
+    ));
+  };
+
   if (!prId) return null;
   const reviewSetGroup = groups.find((group) => group.key === 'review-set');
+  const lineKeys = [...lineGroups.keys()].filter((key) => !groups.some((group) => group.key === key));
 
   return (
     <div className="conversation">
@@ -74,8 +134,23 @@ export function ConversationPanel({ prId, comments, repos, onAdded, onDeleted }:
             onAdded={onAdded}
             onDeleted={onDeleted}
           />
+          {fileThreads(group.key, repos?.find((repo) => group.context && repo.connectionId === group.context.connectionId && repo.repo === group.context.repo && repo.position === group.context.position))}
         </div>
       ))}
+      {lineKeys.map((key) => {
+        const [connectionId, repo, position] = key.split(':');
+        const status = repos?.find(
+          (entry) => entry.connectionId === Number(connectionId) && entry.repo === repo && entry.position === Number(position),
+        );
+        const stacked = (repos ?? []).some((entry) => entry.position > 0);
+        const where = status ? repoLabel(status) : repo;
+        return (
+          <div className="conversation-group" key={key}>
+            <div className="conversation-group-label">{stacked ? `${where} · layer ${Number(position) + 1}` : where}</div>
+            {fileThreads(key, status)}
+          </div>
+        );
+      })}
       {!reviewSetGroup ? (
         <CommentComposer
           prId={prId}
