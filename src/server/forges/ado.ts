@@ -862,14 +862,44 @@ export class AdoClient implements ForgeClient {
 
   private async currentIdentity(): Promise<{ id: string; uniqueName: string }> {
     if (this.identity) return this.identity;
-    const data = await this.request<{ authenticatedUser?: { id?: string; uniqueName?: string } }>(
-      `${this.baseUrl}/_apis/connectionData?api-version=7.1`,
-    );
-    const id = data.authenticatedUser?.id ?? '';
-    const uniqueName = data.authenticatedUser?.uniqueName ?? '';
-    if (!id) throw new ForgeError(401, 'could not read the Azure DevOps identity of this token');
-    this.identity = { id, uniqueName };
-    return this.identity;
+    // The connection data endpoint is the direct way, but a narrowly scoped
+    // token may not be allowed to call it, so the identity picker is the
+    // second attempt (it lives on vssps for dev.azure.com organizations).
+    let lastError: unknown = null;
+    for (const base of this.identityBases()) {
+      try {
+        const data = await this.request<{ authenticatedUser?: { id?: string; uniqueName?: string } }>(
+          `${base}/_apis/connectionData?api-version=7.1`,
+        );
+        const id = data.authenticatedUser?.id ?? '';
+        if (id) {
+          this.identity = { id, uniqueName: data.authenticatedUser?.uniqueName ?? '' };
+          return this.identity;
+        }
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (this.login) {
+      for (const base of this.identityBases()) {
+        for (const version of ['7.1', '7.1-preview.1']) {
+          try {
+            const data = await this.request<{ value?: Array<{ id?: string; providerDisplayName?: string; properties?: { Account?: { $value?: string } } }> }>(
+              `${base}/_apis/identities?searchFilter=General&filterValue=${encodeURIComponent(this.login)}&api-version=${version}`,
+            );
+            const found = data.value?.[0];
+            if (found?.id) {
+              this.identity = { id: found.id, uniqueName: found.properties?.Account?.$value ?? this.login };
+              return this.identity;
+            }
+          } catch (error) {
+            lastError = error;
+          }
+        }
+      }
+    }
+    console.error('Could not read the Azure DevOps identity of this token:', lastError);
+    throw new ForgeError(401, 'could not read the Azure DevOps identity of this token');
   }
 
   /** Finds the acting user among a pull request's reviewers. */
