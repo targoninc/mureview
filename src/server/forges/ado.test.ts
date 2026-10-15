@@ -349,3 +349,29 @@ test('reviewer matching works without connection data', async () => {
     server.stop(true);
   }
 });
+
+test('voting joins the review when the account is not a reviewer yet', async () => {
+  const calls: Array<{ url: string; method: string; body: string }> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      calls.push({ url: url.pathname, method: request.method, body: request.method === 'PUT' ? await request.text() : '' });
+      if (url.pathname.endsWith('/_apis/connectionData')) {
+        return Response.json({ authenticatedUser: { id: 'uid', uniqueName: 'me@example.com' } });
+      }
+      if (url.pathname.includes('/pullRequests/5/reviewers/uid')) return Response.json({ vote: 10 });
+      if (url.pathname.includes('/pullRequests/5')) return Response.json({ reviewers: [] });
+      return new Response('not found', { status: 404 });
+    },
+  });
+  try {
+    const client = new AdoClient(`http://localhost:${server.port}`, 'token', 'me@example.com');
+    await client.reviewPullRequest('project/repo', '5', 'approve');
+    const vote = calls.find((call) => call.method === 'PUT');
+    expect(vote?.url).toContain('/reviewers/uid');
+    expect(vote?.body).toContain('"vote":10');
+  } finally {
+    server.stop(true);
+  }
+});

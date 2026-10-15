@@ -1683,3 +1683,43 @@ a.comment-mention:hover {
   text-overflow: ellipsis;
   white-space: pre;
 }
+
+/* Avatars stay circular even when their row wraps or stretches. */
+.comment-header [data-component='Avatar'],
+.comment-header img,
+.viewed-avatars [data-component='Avatar'],
+.viewed-avatars img {
+  flex: none;
+  border-radius: 50%;
+}
+
+.comment-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-header > span {
+  white-space: nowrap;
+}
+
+/* On small screens the review decisions get their own full-width line. */
+@media (max-width: 900px) {
+  .vote-buttons {
+    flex: 1 1 100%;
+  }
+
+  .vote-buttons .vote-button {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+.comment-header strong {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.comment-header > span {
+  flex: none;
+}

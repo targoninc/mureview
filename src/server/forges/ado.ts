@@ -902,11 +902,22 @@ export class AdoClient implements ForgeClient {
   }
 
   async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
+    const value = { vote: vote === 'approve' ? 10 : vote === 'reject' ? -10 : 0 };
     const own = await this.ownReviewer(repo, ref);
-    if (!own?.id) throw new ForgeError(400, 'you are not a reviewer on this pull request yet');
-    await this.request(`${this.repoUrl(repo)}/pullRequests/${ref}/reviewers/${own.id}?api-version=7.1`, {
+    if (own?.id) {
+      await this.request(`${this.repoUrl(repo)}/pullRequests/${ref}/reviewers/${own.id}?api-version=7.1`, {
+        method: 'PUT',
+        json: value,
+      });
+      return;
+    }
+    // Voting joins the review first: Azure DevOps accepts the vote for the
+    // acting identity even when it is not on the reviewer list yet.
+    const identity = await this.currentIdentity().catch(() => null);
+    if (!identity?.id) throw new ForgeError(400, 'you are not a reviewer on this pull request yet');
+    await this.request(`${this.repoUrl(repo)}/pullRequests/${ref}/reviewers/${identity.id}?api-version=7.1`, {
       method: 'PUT',
-      json: { vote: vote === 'approve' ? 10 : vote === 'reject' ? -10 : 0 },
+      json: value,
     });
   }
 
