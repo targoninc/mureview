@@ -112,6 +112,33 @@ export async function attachGithubInstallation(connectionId: number, login: stri
   }
 }
 
+const repoInstallations = new Map<string, string | null>();
+
+/**
+ * The installation covering a repository, looked up with the app JWT. This is
+ * how organization installations reach connections whose account is not the
+ * organization itself.
+ */
+export async function installationForRepo(repo: string): Promise<string | null> {
+  if (!githubApp()) return null;
+  if (repoInstallations.has(repo)) return repoInstallations.get(repo) ?? null;
+  try {
+    const response = await fetch(`https://api.github.com/repos/${repo}/installation`, {
+      headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+    });
+    const id = response.ok ? String(((await response.json()) as { id?: number }).id ?? '') || null : null;
+    repoInstallations.set(repo, id);
+    return id;
+  } catch (error) {
+    console.error(`Could not look up the installation for ${repo}:`, error);
+    return null;
+  }
+}
+
+export function forgetRepoInstallation(repo: string): void {
+  repoInstallations.delete(repo);
+}
+
 let resolvedSlug: string | null = null;
 
 /**

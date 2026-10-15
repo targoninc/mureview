@@ -1,5 +1,6 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
+import { installationForRepo, installationToken } from '../githubApp';
 import { config } from '../config';
 // The database and crypto are imported lazily so importing this module (tests,
 // type checks) never opens the database.
@@ -45,6 +46,9 @@ export interface GithubAuth {
    * repository the account can: access always follows the acting user.
    */
   fallback?: () => string | Promise<string>;
+  /** Looks up an app installation that covers a repository, when the tokens above cannot. */
+  installationForRepo?: (repo: string) => Promise<string | null>;
+  installationToken?: (installationId: string) => Promise<string>;
 }
 
 const refreshing = new Map<number, Promise<string>>();
@@ -204,7 +208,11 @@ export class GithubClient implements ForgeClient {
   constructor(private token: string, private auth?: GithubAuth) {}
 
   /** Refreshes an expired token once per request before giving up. */
-  private async retryOnExpiry<T>(send: () => Promise<Response>, read: (response: Response) => Promise<T>): Promise<T> {
+  private async retryOnExpiry<T>(
+    send: () => Promise<Response>,
+    read: (response: Response) => Promise<T>,
+    path = '',
+  ): Promise<T> {
     let response = await send();
     if (response.status === 401 && this.auth) {
       this.token = await this.auth.refresh();
@@ -215,6 +223,23 @@ export class GithubClient implements ForgeClient {
       if (fallback && fallback !== this.token) {
         this.token = fallback;
         response = await send();
+      }
+    }
+    // An organization installation covers repositories the account token may
+    // not reach, so the app's installation for the repository gets a turn.
+    if (response.status === 404 && this.auth?.installationForRepo && this.auth.installationToken) {
+      const repo = /\/repos\/([^/]+\/[^/]+)/.exec(path)?.[1];
+      const installation = repo ? await this.auth.installationForRepo(repo) : null;
+      if (installation) {
+        try {
+          const token = await this.auth.installationToken(installation);
+          if (token && token !== this.token) {
+            this.token = token;
+            response = await send();
+          }
+        } catch (error) {
+          console.error(`Could not use the app installation for ${repo}:`, error);
+        }
       }
     }
     return read(response);
@@ -246,6 +271,7 @@ export class GithubClient implements ForgeClient {
         if (response.status === 204 || response.headers.get('content-length') === '0') return undefined as T;
         return (await response.json()) as T;
       },
+      path,
     );
   }
 

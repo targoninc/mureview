@@ -277,3 +277,43 @@ test('a repository the installation cannot see falls back to the account token',
   expect(calls[0].authorization).toBe('Bearer installation-token');
   expect(calls[1].authorization).toBe('Bearer account-token');
 });
+
+test('a repository only the app installation can see uses its token', async () => {
+  process.env.GITHUB_APP_ID = '12345';
+  process.env.GITHUB_APP_PRIVATE_KEY = 'not-a-real-key';
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+  const app = await import('../githubApp');
+  app.resetGithubApp();
+
+  const calls: Array<{ url: string; authorization: string }> = [];
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const url = String(input);
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    calls.push({ url, authorization: headers.Authorization ?? '' });
+    if (url.includes('/app/installations/77/access_tokens')) return Response.json({ token: 'org-token', expires_at: new Date(Date.now() + 3600_000).toISOString() });
+    if (url.includes('/repos/targoninc/lyda-internal-dashboard/installation')) return Response.json({ id: 77 });
+    if (headers.Authorization === 'Bearer account-token') return new Response('not found', { status: 404 });
+    if (headers.Authorization === 'Bearer org-token') return Response.json([{ name: 'main', commit: { sha: 'abc123' } }]);
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('account-token', {
+    refresh: async () => 'account-token',
+    fallback: () => 'account-token',
+    installationForRepo: app.installationForRepo,
+    installationToken: app.installationToken,
+  });
+  const branches = await client.listBranches('targoninc/lyda-internal-dashboard');
+  expect(branches.map((branch) => branch.name)).toEqual(['main']);
+  expect(calls.some((call) => call.authorization === 'Bearer org-token')).toBe(true);
+
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  app.resetGithubApp();
+});

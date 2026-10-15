@@ -3,7 +3,7 @@ import { mintAtprotoServiceAuth } from '../atproto/client';
 import { decrypt } from '../crypto';
 import { AdoClient, invalidateAdoBranchCaches } from './ado';
 import { ForgejoClient, invalidateForgejoBranchCaches, refreshForgejoToken } from './forgejo';
-import { cachedInstallationToken, githubApp, installationToken } from '../githubApp';
+import { cachedInstallationToken, githubApp, installationForRepo, installationToken } from '../githubApp';
 import { GithubClient, invalidateGithubBranchCaches, refreshGithubToken } from './github';
 import { TangledClient, invalidateTangledBranchCaches } from './tangled';
 import type { ForgeClient } from './types';
@@ -39,7 +39,11 @@ export function clientFor(connection: ForgeConnectionRow): ForgeClient {
       fallback: () => token,
     });
   }
-  return new GithubClient(token, { refresh: () => refreshGithubToken(connection.id) });
+  return new GithubClient(token, {
+    refresh: () => refreshGithubToken(connection.id),
+    installationForRepo,
+    installationToken,
+  });
 }
 
 export function connectionSecret(connection: ForgeConnectionRow): string {
