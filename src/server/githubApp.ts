@@ -154,6 +154,13 @@ export function githubInstallations(): GithubInstallation[] {
   return installations;
 }
 
+/** The app's installations, refreshed when the cache is older than a minute. */
+export async function freshGithubInstallations(): Promise<GithubInstallation[]> {
+  if (!githubApp()) return [];
+  if (Date.now() - installationsAt > 60_000) await refreshGithubInstallations();
+  return installations;
+}
+
 export async function refreshGithubInstallations(): Promise<GithubInstallation[]> {
   const app = githubApp();
   if (!app) return [];

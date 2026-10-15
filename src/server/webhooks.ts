@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { syncForgeComments, type SyncTarget } from './commentSync';
 import { config } from './config';
-import { forgetInstallation, installationToken, verifyAppSignature } from './githubApp';
+import { forgetInstallation, installationToken, refreshGithubInstallations, verifyAppSignature } from './githubApp';
 import { GithubClient } from './forges/github';
 import { db, type ForgeConnectionRow } from './db';
 import { clientFor, invalidateForgeCaches } from './forges';
@@ -152,6 +152,7 @@ export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
 
   if (event === 'installation' || event === 'installation_repositories') {
     syncInstallation(payload);
+    void refreshGithubInstallations();
     return json({ ok: true });
   }
   if (!commentEvents.has(event) && !stateEvents.has(event)) return json({ ok: true, ignored: event });
