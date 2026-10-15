@@ -24,7 +24,7 @@ import {
   userById,
 } from './identities';
 import { type OAuthMode, type PendingAuth, createState, takeState } from './oauthState';
-import { attachGithubInstallation, githubApp } from '../githubApp';
+import { attachGithubInstallation, githubApp, githubAppSlug } from '../githubApp';
 import { endSession, publicUser, requireUser, startSession } from './session';
 
 export function enabledProviders(): AuthProvider[] {
@@ -502,7 +502,7 @@ export function me(ctx: Ctx): Response {
     connections: user ? connectionsFor(user.id).map(connectionInfo) : [],
     providers: enabledProviders(),
     githubOAuthAppUrl: config.githubClientId ? `https://github.com/settings/connections/applications/${config.githubClientId}` : null,
-    githubAppSlug: githubApp()?.slug ?? null,
+    githubAppSlug: githubAppSlug(),
   };
   return json(payload);
 }

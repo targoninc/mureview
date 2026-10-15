@@ -82,7 +82,7 @@ deleted by its own author, so the two sides cannot drift apart.
 | `GITHUB_APP_ID` | | GitHub App id (optional, see below). |
 | `GITHUB_APP_PRIVATE_KEY` | | GitHub App private key. PEM, PEM with `\n` escapes, or base64-encoded (`base64 -w0 key.pem`). |
 | `GITHUB_APP_WEBHOOK_SECRET` | | GitHub App webhook secret, for verifying its deliveries. |
-| `GITHUB_APP_SLUG` | | GitHub App slug, shown as an "Install the GitHub App" link in the settings. |
+| `GITHUB_APP_SLUG` | resolved from GitHub | GitHub App slug (the `/settings/apps/<slug>` path segment), only to skip the startup lookup. |
 | `ENTRA_CLIENT_ID` | | Microsoft Entra ID app client id (optional sign-in method). |
 | `ENTRA_CLIENT_SECRET` | | Microsoft Entra ID app client secret. |
 | `ENTRA_TENANT` | `common` | Entra tenant: `common`, `organizations`, `consumers` or a tenant id. |
@@ -129,9 +129,9 @@ installing the app — without them, nothing changes.
      too — mureview learns installations from the webhook and, when someone
      connects GitHub later, looks up their installation.
 2. Generate a private key on the app page and set `GITHUB_APP_ID`,
-   `GITHUB_APP_PRIVATE_KEY` and `GITHUB_APP_WEBHOOK_SECRET`
-   (`GITHUB_APP_SLUG` is optional, it only adds the install link to the
-   settings).
+   `GITHUB_APP_PRIVATE_KEY` and `GITHUB_APP_WEBHOOK_SECRET`. The slug for
+   the settings install link is read from GitHub on startup; set
+   `GITHUB_APP_SLUG` only to skip that lookup.
 3. Restart mureview and install the app on the account or organization whose
    repositories you review. The installation attaches itself to the matching
    connections; per-repository webhooks are skipped from then on because the

@@ -112,6 +112,35 @@ export async function attachGithubInstallation(connectionId: number, login: stri
   }
 }
 
+let resolvedSlug: string | null = null;
+
+/**
+ * Reads the app's slug from GitHub so GITHUB_APP_SLUG is optional; the
+ * environment value wins when set.
+ */
+export async function resolveGithubAppSlug(): Promise<string | null> {
+  const app = githubApp();
+  if (!app) return null;
+  if (app.slug) return app.slug;
+  if (resolvedSlug) return resolvedSlug;
+  try {
+    const response = await fetch('https://api.github.com/app', {
+      headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { slug?: string };
+    resolvedSlug = data.slug ?? null;
+    return resolvedSlug;
+  } catch (error) {
+    console.error('Could not read the GitHub App slug:', error);
+    return null;
+  }
+}
+
+export function githubAppSlug(): string | null {
+  return githubApp()?.slug ?? resolvedSlug;
+}
+
 export function forgetInstallation(installationId: string): void {
   installationTokens.delete(installationId);
 }
