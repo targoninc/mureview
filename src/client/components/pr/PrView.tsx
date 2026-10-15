@@ -124,6 +124,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   );
   const [pullsOpen, setPullsOpen] = useState(false);
   const [votes, setVotes] = useState<Map<string, ReviewVote>>(new Map());
+  const [pendingVote, setPendingVote] = useState<ReviewVote | null>(null);
+  const [pendingRepo, setPendingRepo] = useState<string | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
   const [collapsedChecks, setCollapsedChecks] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -645,6 +647,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const voteOf = (repo: RepoStatus): ReviewVote => votes.get(voteKey(repo)) ?? repo.pullRequest?.review ?? 'waiting';
   const castVote = async (repo: RepoStatus, vote: ReviewVote) => {
     setVoteError(null);
+    setPendingVote(vote);
+    setPendingRepo(voteKey(repo));
     setVotes((current) => new Map(current).set(voteKey(repo), vote));
     try {
       await post(`/review-sets/${reviewSet.id}/review`, {
@@ -660,6 +664,9 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         next.delete(voteKey(repo));
         return next;
       });
+    } finally {
+      setPendingVote(null);
+      setPendingRepo(null);
     }
   };
 
@@ -669,6 +676,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const [voting, setVoting] = useState(false);
   const voteOnAll = async (vote: ReviewVote) => {
     setVoting(true);
+    setPendingVote(vote);
     setVoteError(null);
     try {
       for (const repo of reviewable) {
@@ -684,6 +692,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       setVoteError((err as Error).message);
     } finally {
       setVoting(false);
+      setPendingVote(null);
     }
   };
 
@@ -752,6 +761,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         reviewState={reviewable.length > 0 ? reviewState : undefined}
         onVoteAll={reviewable.length > 0 ? voteOnAll : undefined}
         voting={voting}
+        pendingVote={pendingVote}
         progress={progress ?? null}
         onOpenFiles={() => openPanel('files')}
         onOpenCommits={() => openPanel('commits')}
@@ -935,7 +945,11 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                     repo.pullRequest.state !== 'closed' &&
                     repo.pullRequest.state !== 'merged' ? (
                       <div style={{ paddingLeft: 8 }}>
-                        <ReviewVoteButtons vote={voteOf(repo)} onVote={(vote) => castVote(repo, vote)} />
+                        <ReviewVoteButtons
+                          vote={voteOf(repo)}
+                          pending={pendingRepo === voteKey(repo) ? pendingVote : null}
+                          onVote={(vote) => castVote(repo, vote)}
+                        />
                       </div>
                     ) : null}
                     {repoChecks ? (

@@ -51,6 +51,7 @@ interface PrHeaderProps {
   reviewState?: ReviewVote | null;
   onVoteAll?: (vote: ReviewVote) => void;
   voting?: boolean;
+  pendingVote?: ReviewVote | null;
   progress: { loaded: number; total: number } | null;
   checksFailing: boolean;
   onOpenFiles: () => void;
@@ -74,6 +75,7 @@ export function PrHeader({
   reviewState,
   onVoteAll,
   voting,
+  pendingVote,
   progress,
   checksFailing,
   onOpenFiles,
@@ -176,7 +178,7 @@ export function PrHeader({
         <div className="stack pr-header-right" style={{ gap: 6 }}>
           <div className="row pr-header-actions">
             {onVoteAll ? (
-              <ReviewVoteButtons vote={reviewState ?? null} busy={voting} onVote={onVoteAll} />
+              <ReviewVoteButtons vote={reviewState ?? null} busy={voting} pending={pendingVote} onVote={onVoteAll} />
             ) : null}
             {compact ? (
               <>

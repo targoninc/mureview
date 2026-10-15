@@ -1,4 +1,4 @@
-import { Button } from '@primer/react';
+import { Button, Spinner } from '@primer/react';
 import { CheckCircleIcon, ClockIcon, XCircleIcon } from '@primer/octicons-react';
 import type { ReviewVote } from '../../../shared/types';
 
@@ -12,10 +12,13 @@ const options: Array<{ vote: ReviewVote; label: string; icon: typeof CheckCircle
 export function ReviewVoteButtons({
   vote,
   busy,
+  pending,
   onVote,
 }: {
   vote: ReviewVote | null;
   busy?: boolean;
+  /** The decision currently being written to the forge. */
+  pending?: ReviewVote | null;
   onVote: (vote: ReviewVote) => void;
 }) {
   return (
@@ -27,9 +30,13 @@ export function ReviewVoteButtons({
           className={vote === option.vote ? 'vote-button vote-button-active' : 'vote-button'}
           disabled={busy}
           leadingVisual={
-            <span className={option.className}>
-              <option.icon size={14} />
-            </span>
+            pending === option.vote ? (
+              <Spinner size="small" aria-label="Syncing the review decision" />
+            ) : (
+              <span className={option.className}>
+                <option.icon size={14} />
+              </span>
+            )
           }
           onClick={() => onVote(option.vote)}
         >
