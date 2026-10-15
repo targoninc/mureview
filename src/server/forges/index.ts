@@ -14,7 +14,7 @@ export function clientFor(connection: ForgeConnectionRow): ForgeClient {
   if (connection.kind === 'forgejo') {
     return new ForgejoClient(baseUrl, token, { refresh: () => refreshForgejoToken(connection.id) });
   }
-  if (connection.kind === 'ado') return new AdoClient(baseUrl, token);
+  if (connection.kind === 'ado') return new AdoClient(baseUrl, token, connection.login);
   if (connection.kind === 'tangled') {
     const did = token || connection.login;
     return new TangledClient(baseUrl, connection.login || did, {

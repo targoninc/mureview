@@ -48,7 +48,14 @@ export function countLines(content: string): number {
 function hunkText(oldContent: string, newContent: string): string {
   const { hunks } = structuredPatch('a', 'b', oldContent, newContent, '', '', { context: 3 });
   return hunks
-    .map((hunk) => `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@\n${hunk.lines.join('\n')}`)
+    .map(
+      (hunk) =>
+        `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@\n${hunk.lines
+          // The "no newline" markers do not count towards the hunk header, so
+          // they must not appear in the body either.
+          .filter((line) => !line.startsWith('\\ No newline'))
+          .join('\n')}`,
+    )
     .join('\n')
     .concat(hunks.length ? '\n' : '');
 }

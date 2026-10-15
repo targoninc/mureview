@@ -59,3 +59,22 @@ describe('countLines', () => {
     expect(countLines('')).toBe(0);
   });
 });
+
+test('hunks keep their declared line counts when files lack trailing newlines', () => {
+  const patch = modifiedFilePatch({ path: 'x.txt', type: 'modified' }, 'a\nb\nc\nd', 'a\nB\nc\nd\ne');
+  const lines = patch.split('\n');
+  const header = lines.find((line) => line.startsWith('@@'));
+  const match = header?.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@/);
+  expect(match).not.toBeNull();
+  const oldLines = Number(match![2]);
+  const newLines = Number(match![4]);
+  const body = lines.slice(lines.indexOf(header!) + 1).filter((line) => line !== '');
+  expect(body.filter((line) => line.startsWith('-') || line.startsWith(' ')).length).toBe(oldLines);
+  expect(body.filter((line) => line.startsWith('+') || line.startsWith(' ')).length).toBe(newLines);
+  expect(patch).not.toContain('\\ No newline');
+  expect(processFile(patch)).toBeTruthy();
+
+  const both = modifiedFilePatch({ path: 'x.txt', type: 'modified' }, 'a\nb\nc\nd', 'a\nB\nc\nd');
+  expect(both).not.toContain('\\ No newline');
+  expect(processFile(both)).toBeTruthy();
+});

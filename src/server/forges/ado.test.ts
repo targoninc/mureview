@@ -306,3 +306,46 @@ test('reviewPullRequest maps votes to the reviewer API', async () => {
     server.stop(true);
   }
 });
+
+test('commit links fall back to the repository web URL', async () => {
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith('/commits')) {
+        return Response.json({ value: [{ commitId: 'abc123', comment: 'Fix the thing', author: { name: 'Lena', date: '2026-10-14T10:00:00Z' } }] });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+  try {
+    const client = new AdoClient(`http://localhost:${server.port}`, 'token');
+    const commits = await client.listCommits('project/repo', { headSha: 'abc123', limit: 10 });
+    expect(commits[0]?.url).toBe(`http://localhost:${server.port}/project/_git/repo/commit/abc123`);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test('reviewer matching works without connection data', async () => {
+  const calls: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      calls.push(url.pathname);
+      if (url.pathname.endsWith('/_apis/connectionData')) return new Response('denied', { status: 401 });
+      if (url.pathname.includes('/pullRequests/5')) {
+        return Response.json({ reviewers: [{ id: 'rid', uniqueName: 'me@example.com', displayName: 'Me', vote: 0 }] });
+      }
+      return new Response('not found', { status: 404 });
+    },
+  });
+  try {
+    const client = new AdoClient(`http://localhost:${server.port}`, 'token', 'me@example.com');
+    expect(await client.pullRequestReview('project/repo', '5')).toBe('waiting');
+    expect(calls.some((path) => path.endsWith('/_apis/connectionData'))).toBe(false);
+  } finally {
+    server.stop(true);
+  }
+});

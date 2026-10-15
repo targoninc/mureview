@@ -118,13 +118,13 @@ interface AdoPatToken {
   authorizationId?: string;
 }
 
-function toCommitInfo(commit: AdoCommit): CommitInfo {
+function toCommitInfo(commit: AdoCommit, repoWebUrl: string): CommitInfo {
   return {
     sha: commit.commitId,
     message: commit.comment.split('\n')[0],
     author: commit.author?.name ?? 'unknown',
     date: commit.author?.date ?? '',
-    url: commit.remoteUrl,
+    url: commit.remoteUrl || `${repoWebUrl}/commit/${commit.commitId}`,
   };
 }
 
@@ -170,7 +170,7 @@ export class AdoClient implements ForgeClient {
   readonly baseUrl: string;
   readonly host: string;
 
-  constructor(baseUrl: string, private token: string) {
+  constructor(baseUrl: string, private token: string, private login = '') {
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.host = new URL(this.baseUrl).host;
   }
@@ -209,6 +209,14 @@ export class AdoClient implements ForgeClient {
     const text = await response.text();
     if (!text) return undefined as T;
     return JSON.parse(text) as T;
+  }
+
+  private repoWebUrl(repo: string): string {
+    const slash = repo.indexOf('/');
+    if (slash <= 0 || slash === repo.length - 1) return this.baseUrl;
+    const project = encodeURIComponent(repo.slice(0, slash));
+    const name = encodeURIComponent(repo.slice(slash + 1));
+    return `${this.baseUrl}/${project}/_git/${name}`;
   }
 
   private repoUrl(repo: string): string {
@@ -736,7 +744,7 @@ export class AdoClient implements ForgeClient {
       }
       return commits
         .slice(0, limit)
-        .map(toCommitInfo)
+        .map((commit) => toCommitInfo(commit, this.repoWebUrl(repo)))
         .sort((a, b) => b.date.localeCompare(a.date));
     } catch (error) {
       if (!(error instanceof ForgeError)) throw error;
@@ -778,7 +786,7 @@ export class AdoClient implements ForgeClient {
       if (!continuation && batch.length < 100) break;
     }
     // Both the commits and the pull request endpoints list newest first.
-    return commits.slice(0, limit).map(toCommitInfo);
+    return commits.slice(0, limit).map((commit) => toCommitInfo(commit, this.repoWebUrl(repo)));
   }
 
   /**
@@ -864,14 +872,29 @@ export class AdoClient implements ForgeClient {
     return this.identity;
   }
 
+  /** Finds the acting user among a pull request's reviewers. */
+  private async ownReviewer(
+    repo: string,
+    ref: string,
+  ): Promise<{ id?: string; uniqueName?: string; displayName?: string; vote?: number } | null> {
+    const data = await this.request<{
+      reviewers?: Array<{ id?: string; uniqueName?: string; displayName?: string; vote?: number }>;
+    }>(`${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`);
+    const reviewers = data.reviewers ?? [];
+    const login = this.login.toLowerCase();
+    const byLogin = login
+      ? reviewers.find(
+          (reviewer) =>
+            (reviewer.uniqueName ?? '').toLowerCase() === login || (reviewer.displayName ?? '').toLowerCase() === login,
+        )
+      : undefined;
+    if (byLogin) return byLogin;
+    const identity = await this.currentIdentity().catch(() => null);
+    return (identity ? reviewers.find((reviewer) => reviewer.id === identity.id) : undefined) ?? null;
+  }
+
   async pullRequestReview(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null> {
-    const identity = await this.currentIdentity();
-    const data = await this.request<{ reviewers?: Array<{ id?: string; uniqueName?: string; vote?: number }> }>(
-      `${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`,
-    );
-    const own = (data.reviewers ?? []).find(
-      (reviewer) => reviewer.id === identity.id || (reviewer.uniqueName ?? '').toLowerCase() === identity.uniqueName.toLowerCase(),
-    );
+    const own = await this.ownReviewer(repo, ref);
     if (!own) return null;
     if ((own.vote ?? 0) >= 5) return 'approve';
     if ((own.vote ?? 0) <= -10) return 'reject';
@@ -879,13 +902,7 @@ export class AdoClient implements ForgeClient {
   }
 
   async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
-    const identity = await this.currentIdentity();
-    const data = await this.request<{ reviewers?: Array<{ id?: string; uniqueName?: string }> }>(
-      `${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`,
-    );
-    const own = (data.reviewers ?? []).find(
-      (reviewer) => reviewer.id === identity.id || (reviewer.uniqueName ?? '').toLowerCase() === identity.uniqueName.toLowerCase(),
-    );
+    const own = await this.ownReviewer(repo, ref);
     if (!own?.id) throw new ForgeError(400, 'you are not a reviewer on this pull request yet');
     await this.request(`${this.repoUrl(repo)}/pullRequests/${ref}/reviewers/${own.id}?api-version=7.1`, {
       method: 'PUT',
