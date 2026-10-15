@@ -28,7 +28,7 @@ const server = Bun.serve<LiveData>({
     if (path === '/api/live') {
       const user = getSessionUser(req);
       if (!user) return json({ error: 'Unauthorized' }, 401);
-      if (server.upgrade(req, { data: { user, reviewSets: new Set<number>() } })) return undefined;
+      if (server.upgrade(req, { data: { user, reviewSets: new Map<number, number>() } })) return undefined;
       return json({ error: 'Expected a websocket upgrade' }, 400);
     }
     if (path === '/healthz') return json({ ok: true });

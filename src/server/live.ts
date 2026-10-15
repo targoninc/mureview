@@ -5,7 +5,8 @@ import { loadReadableReviewSet } from './reviewSets';
 
 export interface LiveData {
   user: UserRow;
-  reviewSets: Set<number>;
+  /** Review sets this socket watches, with when access was last verified. */
+  reviewSets: Map<number, number>;
 }
 
 type LiveSocket = ServerWebSocket<LiveData>;
@@ -40,28 +41,53 @@ export function liveMessage(ws: LiveSocket, raw: string | Buffer): void {
   if (message.type !== 'subscribe') return;
   void loadReadableReviewSet(ws.data.user, id)
     .then(() => {
-      ws.data.reviewSets.add(id);
+      ws.data.reviewSets.set(id, Date.now());
     })
     .catch(() => {
       ws.data.reviewSets.delete(id);
     });
 }
 
-/** Sends an event to everyone watching a review set. */
-export function publish(reviewSetId: number, event: Record<string, unknown>): void {
-  const payload = JSON.stringify({ ...event, reviewSetId });
-  for (const socket of sockets) {
-    if (!socket.data.reviewSets.has(reviewSetId)) continue;
-    try {
-      socket.send(payload);
-    } catch {
-      sockets.delete(socket);
-    }
+const accessTtlMs = 60_000;
+
+/** Access is verified at subscribe time and re-checked while events flow. */
+async function stillAllowed(ws: LiveSocket, reviewSetId: number): Promise<boolean> {
+  const verified = ws.data.reviewSets.get(reviewSetId);
+  if (verified === undefined) return false;
+  if (Date.now() - verified < accessTtlMs) return true;
+  try {
+    await loadReadableReviewSet(ws.data.user, reviewSetId);
+    ws.data.reviewSets.set(reviewSetId, Date.now());
+    return true;
+  } catch {
+    ws.data.reviewSets.delete(reviewSetId);
+    return false;
   }
 }
 
+/** Sends an event to everyone watching a review set and still allowed to. */
+export async function publish(reviewSetId: number, event: Record<string, unknown>): Promise<void> {
+  const payload = JSON.stringify({ ...event, reviewSetId });
+  await Promise.all(
+    [...sockets].map(async (socket) => {
+      if (!socket.data.reviewSets.has(reviewSetId)) return;
+      if (!(await stillAllowed(socket, reviewSetId))) return;
+      try {
+        socket.send(payload);
+      } catch {
+        sockets.delete(socket);
+      }
+    }),
+  );
+}
+
 /** Sends an event to everyone watching the review set a pull request belongs to. */
-export function publishForPr(prId: number, event: Record<string, unknown>): void {
+export async function publishForPr(prId: number, event: Record<string, unknown>): Promise<void> {
   const row = db.query<{ review_set_id: number }, [number]>('SELECT review_set_id FROM pull_requests WHERE id = ?').get(prId);
-  if (row) publish(row.review_set_id, { ...event, prId });
+  if (row) await publish(row.review_set_id, { ...event, prId });
+}
+
+/** Sends an event to everyone watching any of the given review sets. */
+export async function publishToSets(reviewSetIds: number[], event: Record<string, unknown>): Promise<void> {
+  await Promise.all(reviewSetIds.map((id) => publish(id, event)));
 }

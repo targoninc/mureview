@@ -431,6 +431,25 @@ export class GithubClient implements ForgeClient {
     });
   }
 
+  async registerWebhook(repo: string, url: string, secret: string): Promise<boolean> {
+    try {
+      await this.request(`/repos/${repo}/hooks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'web',
+          active: true,
+          events: ['pull_request', 'pull_request_review', 'issue_comment'],
+          config: { url, content_type: 'json', secret, insecure_ssl: '0' },
+        }),
+      });
+      return true;
+    } catch (error) {
+      console.error(`Could not register a webhook for ${repo}:`, error);
+      return false;
+    }
+  }
+
   async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
     try {
       const pull = await this.request<{ state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }>(

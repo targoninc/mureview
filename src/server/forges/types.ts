@@ -148,6 +148,8 @@ export interface ForgeClient {
   reviewPullRequest?(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void>;
   /** The pull request's current state and branches on the forge. */
   pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null>;
+  /** Registers a webhook that pushes live updates into mureview. */
+  registerWebhook?(repo: string, url: string, secret: string): Promise<boolean>;
   /** When the stored credentials expire, if the forge reports it. */
   tokenExpiry?(): Promise<{ displayName: string; validTo: string } | null>;
   /**

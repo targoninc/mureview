@@ -8,6 +8,7 @@ import { buildPrStatus, clientsForActor } from './pr';
 import { canManageRepoList, canManageReviewSet } from './permissions';
 import { listComments } from './comments';
 import { syncForgeComments } from './commentSync';
+import { ensureWebhooksForReviewSet } from './webhooks';
 import { listReviewed } from './reviewed';
 import { readRun } from './progress';
 import { normalizeRepo } from './repos';
@@ -397,6 +398,7 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
   saveRepos(id, input.repos);
   // The review itself is built by the review page's stream, so saving stays
   // quick and the page can show what is loading repository by repository.
+  void ensureWebhooksForReviewSet(id);
   return json({ detail: { reviewSet: toReviewSet(reviewSetRow(id)!), owned: true } }, 201);
 }
 
@@ -461,6 +463,7 @@ export async function updateReviewSet(ctx: Ctx): Promise<Response> {
   ]);
   saveRepos(id, input.repos);
   // Permission was required to get here, so the editor can manage the set.
+  void ensureWebhooksForReviewSet(id);
   return json({ detail: { reviewSet: toReviewSet(reviewSetRow(id)!), owned: access.owned, canManage: true } });
 }
 

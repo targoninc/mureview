@@ -41,6 +41,8 @@ export interface ForgeConnectionRow {
   refresh_token: string;
   login: string;
   avatar_url: string;
+  /** Secret for forge webhooks that push live updates into mureview. */
+  webhook_secret: string | null;
 }
 
 const SCHEMA_V2 = `
@@ -595,7 +597,11 @@ const userColumns = hasTable('users') ? db.query<{ name: string }, []>('PRAGMA t
 if (userColumns.length && !userColumns.some((column) => column.name === 'mono_font')) {
   db.exec('ALTER TABLE users ADD COLUMN mono_font TEXT');
 }
-db.exec('PRAGMA user_version = 13;');
+const connectionColumns = hasTable('forge_connections') ? db.query<{ name: string }, []>('PRAGMA table_info(forge_connections)').all() : [];
+if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'webhook_secret')) {
+  db.exec('ALTER TABLE forge_connections ADD COLUMN webhook_secret TEXT');
+}
+db.exec('PRAGMA user_version = 14;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);
