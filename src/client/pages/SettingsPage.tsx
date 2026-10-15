@@ -252,7 +252,11 @@ export function SettingsPage() {
                     </div>
                     <Button
                       as="a"
-                      href={`https://github.com/settings/installations/${installation.id}`}
+                      href={
+                        installation.organization
+                          ? `https://github.com/organizations/${installation.account}/settings/installations/${installation.id}`
+                          : `https://github.com/settings/installations/${installation.id}`
+                      }
                       target="_blank"
                       rel="noreferrer"
                       size="small"

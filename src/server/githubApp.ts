@@ -143,6 +143,8 @@ export interface GithubInstallation {
   id: number;
   account: string;
   selection: string;
+  /** Organizations manage installations under their own settings path. */
+  organization: boolean;
 }
 
 let installations: GithubInstallation[] = [];
@@ -171,7 +173,7 @@ export async function refreshGithubInstallations(): Promise<GithubInstallation[]
     if (!response.ok) return installations;
     const data = (await response.json()) as Array<{
       id?: number;
-      account?: { login?: string };
+      account?: { login?: string; type?: string };
       repository_selection?: string;
     }>;
     installations = data
@@ -180,6 +182,7 @@ export async function refreshGithubInstallations(): Promise<GithubInstallation[]
         id: entry.id!,
         account: entry.account!.login!,
         selection: entry.repository_selection === 'all' ? 'all repositories' : 'selected repositories',
+        organization: entry.account!.type === 'Organization',
       }));
     installationsAt = Date.now();
     return installations;
