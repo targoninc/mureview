@@ -770,6 +770,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         checksFailing={checksFailing}
       />
       <div className="pr-banners">
+        {voteError ? <Flash variant="danger">{voteError}</Flash> : null}
         <PrStatusBanner pr={pr} reviewSet={reviewSet} />
       </div>
       <div className="pr-body">
