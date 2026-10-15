@@ -40,6 +40,11 @@ export function pullNumber(ref: string): number {
 export interface GithubAuth {
   /** Exchanges the stored refresh token for a new access token. */
   refresh: () => Promise<string>;
+  /**
+   * The account's own token, used when an app installation cannot see a
+   * repository the account can: access always follows the acting user.
+   */
+  fallback?: () => string | Promise<string>;
 }
 
 const refreshing = new Map<number, Promise<string>>();
@@ -204,6 +209,13 @@ export class GithubClient implements ForgeClient {
     if (response.status === 401 && this.auth) {
       this.token = await this.auth.refresh();
       response = await send();
+    }
+    if (response.status === 404 && this.auth?.fallback) {
+      const fallback = await this.auth.fallback();
+      if (fallback && fallback !== this.token) {
+        this.token = fallback;
+        response = await send();
+      }
     }
     return read(response);
   }

@@ -260,3 +260,20 @@ test('the app private key accepts escaped and base64 encodings', async () => {
   delete process.env.GITHUB_APP_PRIVATE_KEY;
   app.resetGithubApp();
 });
+
+test('a repository the installation cannot see falls back to the account token', async () => {
+  const calls: Array<{ url: string; authorization: string }> = [];
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    calls.push({ url: String(input), authorization: headers.Authorization ?? '' });
+    if (headers.Authorization === 'Bearer installation-token') return new Response('not found', { status: 404 });
+    return Response.json([{ name: 'main', commit: { sha: 'abc123' } }]);
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('installation-token', { refresh: async () => 'installation-token', fallback: () => 'account-token' });
+  const branches = await client.listBranches('targoninc/lyda-backend');
+  expect(branches.length).toBeGreaterThan(0);
+  expect(calls).toHaveLength(2);
+  expect(calls[0].authorization).toBe('Bearer installation-token');
+  expect(calls[1].authorization).toBe('Bearer account-token');
+});

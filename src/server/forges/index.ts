@@ -36,6 +36,7 @@ export function clientFor(connection: ForgeConnectionRow): ForgeClient {
           return refreshGithubToken(connection.id);
         }
       },
+      fallback: () => token,
     });
   }
   return new GithubClient(token, { refresh: () => refreshGithubToken(connection.id) });
