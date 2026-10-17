@@ -69,35 +69,36 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             {repo.position > 0 ? `Layer ${repo.position + 1} · ` : ''}
             {repo.branch} → {repo.target}
           </span>
-          {repo.pullRequest ? (
-            <Button
-              as="a"
-              href={repo.pullRequest.url}
-              target="_blank"
-              rel="noreferrer"
-              size="small"
-              leadingVisual={GitPullRequestIcon}
-              style={{ alignSelf: 'flex-start' }}
-            >
-              PR #{repo.pullRequest.ref}
-            </Button>
-          ) : null}
+          <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {repo.pullRequest ? (
+              <Button
+                as="a"
+                href={repo.pullRequest.url}
+                target="_blank"
+                rel="noreferrer"
+                size="small"
+                leadingVisual={GitPullRequestIcon}
+              >
+                PR #{repo.pullRequest.ref}
+              </Button>
+            ) : null}
+            <span className="repo-list-meta">
+              <span>
+                {repo.files} {repo.files === 1 ? 'file' : 'files'}
+              </span>
+              <span className="additions">+{repo.additions}</span>
+              <span className="deletions">−{repo.deletions}</span>
+              {repo.aheadBy > 0 ? <span>{repo.aheadBy} commits ahead</span> : null}
+              {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
+              {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
+            </span>
+          </div>
         </div>
         <div className="row" style={{ gap: 6 }}>
           {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
           {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}
           <Label variant={badge.tone}>{badge.text}</Label>
         </div>
-      </div>
-      <div className="repo-list-meta" style={{ marginTop: 8 }}>
-        <span>
-          {repo.files} {repo.files === 1 ? 'file' : 'files'}
-        </span>
-        <span className="additions">+{repo.additions}</span>
-        <span className="deletions">−{repo.deletions}</span>
-        {repo.aheadBy > 0 ? <span>{repo.aheadBy} commits ahead</span> : null}
-        {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
-        {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
       </div>
       {repo.conflictFiles.length > 0 ? (
         <div className="merge-conflicts">
