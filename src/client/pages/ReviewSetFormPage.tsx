@@ -12,6 +12,7 @@ import {
   Select,
   Spinner,
   TextInput,
+  useConfirm,
 } from '@primer/react';
 import { FilterIcon, LockIcon, PlusIcon, TrashIcon, XIcon } from '@primer/octicons-react';
 import type { AvailableRepo, RepoSource, ReviewSet, ReviewSetMode, ReviewSetRepo } from '../../shared/types';
@@ -47,6 +48,7 @@ export function ReviewSetFormPage() {
   const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [branches, setBranches] = useState<Record<string, BranchList>>({});
+  const confirm = useConfirm();
 
   const branchKey = (connectionId: number, repo: string) => `${connectionId}:${repo}`;
 
@@ -262,7 +264,14 @@ export function ReviewSetFormPage() {
   };
 
   const remove = async () => {
-    if (!id || !window.confirm('Delete this review set and its comments?')) return;
+    if (!id) return;
+    const approved = await confirm({
+      title: 'Delete this review set?',
+      content: 'Its comments and reviewed files are removed. The repositories on the forges are not changed.',
+      confirmButtonContent: 'Delete review set',
+      confirmButtonType: 'danger',
+    });
+    if (!approved) return;
     try {
       await del(`/review-sets/${id}`);
       navigate('/');
