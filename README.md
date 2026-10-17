@@ -119,9 +119,14 @@ app — without them, nothing changes.
    - **Webhook secret**: any random string, also set as
      `GITHUB_APP_WEBHOOK_SECRET`.
    - **Setup URL** (optional): `${BASE_URL}/settings`.
-   - **Repository permissions**: Metadata (read, mandatory), Contents (read),
-     Pull requests (write, for merging and reviews), Issues (write, for
+   - **Repository permissions**: Metadata (read, mandatory), Contents
+     (read and write — write because merging a pull request, and creating or
+     deleting its branches, are Contents operations), Pull requests (write,
+     for opening, reviewing and merging pull requests), Issues (write, for
      general pull request comments), Checks (read), Commit statuses (read).
+     Changing a permission asks every installed organization to approve the
+     update; merging fails with "Resource not accessible by integration"
+     until it is approved.
    - **Subscribe to events**: Pull request, Pull request review, Issue
      comment, Installation, Installation repositories and Delete (branch
      deletions change what a review set can still compare). Everything else

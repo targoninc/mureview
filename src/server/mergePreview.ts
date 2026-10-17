@@ -4,6 +4,7 @@ import { constants } from './config';
 import type { ForgeConnectionRow } from './db';
 import { type ForgeClient } from './forges';
 import { hasConflict } from './conflicts';
+import { actingPermission } from './permissions';
 import { buildPrStatus, clientsFor } from './pr';
 import { forgeErrorMessage } from './validate';
 
@@ -89,8 +90,8 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
   };
   if (!client) return { ...base, conflicts: 'unknown', checks: { state: 'unknown', runs: [] }, error: 'the forge connection was removed' };
   try {
-    if (client.pullRequestPermission) {
-      const permission = await client.pullRequestPermission(repo.repo);
+    if (client.pullRequestPermission || client.ownPermission) {
+      const permission = await actingPermission(client, repo.repo);
       base.canComplete = permission === 'write' ? 'yes' : permission === 'read' ? 'no' : 'unknown';
     }
     const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });

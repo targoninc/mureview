@@ -228,9 +228,9 @@ test('the GitHub App signs JWTs and caches installation tokens', async () => {
   expect(await app.installationToken('999')).toBe('installation-token');
   expect(await app.installationToken('999')).toBe('installation-token');
   expect(calls).toBe(1);
-  expect(app.cachedInstallationToken('999')).toBe('installation-token');
   app.forgetInstallation('999');
-  expect(app.cachedInstallationToken('999')).toBeNull();
+  expect(await app.installationToken('999')).toBe('installation-token');
+  expect(calls).toBe(2);
 
   const { createHmac } = await import('node:crypto');
   const body = '{"action":"created"}';
@@ -263,23 +263,6 @@ test('the app private key accepts escaped and base64 encodings', async () => {
   app.resetGithubApp();
 });
 
-test('a repository the installation cannot see falls back to the account token', async () => {
-  const calls: Array<{ url: string; authorization: string }> = [];
-  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
-    const headers = (init?.headers ?? {}) as Record<string, string>;
-    calls.push({ url: String(input), authorization: headers.Authorization ?? '' });
-    if (headers.Authorization === 'Bearer installation-token') return new Response('not found', { status: 404 });
-    return Response.json([{ name: 'main', commit: { sha: 'abc123' } }]);
-  }) as unknown as typeof fetch;
-
-  const client = new GithubClient('installation-token', { refresh: async () => 'installation-token', fallback: () => 'account-token' });
-  const branches = await client.listBranches('targoninc/lyda-backend');
-  expect(branches.length).toBeGreaterThan(0);
-  expect(calls).toHaveLength(2);
-  expect(calls[0].authorization).toBe('Bearer installation-token');
-  expect(calls[1].authorization).toBe('Bearer account-token');
-});
-
 test('a repository only the app installation can see uses its token', async () => {
   process.env.GITHUB_APP_ID = '12345';
   process.env.GITHUB_APP_PRIVATE_KEY = 'not-a-real-key';
@@ -307,7 +290,6 @@ test('a repository only the app installation can see uses its token', async () =
 
   const client = new GithubClient('account-token', {
     refresh: async () => 'account-token',
-    fallback: () => 'account-token',
     installationForRepo: app.installationForRepo,
     installationToken: app.installationToken,
   });
@@ -413,7 +395,7 @@ test('ownPermission refreshes the account token when it expired', async () => {
   expect(authorizations).toEqual(['Bearer expired-own', 'Bearer fresh-own']);
 });
 
-test('an installation serving a repository reports its pull request permission', async () => {
+test('an installation serving a repository reports whether it may manage and merge pull requests', async () => {
   const { generateKeyPairSync } = await import('node:crypto');
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
@@ -426,21 +408,32 @@ test('an installation serving a repository reports its pull request permission',
 
   globalThis.fetch = (async (input: unknown) => {
     if (String(input).endsWith('/app/installations/42')) {
-      return Response.json({ permissions: { contents: 'read', pull_requests: 'write' } });
+      return Response.json({ permissions: { contents: 'write', pull_requests: 'write' } });
     }
     return new Response('not found', { status: 404 });
   }) as unknown as typeof fetch;
   const writer = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token', '42');
   expect(await writer.pullRequestPermission('acme/repo')).toBe('write');
 
+  // Managing pull requests without Contents write cannot merge (merging is a
+  // Contents operation), so the installation counts as read-only.
   globalThis.fetch = (async (input: unknown) => {
     if (String(input).endsWith('/app/installations/7')) {
-      return Response.json({ permissions: { contents: 'read', pull_requests: 'read' } });
+      return Response.json({ permissions: { contents: 'read', pull_requests: 'write' } });
     }
     return new Response('not found', { status: 404 });
   }) as unknown as typeof fetch;
   const reader = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token', '7');
   expect(await reader.pullRequestPermission('acme/repo')).toBe('read');
+
+  globalThis.fetch = (async (input: unknown) => {
+    if (String(input).endsWith('/app/installations/8')) {
+      return Response.json({ permissions: { contents: 'write', pull_requests: 'read' } });
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+  const reviewer = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token', '8');
+  expect(await reviewer.pullRequestPermission('acme/repo')).toBe('read');
 
   delete process.env.GITHUB_APP_ID;
   delete process.env.GITHUB_APP_PRIVATE_KEY;
@@ -490,6 +483,62 @@ test('listRepoSources groups installation repositories under their own source', 
   expect(sources.map((source) => ({ key: source.key, account: source.account, repos: source.repos.map((repo) => repo.repo) }))).toEqual([
     { key: 'account', account: null, repos: ['loudar/app'] },
     { key: 'installation:77', account: 'targoninc', repos: ['targoninc/private-1', 'targoninc/shared'] },
+  ]);
+
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  app.resetGithubApp();
+});
+
+test('the installations list carries the granted permissions', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  process.env.GITHUB_APP_ID = '12345';
+  process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+  app.resetGithubApp();
+
+  globalThis.fetch = (async (input: unknown) => {
+    if (String(input).includes('/app/installations?per_page=100')) {
+      return Response.json([
+        {
+          id: 1,
+          account: { login: 'targoninc', type: 'Organization' },
+          repository_selection: 'all',
+          permissions: { contents: 'read', pull_requests: 'write' },
+        },
+        {
+          id: 2,
+          account: { login: 'loudar', type: 'User' },
+          repository_selection: 'selected',
+          permissions: { contents: 'write', pull_requests: 'write' },
+        },
+      ]);
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const installations = await app.refreshGithubInstallations();
+  expect(installations).toEqual([
+    {
+      id: 1,
+      account: 'targoninc',
+      selection: 'all repositories',
+      organization: true,
+      contentsWrite: false,
+      pullRequestsWrite: true,
+    },
+    {
+      id: 2,
+      account: 'loudar',
+      selection: 'selected repositories',
+      organization: false,
+      contentsWrite: true,
+      pullRequestsWrite: true,
+    },
   ]);
 
   delete process.env.GITHUB_APP_ID;

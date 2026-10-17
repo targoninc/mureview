@@ -90,14 +90,9 @@ export async function installationToken(installationId: string): Promise<string>
   return data.token;
 }
 
-export function cachedInstallationToken(installationId: string): string | null {
-  const cachedToken = installationTokens.get(installationId);
-  return cachedToken && cachedToken.expires - Date.now() > 60_000 ? cachedToken.token : null;
-}
-
 /**
- * Attaches the account's installation to a connection, so a connection made
- * after the app was installed still uses installation tokens.
+ * Attaches the account's installation to a connection, so repositories its
+ * token cannot reach resolve through the installation.
  */
 export async function attachGithubInstallation(connectionId: number, login: string): Promise<void> {
   if (!githubApp() || !login) return;
@@ -155,16 +150,6 @@ export function installationUnavailable(error: unknown): boolean {
   return (error as { status?: number } | null)?.status === 404;
 }
 
-/**
- * Clears an installation GitHub no longer knows from a connection, so it stops
- * preferring a dead installation and resolves the repository's current one.
- */
-export async function forgetStaleInstallation(connectionId: number, installationId: string): Promise<void> {
-  const { db } = await import('./db');
-  db.run('UPDATE forge_connections SET installation_id = NULL WHERE id = ? AND installation_id = ?', [connectionId, installationId]);
-  forgetInstallation(installationId);
-}
-
 export interface GithubUserInstallation {
   id: string;
   account: string;
@@ -196,10 +181,11 @@ export async function userInstallations(token: string): Promise<GithubUserInstal
 const installationPermissions = new Cache<boolean | null>(200, 10 * 60_000);
 
 /**
- * Whether an installation may manage pull requests (create, review, merge,
- * comment). A repository payload only reports content grants — the app is
- * installed with Contents read — so the app's own permission list is the
- * reliable answer. Null when it cannot be read.
+ * Whether an installation may manage and merge pull requests. Managing (open,
+ * review, comment) needs Pull requests write; merging, branch creation and
+ * branch deletion are protected by Contents write. A repository payload only
+ * reports content grants, so the app's own permission list is the reliable
+ * answer. Null when it cannot be read.
  */
 export async function installationCanManagePullRequests(installationId: string): Promise<boolean | null> {
   if (!githubApp()) return null;
@@ -209,9 +195,10 @@ export async function installationCanManagePullRequests(installationId: string):
     const response = await fetch(`https://api.github.com/app/installations/${installationId}`, {
       headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
     });
-    const value = response.ok
-      ? ((await response.json()) as { permissions?: Record<string, string> }).permissions?.pull_requests === 'write'
+    const permissions = response.ok
+      ? ((await response.json()) as { permissions?: Record<string, string> }).permissions
       : null;
+    const value = permissions ? permissions.pull_requests === 'write' && permissions.contents === 'write' : null;
     installationPermissions.set(installationId, value);
     return value;
   } catch (error) {
@@ -235,6 +222,9 @@ export interface GithubInstallation {
   selection: string;
   /** Organizations manage installations under their own settings path. */
   organization: boolean;
+  /** Merging needs both: Contents write creates commits, Pull requests write opens and reviews. */
+  contentsWrite: boolean;
+  pullRequestsWrite: boolean;
 }
 
 let installations: GithubInstallation[] = [];
@@ -265,6 +255,7 @@ export async function refreshGithubInstallations(): Promise<GithubInstallation[]
       id?: number;
       account?: { login?: string; type?: string };
       repository_selection?: string;
+      permissions?: Record<string, string>;
     }>;
     installations = data
       .filter((entry) => entry.id && entry.account?.login)
@@ -273,6 +264,8 @@ export async function refreshGithubInstallations(): Promise<GithubInstallation[]
         account: entry.account!.login!,
         selection: entry.repository_selection === 'all' ? 'all repositories' : 'selected repositories',
         organization: entry.account!.type === 'Organization',
+        contentsWrite: entry.permissions?.contents === 'write',
+        pullRequestsWrite: entry.permissions?.pull_requests === 'write',
       }));
     installationsAt = Date.now();
     return installations;

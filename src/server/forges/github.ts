@@ -48,14 +48,9 @@ export function pullNumber(ref: string): number {
 export interface GithubAuth {
   /** Exchanges the stored refresh token for a new access token. */
   refresh: () => Promise<string>;
-  /**
-   * The account's own token, used when an app installation cannot see a
-   * repository the account can: access always follows the acting user.
-   */
-  fallback?: () => string | Promise<string>;
   /** Refreshes the acting account's own token; never an installation token. */
   ownRefresh?: () => Promise<string>;
-  /** Looks up an app installation that covers a repository, when the tokens above cannot. */
+  /** Looks up an app installation that covers a repository, when the account's token cannot. */
   installationForRepo?: (repo: string, options?: { fresh?: boolean }) => Promise<string | null>;
   installationToken?: (installationId: string) => Promise<string>;
 }
@@ -223,7 +218,7 @@ export class GithubClient implements ForgeClient {
     private token: string,
     private auth?: GithubAuth,
     private ownToken = token,
-    /** The installation this client's token belongs to, when there is one. */
+    /** The connection's app installation, for capability checks when it answers. */
     private installation?: string,
     /** The connection's account login, to tell its installation groups apart. */
     private login = '',
@@ -247,15 +242,9 @@ export class GithubClient implements ForgeClient {
       }
       response = await send();
     }
-    if (response.status === 404 && this.auth?.fallback) {
-      const fallback = await this.auth.fallback();
-      if (fallback && fallback !== this.token) {
-        this.token = fallback;
-        response = await send();
-      }
-    }
-    // An organization installation covers repositories the account token may
-    // not reach, so the app's installation for the repository gets a turn.
+    // The account's token acts first; an app installation covers repositories
+    // it cannot reach (organization OAuth app restrictions), so it gets a turn
+    // when the account's access is refused.
     if ((response.status === 404 || response.status === 401) && this.auth?.installationForRepo && this.auth.installationToken) {
       response = await this.retryWithInstallation(send, path, response);
     }
@@ -808,10 +797,13 @@ export class GithubClient implements ForgeClient {
     return comments.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  /**
+   * The forge's answer for a repository the account's own role could not be
+   * read for: when an app installation will answer, its grants decide
+   * (merging needs Contents write, managing needs Pull requests write); the
+   * repository payload would only report the app's content grants.
+   */
   async pullRequestPermission(repo: string): Promise<'write' | 'read' | 'unknown'> {
-    // When an installation serves the repository, the repository payload
-    // reports the app's content grants (Contents read), which say nothing
-    // about managing pull requests; the installation's own permissions do.
     const installation =
       this.installation ?? (this.auth?.installationForRepo ? await this.auth.installationForRepo(repo) : null);
     if (installation) {
@@ -834,9 +826,9 @@ export class GithubClient implements ForgeClient {
    * read to serve diffs), so the installation token must not answer this.
    */
   async ownPermission(repo: string): Promise<'write' | 'read' | 'unknown'> {
-    // Without a distinct account token the forge already answers for it, and
-    // the ordinary permission check makes the one call.
-    if (!this.ownToken || this.ownToken === this.token) return 'unknown';
+    // Without the app, the acting token is already the account's own and the
+    // ordinary permission check answers for it in one call.
+    if (!this.ownToken || (this.ownToken === this.token && !this.auth?.installationForRepo)) return 'unknown';
     try {
       let response = await this.ownRequest(repo);
       if (response.status === 401 && this.auth?.ownRefresh) {

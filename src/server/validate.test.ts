@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RepoStatus } from '../shared/types';
-import { compilePatterns, emptyRepoStatus, matchingBranches, multiMatchError, splitPatterns } from './validate';
+import { ForgeError } from './forges';
+import { compilePatterns, emptyRepoStatus, forgeErrorMessage, matchingBranches, multiMatchError, splitPatterns } from './validate';
 
 describe('splitPatterns', () => {
   test('splits on top-level commas', () => {
@@ -56,5 +57,16 @@ describe('multiMatchError', () => {
   test('accepts zero or one matches', () => {
     expect(multiMatchError({ ...emptyRepoStatus(repo), accessible: true, matches: [] })).toBeNull();
     expect(multiMatchError({ ...emptyRepoStatus(repo), accessible: true, matches: ['a'], branch: 'a' })).toBeNull();
+  });
+});
+
+describe('forgeErrorMessage', () => {
+  test('explains a GitHub App permission gap', () => {
+    const error = new ForgeError(403, 'Resource not accessible by integration');
+    expect(forgeErrorMessage(error)).toContain('Contents: write');
+  });
+
+  test('keeps other forbidden details', () => {
+    expect(forgeErrorMessage(new ForgeError(403, 'upgrade required'))).toBe('access forbidden (upgrade required)');
   });
 });

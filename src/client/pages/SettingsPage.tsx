@@ -265,7 +265,12 @@ export function SettingsPage() {
                   <span style={{ color: 'var(--fgColor-muted)' }}>No installations yet.</span>
                 </div>
               ) : (
-                me.githubInstallations.map((installation) => (
+                me.githubInstallations.map((installation) => {
+                  const missing = [
+                    installation.contentsWrite ? '' : 'Contents (write)',
+                    installation.pullRequestsWrite ? '' : 'Pull requests (write)',
+                  ].filter(Boolean);
+                  return (
                   <div className="repo-list-item" key={installation.id} style={{ cursor: 'default' }}>
                     <div className="row">
                       <ServiceGlyph kind="github" />
@@ -288,8 +293,15 @@ export function SettingsPage() {
                     >
                       Manage
                     </Button>
+                    {missing.length > 0 ? (
+                      <span style={{ fontSize: 12, color: 'var(--fgColor-attention)' }}>
+                        Merging is disabled for this installation: grant {missing.join(' and ')} on the app, then approve
+                        the update on GitHub.
+                      </span>
+                    ) : null}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

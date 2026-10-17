@@ -89,6 +89,10 @@ export function forgeErrorMessage(error: unknown): string {
     if (error.status === 401) return 'authentication failed — reconnect this forge under Settings';
     if (error.status === 403) {
       if (rateLimited) return `rate limit reached (${detail})`;
+      // GitHub says this when an app token lacks a permission for the endpoint.
+      if (/resource not accessible by integration/i.test(detail ?? '')) {
+        return "the GitHub App is missing a permission for this action — add Contents: write (merging creates commits) and Pull requests: write to the app, approve the update, then retry";
+      }
       return detail ? `access forbidden (${detail})` : 'access forbidden';
     }
     if (error.status === 404) return 'not found or no access';

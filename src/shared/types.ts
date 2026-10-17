@@ -55,7 +55,15 @@ export interface MeResponse {
   /** The GitHub App's slug, when the installation offers one. */
   githubAppSlug: string | null;
   /** The app's installations on GitHub, when the app is configured. */
-  githubInstallations: Array<{ id: number; account: string; selection: string; organization: boolean }>;
+  githubInstallations: Array<{
+    id: number;
+    account: string;
+    selection: string;
+    organization: boolean;
+    /** The granted permissions, to spot what merging still needs. */
+    contentsWrite: boolean;
+    pullRequestsWrite: boolean;
+  }>;
 }
 
 export interface TokenWarning {
