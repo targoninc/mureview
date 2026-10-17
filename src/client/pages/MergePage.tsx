@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Checkbox, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
+import { BranchName, Button, Checkbox, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type {
   ForgeKind,
@@ -65,15 +65,12 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
               {repo.host}/{repo.repo}
             </span>
           </span>
-          <span className="mono" style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
+          <span className="row" style={{ gap: 6, color: 'var(--fgColor-muted)', fontSize: 12 }}>
             {repo.position > 0 ? `Layer ${repo.position + 1} · ` : ''}
-            {repo.branch} → {repo.target}
+            <BranchName>{repo.branch}</BranchName> → <BranchName>{repo.target}</BranchName>
           </span>
         </div>
         <div className="row merge-card-meta" style={{ gap: 8, alignItems: 'center' }}>
-          {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
-          {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}
-          <Label variant={badge.tone}>{badge.text}</Label>
           <span className="repo-list-meta">
             <span>
               {repo.files} {repo.files === 1 ? 'file' : 'files'}
@@ -84,6 +81,9 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
             {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
           </span>
+          {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
+          {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}
+          <Label variant={badge.tone}>{badge.text}</Label>
           {repo.pullRequest ? (
             <Button
               as="a"
@@ -124,11 +124,7 @@ function MergeCard({ card }: { card: RepoCardInfo }) {
               {card.host}/{card.repo}
             </span>
           </span>
-          {status?.branch ? (
-            <span className="mono" style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
-              {status.branch}
-            </span>
-          ) : null}
+          {status?.branch ? <BranchName>{status.branch}</BranchName> : null}
         </div>
         {status && status.state !== 'open' ? (
           <Label variant={status.state === 'error' ? 'danger' : 'secondary'}>{repoStatusText(status)}</Label>
@@ -293,7 +289,7 @@ export function MergePage() {
         <Heading as="h1" variant="medium">
           {target ? (
             <>
-              Merge into <span className="mono">{target}</span>
+              Merge into <BranchName>{target}</BranchName>
             </>
           ) : (
             'Merge branches'
@@ -409,9 +405,12 @@ export function MergePage() {
           <div className="stack" style={{ gap: 20 }}>
             {previews.map((repo) => (
               <div className="stack" style={{ gap: 8 }} key={cardKey(repo)}>
-                <strong className="mono" style={{ fontSize: 12 }}>
-                  {repo.host}/{repo.repo} · {repo.branch}
-                </strong>
+                <span className="row" style={{ gap: 6, fontSize: 12 }}>
+                  <strong className="mono">
+                    {repo.host}/{repo.repo}
+                  </strong>
+                  <BranchName>{repo.branch}</BranchName>
+                </span>
                 {repo.checks.runs.length === 0 ? (
                   <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No checks reported for this branch.</span>
                 ) : (

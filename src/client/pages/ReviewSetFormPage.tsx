@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AnchoredOverlay,
+  BranchName,
   Button,
   Checkbox,
   Flash,
@@ -486,9 +487,7 @@ export function ReviewSetFormPage() {
                         </span>
                       </div>
                       <div className="stack-chain">
-                        <span className="stack-node stack-node-base" title="The review set's target branch">
-                          {form.targetBranch || 'main'}
-                        </span>
+                        <BranchName>{form.targetBranch || 'main'}</BranchName>
                         {layers.map((layer, index) => (
                           <span className="row" style={{ gap: 6 }} key={`${layer.position}`}>
                             <span className="stack-arrow" aria-hidden="true">

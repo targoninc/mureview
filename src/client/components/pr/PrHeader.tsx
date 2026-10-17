@@ -1,4 +1,4 @@
-import { ActionList, ActionMenu, Button, IconButton, Label, Spinner } from '@primer/react';
+import { ActionList, ActionMenu, BranchName, Button, IconButton, Label, Spinner } from '@primer/react';
 import { UserAvatar } from '../UserAvatar';
 import {
   AlertIcon,
@@ -137,7 +137,7 @@ export function PrHeader({
   const stackCount = new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size;
   const repoNoun =
     reviewSet.mode === 'stack' ? (openRepos.length === 1 ? 'layer' : 'layers') : openRepos.length === 1 ? 'branch' : 'branches';
-  const targetLabel = <span className="mono">{reviewSet.targetBranch}</span>;
+  const targetLabel = <BranchName>{reviewSet.targetBranch}</BranchName>;
 
   return (
     <div className={`pr-header${collapsed ? ' collapsed' : ''}`}>

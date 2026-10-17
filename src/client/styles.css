@@ -391,14 +391,6 @@ svg.checks-pending {
   border-radius: 6px;
 }
 
-.stack-node-base {
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-family: var(--font-mono);
-  color: var(--fgColor-muted);
-}
-
 .stack-layer {
   font-size: 11px;
   color: var(--fgColor-muted);

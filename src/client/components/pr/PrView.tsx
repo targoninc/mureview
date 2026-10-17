@@ -5,7 +5,7 @@ import { useAppContext } from '../../lib/appContext';
 import { processFile } from '@pierre/diffs';
 import type { CodeViewItem, DiffLineAnnotation, FileDiffMetadata } from '@pierre/diffs';
 import { CodeView, type CodeViewHandle, type CodeViewReactOptions, WorkerPoolContextProvider } from '@pierre/diffs/react';
-import { Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
+import { BranchName, Button, Checkbox, Dialog, Flash, IconButton, Label } from '@primer/react';
 import { UserAvatar } from '../UserAvatar';
 import {
   ChevronDownIcon,
@@ -894,9 +894,14 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                 All together
               </Button>
               <span className="stack-view-hint">
-                {view === 'combined'
-                  ? `The whole stack against ${reviewSet.targetBranch}. Comments belong to layers, so switch back to Layer by layer to write them.`
-                  : 'Every layer against the branch below it. Merging happens bottom-up.'}
+                {view === 'combined' ? (
+                  <>
+                    The whole stack against <BranchName>{reviewSet.targetBranch}</BranchName>. Comments belong to
+                    layers, so switch back to Layer by layer to write them.
+                  </>
+                ) : (
+                  'Every layer against the branch below it. Merging happens bottom-up.'
+                )}
               </span>
             </div>
           ) : null}
@@ -994,8 +999,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                             {repo.host}/{repo.repo}
                           </span>
                         </span>
-                        <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>
-                          {repo.branch} → {repo.target || reviewSet.targetBranch}
+                        <span className="row" style={{ gap: 6, color: 'var(--fgColor-muted)', fontSize: 12 }}>
+                          {repo.branch ? <BranchName>{repo.branch}</BranchName> : null}
+                          <span aria-hidden="true">→</span>
+                          <BranchName>{repo.target || reviewSet.targetBranch}</BranchName>
                         </span>
                       </div>
                       <Button
@@ -1053,9 +1060,11 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                 <strong style={{ fontSize: 12 }}>Repositories without a pull request</strong>
                 {reposWithoutPulls.map((repo) => (
                   <div className="dialog-row" key={`${repo.connectionId}:${repo.repo}`}>
-                    <span className="mono" style={{ fontSize: 12 }}>
-                      {repo.host}/{repo.repo}
-                      {repo.branch ? ` · ${repo.branch}` : ''}
+                    <span className="row" style={{ gap: 6, fontSize: 12 }}>
+                      <span className="mono">
+                        {repo.host}/{repo.repo}
+                      </span>
+                      {repo.branch ? <BranchName>{repo.branch}</BranchName> : null}
                     </span>
                     <span style={{ color: repo.prError ? 'var(--fgColor-danger)' : 'var(--fgColor-muted)', fontSize: 12 }}>
                       {repo.prError ?? repoStatusText(repo)}

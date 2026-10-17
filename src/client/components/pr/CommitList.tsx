@@ -1,3 +1,4 @@
+import { BranchName } from '@primer/react';
 import type { RepoStatus } from '../../../shared/types';
 import { timeAgo } from '../../lib/format';
 
@@ -31,9 +32,16 @@ export function CommitList({ repos, target }: { repos: RepoStatus[]; target: str
     <div className="stack" style={{ gap: 18, padding: 12 }}>
       {withCommits.map((repo) => (
         <div className="stack" key={`${repo.connectionId}:${repo.repo}`} style={{ gap: 6 }}>
-          <span className="mono" style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-            {repo.host}/{repo.repo} · {repo.branch} → {repo.target || target} (
-            {repo.commitsTruncated ? `showing ${repo.commits!.length} of ${repo.aheadBy}` : repo.commits!.length})
+          <span className="row" style={{ gap: 6, fontSize: 12, color: 'var(--fgColor-muted)' }}>
+            <span className="mono">
+              {repo.host}/{repo.repo}
+            </span>
+            {repo.branch ? <BranchName>{repo.branch}</BranchName> : null}
+            <span aria-hidden="true">→</span>
+            <BranchName>{repo.target || target}</BranchName>
+            <span>
+              ({repo.commitsTruncated ? `showing ${repo.commits!.length} of ${repo.aheadBy}` : repo.commits!.length})
+            </span>
           </span>
           {repo.commits!.map((commit) => (
             <CommitRow key={commit.sha} commit={commit} />

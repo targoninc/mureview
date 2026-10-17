@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Avatar, Button, Flash, Heading, Label, Spinner } from '@primer/react';
+import { Avatar, BranchName, Button, Flash, Heading, Label, Spinner } from '@primer/react';
 import { GitBranchIcon, PlusIcon, RepoIcon } from '@primer/octicons-react';
 import type { ReviewSet } from '../../shared/types';
 import { repoLabel } from '../../shared/types';
@@ -22,7 +22,7 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
       <>
         <Label variant="secondary">/{reviewSet.branchRegex}/</Label>
         <span className="row">
-          <GitBranchIcon size={14} /> target: <span className="mono">{reviewSet.targetBranch}</span>
+          <GitBranchIcon size={14} /> target: <BranchName>{reviewSet.targetBranch}</BranchName>
         </span>
       </>
     ) : reviewSet.mode === 'stack' ? (
@@ -31,7 +31,7 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
         <span className="row" title={branchPairs}>
           <GitBranchIcon size={14} />
           {layers} {layers === 1 ? 'layer' : 'layers'} in {repos.length} {repos.length === 1 ? 'stack' : 'stacks'} →{' '}
-          <span className="mono">{reviewSet.targetBranch}</span>
+          <BranchName>{reviewSet.targetBranch}</BranchName>
         </span>
       </>
     ) : (
@@ -41,12 +41,12 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
           <GitBranchIcon size={14} />
           {branches.length === 1 ? (
             <>
-              <span className="mono">{branches[0].branch}</span> →{' '}
-              <span className="mono">{branches[0].target ?? reviewSet.targetBranch}</span>
+              <BranchName>{branches[0].branch}</BranchName> →{' '}
+              <BranchName>{branches[0].target ?? reviewSet.targetBranch}</BranchName>
             </>
           ) : sharedTarget !== null ? (
             <>
-              {branches.length} branches → <span className="mono">{sharedTarget}</span>
+              {branches.length} branches → <BranchName>{sharedTarget}</BranchName>
             </>
           ) : (
             <>{branches.length} branches → their own targets</>
