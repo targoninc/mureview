@@ -69,35 +69,33 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             {repo.position > 0 ? `Layer ${repo.position + 1} · ` : ''}
             {repo.branch} → {repo.target}
           </span>
-          <div className="row" style={{ gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {repo.pullRequest ? (
-              <Button
-                as="a"
-                href={repo.pullRequest.url}
-                target="_blank"
-                rel="noreferrer"
-                size="small"
-                leadingVisual={GitPullRequestIcon}
-              >
-                PR #{repo.pullRequest.ref}
-              </Button>
-            ) : null}
-            <span className="repo-list-meta">
-              <span>
-                {repo.files} {repo.files === 1 ? 'file' : 'files'}
-              </span>
-              <span className="additions">+{repo.additions}</span>
-              <span className="deletions">−{repo.deletions}</span>
-              {repo.aheadBy > 0 ? <span>{repo.aheadBy} commits ahead</span> : null}
-              {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
-              {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
-            </span>
-          </div>
         </div>
-        <div className="row" style={{ gap: 6 }}>
+        <div className="row merge-card-meta" style={{ gap: 8, alignItems: 'center' }}>
           {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
           {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}
           <Label variant={badge.tone}>{badge.text}</Label>
+          <span className="repo-list-meta">
+            <span>
+              {repo.files} {repo.files === 1 ? 'file' : 'files'}
+            </span>
+            <span className="additions">+{repo.additions}</span>
+            <span className="deletions">−{repo.deletions}</span>
+            {repo.aheadBy > 0 ? <span>{repo.aheadBy} commits ahead</span> : null}
+            {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
+            {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
+          </span>
+          {repo.pullRequest ? (
+            <Button
+              as="a"
+              href={repo.pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+              size="small"
+              leadingVisual={GitPullRequestIcon}
+            >
+              PR #{repo.pullRequest.ref}
+            </Button>
+          ) : null}
         </div>
       </div>
       {repo.conflictFiles.length > 0 ? (
@@ -238,15 +236,17 @@ export function MergePage() {
 
   const started = cards.length > 0 || ready;
 
-  // Repositories without a matched branch have nothing to merge; they group
-  // at the bottom so the ones that have pull requests stay together on top.
-  const orderedCards = useMemo(
-    () =>
-      [...cards].sort(
-        (a, b) => Number(Boolean(b.status?.branch || b.preview)) - Number(Boolean(a.status?.branch || a.preview)),
-      ),
-    [cards],
-  );
+  // Repositories without a matched branch have nothing to merge; they form
+  // their own group below the ones that have pull requests.
+  const groups = useMemo(() => {
+    const withBranch: RepoCardInfo[] = [];
+    const without: RepoCardInfo[] = [];
+    for (const card of cards) (card.status?.branch || card.preview ? withBranch : without).push(card);
+    return [
+      { key: 'branch', title: 'With a matching branch', cards: withBranch },
+      { key: 'none', title: 'No matching branch', cards: without },
+    ].filter((group) => group.cards.length > 0);
+  }, [cards]);
 
   if (error && !started) {
     return (
@@ -354,8 +354,13 @@ export function MergePage() {
           </Flash>
         ) : null}
 
-        {orderedCards.map((card) => (
-          <MergeCard key={cardKey(card)} card={card} />
+        {groups.map((group) => (
+          <section className="merge-group" key={group.key} aria-label={group.title}>
+            <h2 className="merge-group-title">{group.title}</h2>
+            {group.cards.map((card) => (
+              <MergeCard key={cardKey(card)} card={card} />
+            ))}
+          </section>
         ))}
 
         <div className="form-actions">

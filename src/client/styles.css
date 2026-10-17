@@ -170,11 +170,36 @@ body {
   text-decoration: underline;
 }
 
-.merge-card {
+/* One card per repository group; its repositories are rows separated by lines. */
+.merge-group {
   border: 1px solid var(--borderColor-default);
   border-radius: 6px;
-  padding: 16px;
   background-color: var(--bgColor-default);
+  overflow: hidden;
+}
+
+.merge-group-title {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted);
+  background-color: var(--bgColor-muted);
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.merge-card {
+  padding: 16px;
+  border-bottom: 1px solid var(--borderColor-default);
+}
+
+.merge-group .merge-card:last-child {
+  border-bottom: none;
+}
+
+.merge-card-meta {
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .check-row,
