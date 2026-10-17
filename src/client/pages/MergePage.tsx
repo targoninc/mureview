@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Checkbox, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
@@ -237,6 +237,16 @@ export function MergePage() {
 
   const started = cards.length > 0 || ready;
 
+  // Repositories without a matched branch have nothing to merge; they group
+  // at the bottom so the ones that have pull requests stay together on top.
+  const orderedCards = useMemo(
+    () =>
+      [...cards].sort(
+        (a, b) => Number(Boolean(b.status?.branch || b.preview)) - Number(Boolean(a.status?.branch || a.preview)),
+      ),
+    [cards],
+  );
+
   if (error && !started) {
     return (
       <div className="page-scroll">
@@ -343,7 +353,7 @@ export function MergePage() {
           </Flash>
         ) : null}
 
-        {cards.map((card) => (
+        {orderedCards.map((card) => (
           <MergeCard key={cardKey(card)} card={card} />
         ))}
 
