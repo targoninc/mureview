@@ -35,7 +35,7 @@ function stateVariant(state: PrStatus['state']): { variant: LabelVariant; text: 
     case 'invalid':
       return { variant: 'danger', text: 'Invalid configuration' };
     case 'closed':
-      return { variant: 'done', text: 'Closed' };
+      return { variant: 'secondary', text: 'Nothing to merge' };
     default:
       return { variant: 'secondary', text: 'Draft' };
   }
@@ -184,6 +184,12 @@ export function PrHeader({
                   )}{' '}
                   · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
                 </>
+              )
+            ) : pr.state === 'closed' ? (
+              reviewSet.mode === 'per-repo' ? (
+                "Every matched branch is merged into its own target branch"
+              ) : (
+                <>Every matched branch is merged into {targetLabel}</>
               )
             ) : compact ? (
               reviewSet.mode === 'stack' ? (

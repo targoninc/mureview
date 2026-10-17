@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BranchName, Button, Flash } from '@primer/react';
+import { Button, Flash } from '@primer/react';
 import type { PrStatus, ReviewSet } from '../../../shared/types';
 import { repoLabel } from '../../../shared/types';
 import { basePath } from '../../lib/api';
@@ -106,36 +106,8 @@ export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: Rev
     );
   }
 
-  if (pr.state === 'closed') {
-    const merged = pr.repos.filter((repo) => repo.branch);
-    return (
-      <Flash variant="success">
-        <strong>
-          {reviewSet.mode === 'stack' ? (
-            'Every stack was merged bottom-up.'
-          ) : reviewSet.mode === 'per-repo' ? (
-            'All matched branches are merged into their target branches.'
-          ) : (
-            <>
-              All matched branches are merged into <BranchName>{reviewSet.targetBranch}</BranchName>.
-            </>
-          )}
-        </strong>{' '}
-        The ephemeral pull request was closed and
-        its comments were discarded. Configure a new branch pattern or point at new branches to start the next review.
-        {merged.length > 0 ? (
-          <div style={{ marginTop: 4 }}>
-            {merged.map((repo, index) => (
-              <span key={`${repo.connectionId}:${repo.repo}`}>
-                {index > 0 ? ' · ' : ''}
-                {repoLabel(repo)}: {repo.branch ? <BranchName>{repo.branch}</BranchName> : null}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </Flash>
-    );
-  }
+  // Everything merged: the header says so, no banner needed.
+  if (pr.state === 'closed') return null;
 
   return (
     <Flash variant={pr.errors.length ? 'danger' : 'default'}>

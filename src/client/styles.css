@@ -659,7 +659,7 @@ svg.checks-pending {
 
 .pr-banners {
   flex: none;
-  padding: 12px 24px 0;
+  padding: 12px 24px;
   display: flex;
   flex-direction: column;
   gap: 8px;
