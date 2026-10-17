@@ -1,7 +1,9 @@
 import { afterAll, expect, test } from 'bun:test';
 import { upsertConnection } from '../auth/identities';
-import { decrypt } from '../crypto';
-import { db } from '../db';
+import { decrypt, encrypt } from '../crypto';
+import { db, type ForgeConnectionRow } from '../db';
+import * as app from '../githubApp';
+import { clientFor } from './index';
 import { GithubClient, exchangeGithubRefreshToken, refreshGithubToken } from './github';
 
 const realFetch = globalThis.fetch;
@@ -338,4 +340,109 @@ test('pullRequestReviews lists everyone\'s latest decision', async () => {
     { name: 'me', avatarUrl: 'https://a/me.png', vote: 'approve', you: true },
     { name: 'lena', avatarUrl: 'https://a/lena.png', vote: 'reject', you: false },
   ]);
+});
+
+test('ownPermission reads the account token, not an installation token', async () => {
+  const authorizations: string[] = [];
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    authorizations.push(String((init?.headers as Record<string, string>)?.['Authorization'] ?? ''));
+    const url = String(input);
+    if (url.endsWith('/repos/acme/app')) return Response.json({ permissions: { admin: false, maintain: false, push: true, pull: true } });
+    if (url.endsWith('/repos/other/app')) return Response.json({ permissions: { pull: true } });
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token');
+  expect(await client.ownPermission('acme/app')).toBe('write');
+  expect(await client.ownPermission('other/app')).toBe('read');
+  expect(await client.ownPermission('missing/app')).toBe('unknown');
+  expect(authorizations).toEqual(['Bearer own-token', 'Bearer own-token', 'Bearer own-token']);
+
+  expect(await new GithubClient('').ownPermission('acme/app')).toBe('unknown');
+});
+
+test('a connection with an app installation still checks permissions with the account token', async () => {
+  let authorization = '';
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    authorization = String((init?.headers as Record<string, string>)?.['Authorization'] ?? '');
+    return Response.json({ permissions: { admin: true, push: true } });
+  }) as unknown as typeof fetch;
+
+  process.env.GITHUB_APP_ID = '12345';
+  process.env.GITHUB_APP_PRIVATE_KEY = '-----BEGIN RSA PRIVATE KEY-----\nnot-a-real-key\n-----END RSA PRIVATE KEY-----';
+  app.resetGithubApp();
+
+  const connection: ForgeConnectionRow = {
+    id: 9001,
+    user_id: 1,
+    kind: 'github',
+    base_url: 'https://github.com',
+    client_id: '',
+    client_secret: '',
+    access_token: encrypt('account-token'),
+    refresh_token: '',
+    login: 'owner',
+    avatar_url: '',
+    webhook_secret: null,
+    installation_id: '42',
+  };
+  expect(await clientFor(connection).ownPermission?.('acme/repo')).toBe('write');
+  expect(authorization).toBe('Bearer account-token');
+
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  app.resetGithubApp();
+});
+
+test('ownPermission refreshes the account token when it expired', async () => {
+  const authorizations: string[] = [];
+  let attempts = 0;
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    attempts++;
+    authorizations.push(String((init?.headers as Record<string, string>)?.['Authorization'] ?? ''));
+    if (attempts === 1) return new Response('bad credentials', { status: 401 });
+    return Response.json({ permissions: { push: true } });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient(
+    'installation-token',
+    { refresh: async () => 'installation-token', ownRefresh: async () => 'fresh-own' },
+    'expired-own',
+  );
+  expect(await client.ownPermission('acme/app')).toBe('write');
+  expect(authorizations).toEqual(['Bearer expired-own', 'Bearer fresh-own']);
+});
+
+test('an installation serving a repository reports its pull request permission', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  process.env.GITHUB_APP_ID = '12345';
+  process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+  app.resetGithubApp();
+
+  globalThis.fetch = (async (input: unknown) => {
+    if (String(input).endsWith('/app/installations/42')) {
+      return Response.json({ permissions: { contents: 'read', pull_requests: 'write' } });
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+  const writer = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token', '42');
+  expect(await writer.pullRequestPermission('acme/repo')).toBe('write');
+
+  globalThis.fetch = (async (input: unknown) => {
+    if (String(input).endsWith('/app/installations/7')) {
+      return Response.json({ permissions: { contents: 'read', pull_requests: 'read' } });
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+  const reader = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token', '7');
+  expect(await reader.pullRequestPermission('acme/repo')).toBe('read');
+
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  app.resetGithubApp();
 });

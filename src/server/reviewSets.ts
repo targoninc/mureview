@@ -243,6 +243,7 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
         const pr = await buildPrStatus(connections, access.reviewSet, fresh, {
           commits: false,
           ensurePulls: false,
+          headSync: true,
           progress: true,
           progressUserId: user.id,
           onRepo: (repo) => send({ repo }),
@@ -337,6 +338,7 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
     discussions: false,
     commits: false,
     ensurePulls: canManage,
+    headSync: true,
     clients,
   });
 

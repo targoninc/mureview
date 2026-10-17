@@ -5,6 +5,8 @@ import {
   ChevronDownIcon,
   CommentDiscussionIcon,
   ColumnsIcon,
+  EyeClosedIcon,
+  EyeIcon,
   FileDiffIcon,
   FileIcon,
   GitCommitIcon,
@@ -50,6 +52,11 @@ interface PrHeaderProps {
   onToggleDiffStyle: () => void;
   fileMode: 'all' | 'single';
   onToggleFileMode: () => void;
+  /** Viewed files hidden from the tree, while the hide setting is on. */
+  hiddenViewedCount?: number;
+  /** Whether the hidden viewed files are being shown anyway. */
+  revealViewed?: boolean;
+  onToggleRevealViewed?: () => void;
   /** Present when the review set has pull requests that take a decision. */
   reviewState?: ReviewVote | null;
   onVoteAll?: (vote: ReviewVote) => void;
@@ -82,6 +89,9 @@ export function PrHeader({
   onToggleDiffStyle,
   fileMode,
   onToggleFileMode,
+  hiddenViewedCount,
+  revealViewed,
+  onToggleRevealViewed,
   reviewState,
   onVoteAll,
   voting,
@@ -318,6 +328,23 @@ export function PrHeader({
                 size="small"
                 onClick={onToggleFileMode}
               />
+              {hiddenViewedCount ? (
+                <span className="icon-count">
+                  <IconButton
+                    icon={revealViewed ? EyeClosedIcon : EyeIcon}
+                    aria-label={revealViewed ? 'Hide the viewed files again' : 'Show the viewed files hidden from the tree'}
+                    title={
+                      revealViewed
+                        ? 'Hide the viewed files again'
+                        : `Show the ${hiddenViewedCount} viewed ${hiddenViewedCount === 1 ? 'file' : 'files'} hidden from the tree`
+                    }
+                    variant="invisible"
+                    size="small"
+                    onClick={onToggleRevealViewed}
+                  />
+                  <span className="icon-count-badge">{hiddenViewedCount}</span>
+                </span>
+              ) : null}
             </div>
           ) : null}
         </div>

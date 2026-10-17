@@ -9,7 +9,7 @@ import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
 import { beginRun, finishRun, setPhase } from './progress';
 import { attachKnownPullRequests, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
-import { listReviewed, listReviewedBy } from './reviewed';
+import { listReviewed, listReviewedBy, resetMarksForNewCommits } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
@@ -207,6 +207,8 @@ export interface BuildPrOptions {
   commits?: boolean;
   /** Create missing forge pull requests for open repositories. */
   ensurePulls?: boolean;
+  /** Clear viewed marks on files a new head commit changed. */
+  headSync?: boolean;
   /** Report per-repository progress for the loading screen. */
   progress?: boolean;
   progressUserId?: number;
@@ -336,6 +338,7 @@ export async function buildPrStatus(
           }
         }
       });
+      if (options.headSync && lifecycle.prId) await resetMarksForNewCommits(clients, repos, lifecycle.prId);
       return {
         state: 'open',
         errors,

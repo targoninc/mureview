@@ -165,6 +165,11 @@ export interface ForgeClient {
    */
   pullRequestPermission?(repo: string): Promise<'write' | 'read' | 'unknown'>;
   /**
+   * The acting account's own role, ignoring any app credential the forge
+   * answers with; the acting account's access always decides.
+   */
+  ownPermission?(repo: string): Promise<'write' | 'read' | 'unknown'>;
+  /**
    * Points an existing pull request at another base branch; stacked review
    * sets use it to land every layer on the shared target, bottom-up.
    */

@@ -1,4 +1,5 @@
 import { createHmac, createSign, timingSafeEqual } from 'node:crypto';
+import { Cache } from './cache';
 
 export interface GithubAppConfig {
   appId: string;
@@ -79,7 +80,11 @@ export async function installationToken(installationId: string): Promise<string>
     method: 'POST',
     headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
   });
-  if (!response.ok) throw new Error(`GitHub refused an installation token (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(`GitHub refused an installation token (${response.status})`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
   const data = (await response.json()) as { token: string; expires_at: string };
   installationTokens.set(installationId, { token: data.token, expires: new Date(data.expires_at).getTime() });
   return data.token;
@@ -112,16 +117,26 @@ export async function attachGithubInstallation(connectionId: number, login: stri
   }
 }
 
-const repoInstallations = new Map<string, string | null>();
+// Short-lived: a reinstalled app gets a new installation id, and the cached
+// lookups must not outlive the installation they name.
+const repoInstallations = new Cache<string | null>(500, 5 * 60_000);
+
+export interface InstallationLookupOptions {
+  /** Skip the cache and ask GitHub again. */
+  fresh?: boolean;
+}
 
 /**
  * The installation covering a repository, looked up with the app JWT. This is
  * how organization installations reach connections whose account is not the
  * organization itself.
  */
-export async function installationForRepo(repo: string): Promise<string | null> {
+export async function installationForRepo(repo: string, options: InstallationLookupOptions = {}): Promise<string | null> {
   if (!githubApp()) return null;
-  if (repoInstallations.has(repo)) return repoInstallations.get(repo) ?? null;
+  if (!options.fresh) {
+    const hit = repoInstallations.get(repo);
+    if (hit !== undefined) return hit;
+  }
   try {
     const response = await fetch(`https://api.github.com/repos/${repo}/installation`, {
       headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
@@ -135,8 +150,55 @@ export async function installationForRepo(repo: string): Promise<string | null> 
   }
 }
 
+/** Whether minting a token failed because the installation no longer exists. */
+export function installationUnavailable(error: unknown): boolean {
+  return (error as { status?: number } | null)?.status === 404;
+}
+
+/**
+ * Clears an installation GitHub no longer knows from a connection, so it stops
+ * preferring a dead installation and resolves the repository's current one.
+ */
+export async function forgetStaleInstallation(connectionId: number, installationId: string): Promise<void> {
+  const { db } = await import('./db');
+  db.run('UPDATE forge_connections SET installation_id = NULL WHERE id = ? AND installation_id = ?', [connectionId, installationId]);
+  forgetInstallation(installationId);
+}
+
+const installationPermissions = new Cache<boolean | null>(200, 10 * 60_000);
+
+/**
+ * Whether an installation may manage pull requests (create, review, merge,
+ * comment). A repository payload only reports content grants — the app is
+ * installed with Contents read — so the app's own permission list is the
+ * reliable answer. Null when it cannot be read.
+ */
+export async function installationCanManagePullRequests(installationId: string): Promise<boolean | null> {
+  if (!githubApp()) return null;
+  const hit = installationPermissions.get(installationId);
+  if (hit !== undefined) return hit;
+  try {
+    const response = await fetch(`https://api.github.com/app/installations/${installationId}`, {
+      headers: { Authorization: `Bearer ${appJwt()}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+    });
+    const value = response.ok
+      ? ((await response.json()) as { permissions?: Record<string, string> }).permissions?.pull_requests === 'write'
+      : null;
+    installationPermissions.set(installationId, value);
+    return value;
+  } catch (error) {
+    console.error(`Could not read the permissions of installation ${installationId}:`, error);
+    return null;
+  }
+}
+
 export function forgetRepoInstallation(repo: string): void {
   repoInstallations.delete(repo);
+}
+
+/** Forgets every repository lookup; installations changed. */
+export function forgetRepoInstallations(): void {
+  repoInstallations.clear();
 }
 
 export interface GithubInstallation {

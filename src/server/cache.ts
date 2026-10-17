@@ -16,6 +16,10 @@ export class Cache<T> {
     this.entries.clear();
   }
 
+  delete(key: string): void {
+    this.entries.delete(key);
+  }
+
   get(key: string): T | undefined {
     const entry = this.entries.get(key);
     if (!entry) return undefined;

@@ -6,7 +6,14 @@ import { HttpError, clearCookie, parseCookies, setCookie } from '../http';
 import type { Ctx } from '../router';
 
 export function publicUser(row: UserRow): User {
-  return { id: row.id, name: row.name, avatarUrl: row.avatar_url, monoFont: row.mono_font ?? null };
+  return {
+    id: row.id,
+    name: row.name,
+    avatarUrl: row.avatar_url,
+    monoFont: row.mono_font ?? null,
+    autoMarkViewed: row.auto_mark_viewed === 1,
+    hideViewedFiles: row.hide_viewed_files === 1,
+  };
 }
 
 export function getSessionUser(req: Request): UserRow | null {

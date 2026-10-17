@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Spinner } from '@primer/react';
-import type { MeResponse } from '../shared/types';
+import type { MeResponse, User } from '../shared/types';
 import { Shell } from './components/Shell';
 import { Login } from './components/Login';
 import { Dashboard } from './pages/Dashboard';
@@ -32,6 +32,10 @@ export function App() {
     document.documentElement.style.setProperty('--font-mono', monoFontFamily(me?.user?.monoFont));
   }, [me]);
 
+  const updateUser = useCallback((patch: Partial<User>) => {
+    setMe((current) => (current?.user ? { ...current, user: { ...current.user, ...patch } } : current));
+  }, []);
+
   const signOut = useCallback(() => {
     post('/auth/logout', {}).catch(() => undefined);
     setMe((current) => (current ? { ...current, user: null, identities: [], connections: [] } : current));
@@ -48,7 +52,7 @@ export function App() {
   if (!me?.user) return <Login providers={me?.providers ?? ['email']} onSignedIn={refresh} />;
 
   return (
-    <AppContext.Provider value={{ githubOAuthAppUrl: me.githubOAuthAppUrl, user: me.user }}>
+    <AppContext.Provider value={{ githubOAuthAppUrl: me.githubOAuthAppUrl, user: me.user, updateUser }}>
       <BrowserRouter basename={basename}>
         <Shell user={me.user} onSignOut={signOut}>
           <Routes>

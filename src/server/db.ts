@@ -16,6 +16,8 @@ export interface UserRow {
   name: string;
   avatar_url: string;
   mono_font: string | null;
+  auto_mark_viewed: number;
+  hide_viewed_files: number;
   created_at: string;
 }
 
@@ -598,6 +600,12 @@ if (userVersion() < 12) {
 const userColumns = hasTable('users') ? db.query<{ name: string }, []>('PRAGMA table_info(users)').all() : [];
 if (userColumns.length && !userColumns.some((column) => column.name === 'mono_font')) {
   db.exec('ALTER TABLE users ADD COLUMN mono_font TEXT');
+}
+if (userColumns.length && !userColumns.some((column) => column.name === 'auto_mark_viewed')) {
+  db.exec('ALTER TABLE users ADD COLUMN auto_mark_viewed INTEGER NOT NULL DEFAULT 0');
+}
+if (userColumns.length && !userColumns.some((column) => column.name === 'hide_viewed_files')) {
+  db.exec('ALTER TABLE users ADD COLUMN hide_viewed_files INTEGER NOT NULL DEFAULT 0');
 }
 const connectionColumns = hasTable('forge_connections') ? db.query<{ name: string }, []>('PRAGMA table_info(forge_connections)').all() : [];
 if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'webhook_secret')) {

@@ -102,12 +102,15 @@ request uses the URL GitHub knows.
 
 ### GitHub App (optional)
 
-A GitHub App is not required, but it makes two things better: mureview uses
-short-lived installation tokens instead of the account's OAuth token, and one
-webhook endpoint covers every installed repository, so comments, reviews and
-pull request changes made on GitHub reach open mureview sessions without
-polling. Existing installations migrate by adding the variables below and
-installing the app — without them, nothing changes.
+A GitHub App is not required, but it makes two things better: one webhook
+endpoint covers every installed repository — so comments, reviews and pull
+request changes made on GitHub reach open mureview sessions without polling —
+and repositories the account's own OAuth token cannot reach (organization
+OAuth app restrictions) still load through short-lived installation tokens.
+What the account may do stays based on its own GitHub access; only where the
+account cannot reach the repository do the app's granted permissions stand in.
+Existing installations migrate by adding the variables below and installing the
+app — without them, nothing changes.
 
 1. Create an app at <https://github.com/settings/apps/new>.
    - **Homepage URL**: `${BASE_URL}`

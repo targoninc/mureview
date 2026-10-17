@@ -1,9 +1,13 @@
-import type { ReviewMark, ReviewMarkBy } from '../shared/types';
+import type { RepoStatus, ReviewMark, ReviewMarkBy } from '../shared/types';
+import { repoLabel } from '../shared/types';
 import { requireUser } from './auth/session';
+import { mapLimit } from './cache';
 import { loadReadablePr } from './comments';
 import { db } from './db';
+import { ForgeError, type ForgeClient } from './forges';
 import { HttpError, json, readJson } from './http';
 import { publishForPr } from './live';
+import { repoPullRequest } from './pullRequests';
 import type { Ctx } from './router';
 
 /** The files the user marked as viewed; everyone keeps their own marks. */
@@ -36,6 +40,97 @@ export function listReviewedBy(prId: number): ReviewMarkBy[] {
       path: row.path,
       user: { id: row.userId, name: row.name, avatarUrl: row.avatarUrl },
     }));
+}
+
+/** A repository layer whose viewed marks a new commit invalidates. */
+export interface ResetTarget {
+  connectionId: number;
+  repo: string;
+  position: number;
+}
+
+/**
+ * Clears the viewed marks on a repository layer for everyone: a new commit
+ * touched those files, so they need another read. `paths` limits the reset to
+ * the files the commit changed; null clears the whole layer.
+ */
+export function resetReviewed(prId: number, target: ResetTarget, paths: string[] | null): void {
+  const rows = db
+    .query<{ userId: number; name: string; avatarUrl: string; path: string }, [number, number, string, number]>(
+      `SELECT rf.user_id AS userId, u.name, u.avatar_url AS avatarUrl, rf.path
+       FROM reviewed_files rf JOIN users u ON u.id = rf.user_id
+       WHERE rf.pr_id = ? AND rf.connection_id = ? AND rf.repo = ? AND rf.position = ?`,
+    )
+    .all(prId, target.connectionId, target.repo, target.position);
+  const changed = paths === null ? null : new Set(paths);
+  const byUser = new Map<number, { name: string; avatarUrl: string; paths: string[] }>();
+  for (const row of rows) {
+    if (changed && !changed.has(row.path)) continue;
+    const entry = byUser.get(row.userId) ?? { name: row.name, avatarUrl: row.avatarUrl, paths: [] };
+    entry.paths.push(row.path);
+    byUser.set(row.userId, entry);
+  }
+  if (byUser.size === 0) return;
+
+  db.transaction(() => {
+    for (const [userId, entry] of byUser) {
+      for (const path of entry.paths) {
+        db.run(
+          'DELETE FROM reviewed_files WHERE pr_id = ? AND user_id = ? AND connection_id = ? AND repo = ? AND position = ? AND path = ?',
+          [prId, userId, target.connectionId, target.repo, target.position, path],
+        );
+      }
+    }
+  })();
+
+  for (const [userId, entry] of byUser) {
+    void publishForPr(prId, {
+      type: 'reviewed',
+      userId,
+      userName: entry.name,
+      userAvatar: entry.avatarUrl,
+      reviewed: false,
+      itemIds: entry.paths.map((path) => `${target.connectionId}:${target.repo}:${target.position}:${path}`),
+    });
+  }
+}
+
+/**
+ * When a head commit moved since it was last seen, the files it changed lose
+ * their viewed marks for everyone. A branch whose old commit is gone (a force
+ * push) resets its whole layer, since the change cannot be narrowed down.
+ */
+export async function resetMarksForNewCommits(
+  clients: Map<number, ForgeClient>,
+  repos: RepoStatus[],
+  prId: number,
+): Promise<void> {
+  await mapLimit(repos, 3, async (repo) => {
+    if (repo.position < 0 || repo.state !== 'open' || !repo.headSha) return;
+    const row = repoPullRequest(prId, repo.connectionId, repo.repo, repo.position);
+    if (!row || !row.head_sha || row.head_sha === repo.headSha) return;
+    const client = clients.get(repo.connectionId);
+    if (!client) return;
+    try {
+      const comparison = await client.compare(repo.repo, row.head_sha, repo.headSha);
+      resetReviewed(prId, repo, comparison.files.map((file) => file.path));
+    } catch (error) {
+      // A rewritten branch no longer has the old commit; anything else is a
+      // transient failure that a later load retries with the old head intact.
+      if (!(error instanceof ForgeError) || (error.status !== 404 && error.status !== 422)) {
+        console.error(`Could not compare the new commits of ${repoLabel(repo)}:`, error);
+        return;
+      }
+      resetReviewed(prId, repo, null);
+    }
+    db.run('UPDATE pull_request_repos SET head_sha = ? WHERE pr_id = ? AND connection_id = ? AND repo = ? AND position = ?', [
+      repo.headSha,
+      prId,
+      repo.connectionId,
+      repo.repo,
+      repo.position,
+    ]);
+  });
 }
 
 interface ReviewedInput {

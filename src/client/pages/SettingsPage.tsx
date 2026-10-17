@@ -1,7 +1,8 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, Flash, Heading, Spinner, useConfirm } from '@primer/react';
+import { Avatar, Button, Flash, Heading, Spinner, ToggleSwitch, useConfirm } from '@primer/react';
 import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
-import type { AuthProvider, ForgeKind, MeResponse } from '../../shared/types';
+import type { AuthProvider, ForgeKind, MeResponse, User } from '../../shared/types';
+import { useAppContext } from '../lib/appContext';
 import { DEFAULT_MONO_FONT, monoFontFamily, monoFontOption, type MonoFontOption } from '../../shared/fonts';
 import { FontPickerDialog } from '../components/FontPicker';
 import { api, basePath, del, put } from '../lib/api';
@@ -40,8 +41,17 @@ export function SettingsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState<ConnectTarget | null>(null);
   const [savingFont, setSavingFont] = useState<string | null>(null);
+  const [savingToggle, setSavingToggle] = useState<string | null>(null);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const confirm = useConfirm();
+  const { updateUser } = useAppContext();
+
+  // The settings page and the rest of the app each keep their own copy of the
+  // user; a saved preference goes into both.
+  const applyUser = (patch: Partial<User>) => {
+    updateUser(patch);
+    setMe((current) => (current?.user ? { ...current, user: { ...current.user, ...patch } } : current));
+  };
 
   const load = useCallback(() => {
     api<MeResponse>('/me')
@@ -71,15 +81,28 @@ export function SettingsPage() {
     try {
       await put('/me/preferences', { monoFont: font.id });
       document.documentElement.style.setProperty('--font-mono', monoFontFamily(font.id));
-      setMe((current) =>
-        current ? { ...current, user: current.user ? { ...current.user, monoFont: font.id } : null } : current,
-      );
+      applyUser({ monoFont: font.id });
       setNotice(`${font.label} is now the monospace font.`);
       setFontPickerOpen(false);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setSavingFont(null);
+    }
+  };
+
+  const setTogglePreference = async (key: 'autoMarkViewed' | 'hideViewedFiles', value: boolean) => {
+    if (savingToggle) return;
+    setSavingToggle(key);
+    setError(null);
+    applyUser({ [key]: value });
+    try {
+      await put('/me/preferences', { [key]: value });
+    } catch (err) {
+      applyUser({ [key]: !value });
+      setError((err as Error).message);
+    } finally {
+      setSavingToggle(null);
     }
   };
 
@@ -232,8 +255,9 @@ export function SettingsPage() {
               GitHub App installations
             </Heading>
             <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-              Repositories an installation covers get webhooks and installation tokens; everything else stays on your
-              account's own access.
+              Repositories an installation covers get webhooks and installation tokens. What you can do is still based
+              on your own GitHub access; the app's permissions only stand in where your account cannot reach the
+              repository.
             </span>
             <div className="repo-list">
               {me.githubInstallations.length === 0 ? (
@@ -340,6 +364,47 @@ export function SettingsPage() {
               </span>
             </div>
             <Button onClick={() => setFontPickerOpen(true)}>Change font</Button>
+          </div>
+        </div>
+
+        <div className="stack">
+          <Heading as="h2" variant="small">
+            Reviewing
+          </Heading>
+          <div className="settings-panel stack" style={{ gap: 16 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'nowrap' }}>
+              <div className="stack" style={{ gap: 4, flex: 1 }}>
+                <strong id="pref-auto-mark-viewed" style={{ fontSize: 13 }}>
+                  Mark files as viewed automatically
+                </strong>
+                <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                  A file counts once it was fully visible in the all-files diff view, or when you leave it in the
+                  single file view.
+                </span>
+              </div>
+              <ToggleSwitch
+                checked={me.user?.autoMarkViewed ?? false}
+                disabled={savingToggle !== null}
+                aria-labelledby="pref-auto-mark-viewed"
+                onChange={(checked) => setTogglePreference('autoMarkViewed', checked)}
+              />
+            </div>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'nowrap' }}>
+              <div className="stack" style={{ gap: 4, flex: 1 }}>
+                <strong id="pref-hide-viewed-files" style={{ fontSize: 13 }}>
+                  Hide viewed files in the file tree
+                </strong>
+                <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                  Viewed files leave the tree; the pull request header then offers a button to show them anyway.
+                </span>
+              </div>
+              <ToggleSwitch
+                checked={me.user?.hideViewedFiles ?? false}
+                disabled={savingToggle !== null}
+                aria-labelledby="pref-hide-viewed-files"
+                onChange={(checked) => setTogglePreference('hideViewedFiles', checked)}
+              />
+            </div>
           </div>
         </div>
 

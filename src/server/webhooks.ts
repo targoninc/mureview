@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { syncForgeComments, type SyncTarget } from './commentSync';
 import { config } from './config';
-import { forgetInstallation, installationToken, refreshGithubInstallations, verifyAppSignature } from './githubApp';
+import { forgetInstallation, forgetRepoInstallations, installationToken, refreshGithubInstallations, verifyAppSignature } from './githubApp';
 import { GithubClient } from './forges/github';
 import { db, type ForgeConnectionRow } from './db';
 import { clientFor, invalidateForgeCaches } from './forges';
@@ -152,6 +152,8 @@ export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
 
   if (event === 'installation' || event === 'installation_repositories') {
     syncInstallation(payload);
+    // A reinstall changes the installation id every repository resolves to.
+    forgetRepoInstallations();
     void refreshGithubInstallations();
     return json({ ok: true });
   }

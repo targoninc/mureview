@@ -47,6 +47,8 @@ interface FileTreePanelProps {
   /** Whether the entries are layers of stacks. */
   stacked: boolean;
   reviewedItems: Set<string>;
+  /** Item ids left out of the tree; viewed files, when the user hides them. */
+  hiddenItems?: Set<string>;
   visibleItems: Set<string>;
   /** The file open in the single file view; scrolled into view when it changes. */
   focusedItemId?: string | null;
@@ -62,6 +64,7 @@ export function FileTreePanel({
   entries,
   stacked,
   reviewedItems,
+  hiddenItems,
   visibleItems,
   focusedItemId,
   commentCounts,
@@ -82,16 +85,18 @@ export function FileTreePanel({
       const layer = stacked && repo.position >= 0 ? `Layer ${repo.position + 1} · ${repo.branch}` : undefined;
       for (const file of repo.files ?? []) {
         if (!file.patch) continue;
+        const itemId = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
+        if (hiddenItems?.has(itemId)) continue;
         list.push({
           segments: fileSegments(repo.host, repo.repo, file.path, layer),
-          itemId: fileItemId(repo.connectionId, repo.repo, repo.position, file.path),
+          itemId,
           file,
           path: file.path,
         });
       }
     }
     return list;
-  }, [entries, stacked]);
+  }, [entries, stacked, hiddenItems]);
 
   const repoKinds = useMemo(
     () => new Map<string, ForgeKind>(entries.map((repo) => [repoItemKey(repo), repo.kind])),

@@ -11,6 +11,10 @@ export interface User {
   avatarUrl: string;
   /** Bundled monospace font id; null means the default. */
   monoFont: string | null;
+  /** Mark files as viewed once they were fully seen; see useAutoViewed. */
+  autoMarkViewed: boolean;
+  /** Hide viewed files from the file tree. */
+  hideViewedFiles: boolean;
 }
 
 export interface IdentityInfo {

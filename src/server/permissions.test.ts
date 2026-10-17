@@ -2,7 +2,8 @@ import { afterAll, expect, test } from 'bun:test';
 import { upsertConnection } from './auth/identities';
 import { type ForgeConnectionRow, type UserRow, db } from './db';
 import { mergeReviewSet, streamMergePreview } from './merge';
-import { canManageRepoList } from './permissions';
+import { actingPermission, canManageRepoList } from './permissions';
+import type { ForgeClient } from './forges';
 import { updateReviewSet } from './reviewSets';
 import type { Ctx } from './router';
 
@@ -149,4 +150,20 @@ test('merging is refused without merge permission', async () => {
   stubGithub({});
   await expect(mergeReviewSet(userCtx(reader, { id: String(id) }))).rejects.toThrow('merge permission');
   await expect(streamMergePreview(userCtx(reader, { id: String(id) }))).rejects.toThrow('merge permission');
+});
+
+test("the acting account's own role decides, not an app installation", async () => {
+  const accountSaysRead = { ownPermission: async () => 'read' as const, pullRequestPermission: async () => 'write' as const };
+  expect(await actingPermission(accountSaysRead as unknown as ForgeClient, 'acme/repo')).toBe('read');
+
+  // An organization whose OAuth app cannot read the repository: the account's
+  // own role cannot be read either, so the forge's answer stands.
+  const ownUnknown = { ownPermission: async () => 'unknown' as const, pullRequestPermission: async () => 'write' as const };
+  expect(await actingPermission(ownUnknown as unknown as ForgeClient, 'acme/repo')).toBe('write');
+
+  const noOwn = { pullRequestPermission: async () => 'read' as const };
+  expect(await actingPermission(noOwn as unknown as ForgeClient, 'acme/repo')).toBe('read');
+
+  const silent = {};
+  expect(await actingPermission(silent as unknown as ForgeClient, 'acme/repo')).toBe('unknown');
 });

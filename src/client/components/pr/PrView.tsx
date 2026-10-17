@@ -23,6 +23,7 @@ import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, forgeAvatarUrl, parseItemId, repoItemKey, repoStatusText } from '../../lib/format';
 import { repoLabel } from '../../../shared/types';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
+import { useAutoViewed } from '../../lib/useAutoViewed';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { ServiceIcon, serviceDetail } from '../ServiceIcon';
 import { PrStatusBanner } from './PrStatusBanner';
@@ -136,7 +137,9 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.position, mark.path))),
   );
   const [visibleItems, setVisibleItems] = useState<Set<string>>(new Set());
+  const [fullyVisibleItems, setFullyVisibleItems] = useState<Set<string>>(new Set());
   const [reviewedBy, setReviewedBy] = useState<ReviewMarkBy[]>(pr.reviewedBy ?? []);
+  const [revealViewed, setRevealViewed] = useState(false);
   const [view, setView] = useState<'layers' | 'combined'>('layers');
   const [checks, setChecks] = useState<RepoChecks[]>([]);
   const [diffStyle, setDiffStyle] = useState<'unified' | 'split'>(
@@ -218,13 +221,19 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     }
 
     const next = new Set<string>();
+    // Fully visible files can be marked as viewed automatically; see useAutoViewed.
+    const nextFully = new Set<string>();
     let top: { id: string; top: number } | null = null;
     for (const item of measured) {
       if (item.bottom <= topEdge || item.top >= bottomEdge) continue;
       next.add(item.id);
+      if (item.top >= topEdge && item.bottom <= bottomEdge) nextFully.add(item.id);
       if (!top || item.top < top.top) top = { id: item.id, top: item.top };
     }
     setVisibleItems((current) => (current.size === next.size && [...next].every((id) => current.has(id)) ? current : next));
+    setFullyVisibleItems((current) =>
+      current.size === nextFully.size && [...nextFully].every((id) => current.has(id)) ? current : nextFully,
+    );
 
     // Keep the file being read (and the offset inside it) in the URL, so a
     // reload lands back at the same scroll position. Browsers throttle
@@ -279,8 +288,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   );
 
   useEffect(() => {
-    const timer = setTimeout(updateVisibleItems, 150);
-    return () => clearTimeout(timer);
+    // The diff view renders its items lazily; retry so the first view is
+    // measured (and its viewed marks made) even without a scroll.
+    const timers = [150, 400, 800].map((delay) => window.setTimeout(updateVisibleItems, delay));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [ordered, updateVisibleItems]);
 
   // The single file view shows one file; focus follows the tree, the deep
@@ -535,6 +546,37 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     [pr.prId],
   );
 
+  // Files that have been seen can leave the tree, when that setting is on.
+  const treeEntries = useMemo(
+    () => (view === 'combined' ? (pr.combined ?? []) : pr.repos),
+    [view, pr.combined, pr.repos],
+  );
+  const viewedInTree = useMemo(() => {
+    const ids = new Set<string>();
+    for (const repo of treeEntries) {
+      if (repo.position < 0) continue;
+      for (const file of repo.files ?? []) {
+        if (!file.patch) continue;
+        const id = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
+        if (reviewed.has(id)) ids.add(id);
+      }
+    }
+    return ids;
+  }, [treeEntries, reviewed]);
+  const hideViewedPref = user?.hideViewedFiles ?? false;
+  const hiddenViewedItems = hideViewedPref && !revealViewed ? viewedInTree : undefined;
+
+  useAutoViewed({
+    enabled: user?.autoMarkViewed ?? false,
+    prId: pr.prId,
+    fileMode,
+    focused: activeEntry,
+    fullyVisible: fullyVisibleItems,
+    reviewed,
+    fileById: parsedById,
+    markViewed: (itemIds) => void applyReviewed(itemIds, true),
+  });
+
   const renderHeaderMetadata = useCallback(
     (item: CodeViewItem<AnnotationMeta>) => {
       const entry = parsedRef.current.get(item.id);
@@ -710,9 +752,10 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       hasFiles ? (
         <FileTreePanel
           pr={pr}
-          entries={view === 'combined' ? (pr.combined ?? []) : pr.repos}
+          entries={treeEntries}
           stacked={Boolean(pr.combined)}
           reviewedItems={reviewed}
+          hiddenItems={hiddenViewedItems}
           visibleItems={treeVisibleItems}
           focusedItemId={fileMode === 'single' ? (activeEntry?.id ?? null) : null}
           commentCounts={commentCounts}
@@ -760,6 +803,9 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         onToggleDiffStyle={toggleDiffStyle}
         fileMode={fileMode}
         onToggleFileMode={toggleFileMode}
+        hiddenViewedCount={hideViewedPref ? viewedInTree.size : 0}
+        revealViewed={revealViewed}
+        onToggleRevealViewed={() => setRevealViewed((current) => !current)}
         reviewState={reviewable.length > 0 ? reviewState : undefined}
         onVoteAll={reviewable.length > 0 ? voteOnAll : undefined}
         voting={voting}

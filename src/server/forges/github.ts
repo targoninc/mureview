@@ -1,6 +1,6 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
-import { installationForRepo, installationToken } from '../githubApp';
+import { installationCanManagePullRequests, installationForRepo, installationToken, installationUnavailable } from '../githubApp';
 import { config } from '../config';
 // The database and crypto are imported lazily so importing this module (tests,
 // type checks) never opens the database.
@@ -46,8 +46,10 @@ export interface GithubAuth {
    * repository the account can: access always follows the acting user.
    */
   fallback?: () => string | Promise<string>;
+  /** Refreshes the acting account's own token; never an installation token. */
+  ownRefresh?: () => Promise<string>;
   /** Looks up an app installation that covers a repository, when the tokens above cannot. */
-  installationForRepo?: (repo: string) => Promise<string | null>;
+  installationForRepo?: (repo: string, options?: { fresh?: boolean }) => Promise<string | null>;
   installationToken?: (installationId: string) => Promise<string>;
 }
 
@@ -205,7 +207,18 @@ export class GithubClient implements ForgeClient {
 
   private login: string | null = null;
 
-  constructor(private token: string, private auth?: GithubAuth) {}
+  /**
+   * `token` is the credential used for requests; `ownToken` is the acting
+   * account's own token, kept for permission checks even when an app
+   * installation answers the calls.
+   */
+  constructor(
+    private token: string,
+    private auth?: GithubAuth,
+    private ownToken = token,
+    /** The installation this client's token belongs to, when there is one. */
+    private installation?: string,
+  ) {}
 
   /** Refreshes an expired token once per request before giving up. */
   private async retryOnExpiry<T>(
@@ -214,8 +227,15 @@ export class GithubClient implements ForgeClient {
     path = '',
   ): Promise<T> {
     let response = await send();
+    let refreshError: unknown = null;
     if (response.status === 401 && this.auth) {
-      this.token = await this.auth.refresh();
+      try {
+        this.token = await this.auth.refresh();
+      } catch (error) {
+        // The account's token may still serve the request; a failed refresh
+        // must not stop the installation from getting a turn below.
+        refreshError = error;
+      }
       response = await send();
     }
     if (response.status === 404 && this.auth?.fallback) {
@@ -227,22 +247,37 @@ export class GithubClient implements ForgeClient {
     }
     // An organization installation covers repositories the account token may
     // not reach, so the app's installation for the repository gets a turn.
-    if (response.status === 404 && this.auth?.installationForRepo && this.auth.installationToken) {
-      const repo = /\/repos\/([^/]+\/[^/]+)/.exec(path)?.[1];
-      const installation = repo ? await this.auth.installationForRepo(repo) : null;
-      if (installation) {
-        try {
-          const token = await this.auth.installationToken(installation);
-          if (token && token !== this.token) {
-            this.token = token;
-            response = await send();
-          }
-        } catch (error) {
-          console.error(`Could not use the app installation for ${repo}:`, error);
+    if ((response.status === 404 || response.status === 401) && this.auth?.installationForRepo && this.auth.installationToken) {
+      response = await this.retryWithInstallation(send, path, response);
+    }
+    if (!response.ok && refreshError && response.status === 401) throw refreshError;
+    return read(response);
+  }
+
+  /** Retries once through the app installation covering the request's repository. */
+  private async retryWithInstallation(send: () => Promise<Response>, path: string, response: Response): Promise<Response> {
+    const auth = this.auth;
+    const repo = /\/repos\/([^/]+\/[^/]+)/.exec(path)?.[1];
+    if (!repo || !auth?.installationForRepo || !auth.installationToken) return response;
+    let installation = await auth.installationForRepo(repo);
+    for (let attempt = 0; attempt < 2 && installation; attempt++) {
+      try {
+        const token = await auth.installationToken(installation);
+        if (!token || token === this.token) return response;
+        this.token = token;
+        return await send();
+      } catch (error) {
+        // A reinstalled app gets a new installation id: forget the old mapping
+        // and look the repository up once more before giving up.
+        if (attempt === 0 && installationUnavailable(error)) {
+          installation = await auth.installationForRepo(repo, { fresh: true });
+          continue;
         }
+        console.error(`Could not use the app installation for ${repo}:`, error);
+        return response;
       }
     }
-    return read(response);
+    return response;
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -691,6 +726,15 @@ export class GithubClient implements ForgeClient {
   }
 
   async pullRequestPermission(repo: string): Promise<'write' | 'read' | 'unknown'> {
+    // When an installation serves the repository, the repository payload
+    // reports the app's content grants (Contents read), which say nothing
+    // about managing pull requests; the installation's own permissions do.
+    const installation =
+      this.installation ?? (this.auth?.installationForRepo ? await this.auth.installationForRepo(repo) : null);
+    if (installation) {
+      const canManage = await installationCanManagePullRequests(installation);
+      if (canManage !== null) return canManage ? 'write' : 'read';
+    }
     try {
       const data = await this.request<{ permissions?: { admin?: boolean; maintain?: boolean; push?: boolean } | null }>(`/repos/${repo}`);
       const permissions = data.permissions;
@@ -699,6 +743,46 @@ export class GithubClient implements ForgeClient {
     } catch {
       return 'unknown';
     }
+  }
+
+  /**
+   * The acting account's own role on a repository, read with its own token.
+   * An app installation reports the app's grants (the app only needs Contents
+   * read to serve diffs), so the installation token must not answer this.
+   */
+  async ownPermission(repo: string): Promise<'write' | 'read' | 'unknown'> {
+    // Without a distinct account token the forge already answers for it, and
+    // the ordinary permission check makes the one call.
+    if (!this.ownToken || this.ownToken === this.token) return 'unknown';
+    try {
+      let response = await this.ownRequest(repo);
+      if (response.status === 401 && this.auth?.ownRefresh) {
+        try {
+          this.ownToken = await this.auth.ownRefresh();
+        } catch {
+          return 'unknown';
+        }
+        response = await this.ownRequest(repo);
+      }
+      if (!response.ok) return 'unknown';
+      const data = (await response.json()) as { permissions?: { admin?: boolean; maintain?: boolean; push?: boolean } | null };
+      const permissions = data.permissions;
+      if (!permissions) return 'unknown';
+      return permissions.admin || permissions.maintain || permissions.push ? 'write' : 'read';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private ownRequest(repo: string): Promise<Response> {
+    return fetch(`${API}/repos/${repo}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${this.ownToken}`,
+        'User-Agent': 'mureview',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
   }
 
   async resolveReference(repo: string, type: 'pr' | 'issue' | 'work', id: string): Promise<RefInfo | null> {
