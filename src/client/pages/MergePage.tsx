@@ -14,6 +14,7 @@ import { post } from '../lib/api';
 import { checkTone } from '../lib/checks';
 import { streamJson } from '../lib/ndjson';
 import { repoItemKey, repoStatusText } from '../lib/format';
+import { Confetti } from '../components/Confetti';
 import { MergeResultsFlash } from '../components/pr/merge';
 import { ReviewSetLoading } from '../components/pr/ReviewSetLoading';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
@@ -106,6 +107,35 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             </span>
           ))}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Everything merged: a celebration instead of cards, buttons and details. */
+function MergeCelebration({ results }: { results: MergeResult[] }) {
+  const [open, setOpen] = useState(false);
+  const mergedPrs = results.reduce((total, result) => total + result.mergedPrs, 0);
+  return (
+    <div className="merge-celebration">
+      <Confetti />
+      <h1 className="merge-celebration-title">Merge complete</h1>
+      <button
+        type="button"
+        className="merge-celebration-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        {mergedPrs} {mergedPrs === 1 ? 'PR' : 'PRs'} merged
+      </button>
+      {open ? (
+        <ul className="merge-celebration-list">
+          {results.map((result) => (
+            <li key={result.label}>
+              <span className="mono">{result.label}</span>: {result.message}
+            </li>
+          ))}
+        </ul>
       ) : null}
     </div>
   );
@@ -267,6 +297,14 @@ export function MergePage() {
 
   if (!started) {
     return <ReviewSetLoading id={id} title="Checking what would be merged…" />;
+  }
+
+  if (results && results.length > 0 && results.every((result) => result.ok)) {
+    return (
+      <div className="page-scroll">
+        <MergeCelebration results={results} />
+      </div>
+    );
   }
 
   const previews = cards.map((card) => card.preview).filter((entry): entry is MergePreviewRepo => Boolean(entry));

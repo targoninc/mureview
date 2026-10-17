@@ -106,13 +106,14 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
     const first = layers[0];
     const label = repoLabel(first);
     const client = clients.get(first.connectionId);
-    if (!client) return { connectionId: first.connectionId, label, ok: false, message: 'the forge connection was removed' };
-    if (client.readOnly) return { connectionId: first.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet' };
+    if (!client) return { connectionId: first.connectionId, label, ok: false, message: 'the forge connection was removed', mergedPrs: 0 };
+    if (client.readOnly) return { connectionId: first.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet', mergedPrs: 0 };
 
     const ordered = [...layers].sort((a, b) => a.position - b.position);
     const stacked = ordered.length > 1 || first.position > 0;
     const messages: string[] = [];
     let failed = false;
+    let mergedPrs = 0;
 
     for (const layer of ordered) {
       const layerName = stacked ? `layer ${layer.position + 1} (${layer.branch})` : layer.branch!;
@@ -126,6 +127,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         continue;
       }
       if (layer.state === 'merged') {
+        mergedPrs += 1;
         if (deleteBranches && client.deleteBranch) {
           try {
             await client.deleteBranch(layer.repo, layer.branch!);
@@ -204,6 +206,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         }
 
         const message = await client.mergePullRequest(layer.repo, pullRef, `Merge ${layer.branch} into ${target}`);
+        mergedPrs += 1;
         let branchNote = '';
         if (deleteBranches) {
           if (!client.deleteBranch) {
@@ -230,7 +233,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         failed = true;
       }
     }
-    return { connectionId: first.connectionId, label, ok: !failed, message: messages.join(' · ') };
+    return { connectionId: first.connectionId, label, ok: !failed, message: messages.join(' · '), mergedPrs };
   });
 
   invalidateForgeCaches();

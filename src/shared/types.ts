@@ -300,6 +300,8 @@ export interface MergeResult {
   label: string;
   ok: boolean;
   message: string;
+  /** The pull requests that ended up merged for this repository. */
+  mergedPrs: number;
 }
 
 export type ConflictState = 'none' | 'detected' | 'unknown';
