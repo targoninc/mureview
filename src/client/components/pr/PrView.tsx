@@ -148,11 +148,21 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const [fileMode, setFileMode] = useState<'all' | 'single'>(
     () => (window.localStorage.getItem('mureview:file-mode') === 'single' ? 'single' : 'all'),
   );
+  const [headerCollapsed, setHeaderCollapsed] = useState(
+    () => window.localStorage.getItem('mureview:header-collapsed') === '1',
+  );
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const toggleDiffStyle = useCallback(() => {
     setDiffStyle((current) => {
       const next = current === 'unified' ? 'split' : 'unified';
       window.localStorage.setItem('mureview:diff-style', next);
+      return next;
+    });
+  }, []);
+  const toggleHeaderCollapsed = useCallback(() => {
+    setHeaderCollapsed((current) => {
+      const next = !current;
+      window.localStorage.setItem('mureview:header-collapsed', next ? '1' : '0');
       return next;
     });
   }, []);
@@ -803,6 +813,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         onToggleDiffStyle={toggleDiffStyle}
         fileMode={fileMode}
         onToggleFileMode={toggleFileMode}
+        collapsed={headerCollapsed}
+        onToggleCollapsed={toggleHeaderCollapsed}
         hiddenViewedCount={hideViewedPref ? viewedInTree.size : 0}
         revealViewed={revealViewed}
         onToggleRevealViewed={() => setRevealViewed((current) => !current)}

@@ -597,6 +597,19 @@ svg.checks-pending {
 
 .pr-header-right {
   align-items: flex-end;
+  /* Keeps the summary row on the right when the header is collapsed in. */
+  margin-left: auto;
+}
+
+.pr-header-footer {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Folded for distraction-free reading: everything above the summary row hides. */
+.pr-header.collapsed .pr-header-left,
+.pr-header.collapsed .pr-header-actions {
+  display: none;
 }
 
 .pr-header-diff {

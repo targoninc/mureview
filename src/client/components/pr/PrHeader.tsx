@@ -3,6 +3,7 @@ import { UserAvatar } from '../UserAvatar';
 import {
   AlertIcon,
   ChevronDownIcon,
+  ChevronUpIcon,
   CommentDiscussionIcon,
   ColumnsIcon,
   EyeClosedIcon,
@@ -52,6 +53,9 @@ interface PrHeaderProps {
   onToggleDiffStyle: () => void;
   fileMode: 'all' | 'single';
   onToggleFileMode: () => void;
+  /** The header is folded to its last row, for distraction-free reading. */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
   /** Viewed files hidden from the tree, while the hide setting is on. */
   hiddenViewedCount?: number;
   /** Whether the hidden viewed files are being shown anyway. */
@@ -89,6 +93,8 @@ export function PrHeader({
   onToggleDiffStyle,
   fileMode,
   onToggleFileMode,
+  collapsed,
+  onToggleCollapsed,
   hiddenViewedCount,
   revealViewed,
   onToggleRevealViewed,
@@ -116,15 +122,27 @@ export function PrHeader({
     (repo.files ?? []).filter((file) => !file.patch).map((file) => `${repoLabel(repo)}: ${file.path}`),
   );
   const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
+  const showDiffRow = pr.state === 'loading' || pr.stats.files > 0;
+  const collapseToggle = (
+    <IconButton
+      icon={collapsed ? ChevronDownIcon : ChevronUpIcon}
+      aria-label={collapsed ? 'Expand the header' : 'Collapse the header'}
+      aria-expanded={!collapsed}
+      title={collapsed ? 'Expand the header' : 'Collapse the header to just the summary row'}
+      variant="invisible"
+      size="small"
+      onClick={onToggleCollapsed}
+    />
+  );
   const stackCount = new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size;
   const repoNoun =
     reviewSet.mode === 'stack' ? (openRepos.length === 1 ? 'layer' : 'layers') : openRepos.length === 1 ? 'branch' : 'branches';
   const targetLabel = <span className="mono">{reviewSet.targetBranch}</span>;
 
   return (
-    <div className="pr-header">
+    <div className={`pr-header${collapsed ? ' collapsed' : ''}`}>
       <div className="pr-header-top">
-        <div className="stack" style={{ gap: 6 }}>
+        <div className="stack pr-header-left" style={{ gap: 6 }}>
           <div className="row">
             <h1 className="pr-title">{reviewSet.name}</h1>
             <Label variant={state.variant}>{state.text}</Label>
@@ -304,8 +322,9 @@ export function PrHeader({
               </>
             )}
           </div>
-          {pr.state === 'loading' || pr.stats.files > 0 ? (
+          {showDiffRow ? (
             <div className="row pr-header-diff-row" style={{ gap: 6, alignItems: 'center' }}>
+              {collapsed ? <span style={{ marginRight: 'auto' }}>{collapseToggle}</span> : null}
               {pr.state === 'loading' ? (
                 <span className="skeleton skeleton-diff" role="status" aria-label="Calculating the total diff" />
               ) : (
@@ -349,6 +368,7 @@ export function PrHeader({
           ) : null}
         </div>
       </div>
+      {collapsed && showDiffRow ? null : <div className="pr-header-footer">{collapseToggle}</div>}
     </div>
   );
 }
