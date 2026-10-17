@@ -112,14 +112,21 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
   );
 }
 
-/** Everything merged: a celebration instead of cards, buttons and details. */
-function MergeCelebration({ results }: { results: MergeResult[] }) {
+/** Everything merged: a celebration instead of cards and details. */
+function MergeCelebration({ results, reviewSetId }: { results: MergeResult[]; reviewSetId: string }) {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const mergedPrs = results.reduce((total, result) => total + result.mergedPrs, 0);
   return (
     <div className="merge-celebration">
       <Confetti />
       <h1 className="merge-celebration-title">Merge complete</h1>
+      <div className="row" style={{ gap: 8 }}>
+        <Button variant="primary" onClick={() => navigate(`/review-sets/${reviewSetId}`)}>
+          Back to review set
+        </Button>
+        <Button onClick={() => navigate('/')}>Back to Home</Button>
+      </div>
       <button
         type="button"
         className="merge-celebration-toggle"
@@ -299,10 +306,10 @@ export function MergePage() {
     return <ReviewSetLoading id={id} title="Checking what would be merged…" />;
   }
 
-  if (results && results.length > 0 && results.every((result) => result.ok)) {
+  if (id && results && results.length > 0 && results.every((result) => result.ok)) {
     return (
       <div className="page-scroll">
-        <MergeCelebration results={results} />
+        <MergeCelebration results={results} reviewSetId={id} />
       </div>
     );
   }
