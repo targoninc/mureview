@@ -165,6 +165,34 @@ export async function forgetStaleInstallation(connectionId: number, installation
   forgetInstallation(installationId);
 }
 
+export interface GithubUserInstallation {
+  id: string;
+  account: string;
+}
+
+/**
+ * The app installations the token's account can reach. This is an account
+ * endpoint (`/user/installations`), so the account's own token must be used.
+ */
+export async function userInstallations(token: string): Promise<GithubUserInstallation[]> {
+  if (!githubApp() || !token) return [];
+  try {
+    const response = await fetch('https://api.github.com/user/installations?per_page=100', {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'mureview' },
+    });
+    if (!response.ok) return [];
+    const data = (await response.json()) as {
+      installations?: Array<{ id?: number; account?: { login?: string } }>;
+    };
+    return (data.installations ?? [])
+      .filter((entry) => entry.id && entry.account?.login)
+      .map((entry) => ({ id: String(entry.id), account: entry.account!.login! }));
+  } catch (error) {
+    console.error('Could not list the GitHub App installations for the account:', error);
+    return [];
+  }
+}
+
 const installationPermissions = new Cache<boolean | null>(200, 10 * 60_000);
 
 /**

@@ -446,3 +446,53 @@ test('an installation serving a repository reports its pull request permission',
   delete process.env.GITHUB_APP_PRIVATE_KEY;
   app.resetGithubApp();
 });
+
+test('listRepoSources groups installation repositories under their own source', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  process.env.GITHUB_APP_ID = '12345';
+  process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+  app.resetGithubApp();
+  app.forgetInstallation('77');
+
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const path = new URL(String(input)).pathname;
+    if (path === '/user/repos') {
+      return Response.json([
+        { full_name: 'loudar/app', private: true },
+        { full_name: 'targoninc/shared', private: true },
+      ]);
+    }
+    if (path === '/user/installations') {
+      return Response.json({
+        installations: [
+          { id: 41, account: { login: 'loudar' } },
+          { id: 77, account: { login: 'targoninc' } },
+        ],
+      });
+    }
+    if (path === '/app/installations/77/access_tokens') {
+      return Response.json({ token: 'inst-77', expires_at: new Date(Date.now() + 3600_000).toISOString() });
+    }
+    if (path === '/installation/repositories') {
+      return Response.json({ repositories: [{ full_name: 'targoninc/private-1', private: true }, { full_name: 'targoninc/shared', private: true }] });
+    }
+    console.error('github test miss:', String(input), Boolean(init));
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('installation-token', { refresh: async () => 'installation-token' }, 'own-token', '41', 'loudar');
+  const sources = await client.listRepoSources();
+  expect(sources.map((source) => ({ key: source.key, account: source.account, repos: source.repos.map((repo) => repo.repo) }))).toEqual([
+    { key: 'account', account: null, repos: ['loudar/app'] },
+    { key: 'installation:77', account: 'targoninc', repos: ['targoninc/private-1', 'targoninc/shared'] },
+  ]);
+
+  delete process.env.GITHUB_APP_ID;
+  delete process.env.GITHUB_APP_PRIVATE_KEY;
+  app.resetGithubApp();
+});

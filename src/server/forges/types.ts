@@ -33,6 +33,15 @@ export interface ForgeRepo {
   updatedAt?: string;
 }
 
+/** A group of repositories one connection offers, e.g. a GitHub App installation. */
+export interface ForgeRepoSource {
+  /** Identifies the group within the connection. */
+  key: string;
+  /** The account the repositories belong to; null for the connection's own account. */
+  account: string | null;
+  repos: ForgeRepo[];
+}
+
 export interface BranchInfo {
   name: string;
   sha: string;
@@ -122,6 +131,12 @@ export interface ForgeClient {
   /** Forges mureview can only read from so far. */
   readonly readOnly?: boolean;
   listRepos(): Promise<ForgeRepo[]>;
+  /**
+   * The repository groups this connection offers; a GitHub connection with
+   * app installations returns the account plus one group per installation.
+   * Forges without groups answer with the account's repositories alone.
+   */
+  listRepoSources?(): Promise<ForgeRepoSource[]>;
   ensureRepo(repo: string, options?: ForgeCallOptions): Promise<void>;
   listBranches(repo: string, options?: ForgeCallOptions): Promise<BranchInfo[]>;
   getBranch(repo: string, branch: string, options?: ForgeCallOptions): Promise<BranchInfo | null>;

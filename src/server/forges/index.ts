@@ -49,6 +49,7 @@ export function clientFor(connection: ForgeConnectionRow): ForgeClient {
       },
       token,
       installation,
+      connection.login,
     );
   }
   return new GithubClient(
@@ -60,6 +61,8 @@ export function clientFor(connection: ForgeConnectionRow): ForgeClient {
       installationToken,
     },
     token,
+    undefined,
+    connection.login,
   );
 }
 

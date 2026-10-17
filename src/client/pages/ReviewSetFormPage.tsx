@@ -43,7 +43,7 @@ export function ReviewSetFormPage() {
   const [sources, setSources] = useState<RepoSource[]>([]);
   const [repoErrors, setRepoErrors] = useState<{ connectionId: number; message: string }[]>([]);
   const [search, setSearch] = useState('');
-  const [hiddenSources, setHiddenSources] = useState<Set<number>>(new Set());
+  const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const [branches, setBranches] = useState<Record<string, BranchList>>({});
 
@@ -113,7 +113,7 @@ export function ReviewSetFormPage() {
     if (!available) return [];
     const needle = search.trim().toLowerCase();
     return available
-      .filter((repo) => !hiddenSources.has(repo.connectionId))
+      .filter((repo) => !hiddenSources.has(repo.sourceId))
       .filter(
         (repo) =>
           !form.selected.some(
@@ -161,11 +161,21 @@ export function ReviewSetFormPage() {
     setSearch('');
   };
 
-  const toggleSource = (connectionId: number) => {
+  /** The source a selected repository belongs to, for its label. */
+  const sourceLabelFor = (item: ReviewSetRepo): string | undefined => {
+    const connectionId = actorConnectionId(item);
+    const owner = item.repo.split('/')[0].toLowerCase();
+    const source =
+      sources.find((candidate) => candidate.connectionId === connectionId && candidate.login.toLowerCase() === owner) ??
+      sources.find((candidate) => candidate.connectionId === connectionId);
+    return source?.label;
+  };
+
+  const toggleSource = (sourceId: string) => {
     setHiddenSources((current) => {
       const next = new Set(current);
-      if (next.has(connectionId)) next.delete(connectionId);
-      else next.add(connectionId);
+      if (next.has(sourceId)) next.delete(sourceId);
+      else next.add(sourceId);
       return next;
     });
   };
@@ -366,8 +376,8 @@ export function ReviewSetFormPage() {
               <div className="stack sources-menu" style={{ padding: 12, gap: 8 }}>
                 <strong style={{ fontSize: 12 }}>Sources</strong>
                 {sources.map((source) => (
-                  <label key={source.connectionId} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
-                    <Checkbox checked={!hiddenSources.has(source.connectionId)} onChange={() => toggleSource(source.connectionId)} />
+                  <label key={source.id} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
+                    <Checkbox checked={!hiddenSources.has(source.id)} onChange={() => toggleSource(source.id)} />
                     <ServiceIcon kind={source.kind} detail={serviceDetail(source.kind, source)} />
                     <span className="source-label">{source.label}</span>
                   </label>
@@ -463,9 +473,7 @@ export function ReviewSetFormPage() {
                         </span>
                         <span className="row" style={{ gap: 8 }}>
                           {ambiguousHosts.has(item.host) ? (
-                            <span className="repo-source">
-                              {sources.find((source) => source.connectionId === actorConnectionId(item))?.label}
-                            </span>
+                            <span className="repo-source">{sourceLabelFor(item)}</span>
                           ) : null}
                           <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
                           <Button
@@ -536,9 +544,7 @@ export function ReviewSetFormPage() {
                         {item.host}/{item.repo}
                       </span>
                       <span className="row" style={{ gap: 8 }}>
-                        {ambiguousHosts.has(item.host) ? (
-                            <span className="repo-source">{sources.find((source) => source.connectionId === actorConnectionId(item))?.label}</span>
-                        ) : null}
+                        {ambiguousHosts.has(item.host) ? <span className="repo-source">{sourceLabelFor(item)}</span> : null}
                         <ServiceIcon kind={item.kind} detail={serviceDetail(item.kind, item)} />
                         <Button
                           size="small"

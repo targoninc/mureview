@@ -1,6 +1,12 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
 import { Cache, cached } from '../cache';
-import { installationCanManagePullRequests, installationForRepo, installationToken, installationUnavailable } from '../githubApp';
+import {
+  installationCanManagePullRequests,
+  installationForRepo,
+  installationToken,
+  installationUnavailable,
+  userInstallations,
+} from '../githubApp';
 import { config } from '../config';
 // The database and crypto are imported lazily so importing this module (tests,
 // type checks) never opens the database.
@@ -16,6 +22,7 @@ import {
   type ForgeClient,
   type ForgeComment,
   type ForgeRepo,
+  type ForgeRepoSource,
   ForgeError,
   type PostedComment,
   type PullRequestRef,
@@ -188,6 +195,8 @@ interface GithubRepo {
   updated_at?: string;
 }
 
+const toForgeRepo = (repo: GithubRepo): ForgeRepo => ({ repo: repo.full_name, private: repo.private, updatedAt: repo.updated_at });
+
 const repoCache = new Cache<void>(200, 5 * 60_000);
 const branchListCache = new Cache<BranchInfo[]>(100, 45_000);
 const branchCache = new Cache<BranchInfo | null>(300, 45_000);
@@ -205,12 +214,10 @@ export class GithubClient implements ForgeClient {
   readonly baseUrl = 'https://github.com';
   readonly host = 'github.com';
 
-  private login: string | null = null;
-
   /**
    * `token` is the credential used for requests; `ownToken` is the acting
-   * account's own token, kept for permission checks even when an app
-   * installation answers the calls.
+   * account's own token, kept for account endpoints and permission checks even
+   * when an app installation answers the calls.
    */
   constructor(
     private token: string,
@@ -218,6 +225,8 @@ export class GithubClient implements ForgeClient {
     private ownToken = token,
     /** The installation this client's token belongs to, when there is one. */
     private installation?: string,
+    /** The connection's account login, to tell its installation groups apart. */
+    private login = '',
   ) {}
 
   /** Refreshes an expired token once per request before giving up. */
@@ -294,15 +303,7 @@ export class GithubClient implements ForgeClient {
           },
         }),
       async (response) => {
-        if (!response.ok) {
-          let message = response.statusText;
-          try {
-            message = ((await response.json()) as { message?: string }).message ?? message;
-          } catch {
-            // keep status text
-          }
-          throw new ForgeError(response.status, message);
-        }
+        if (!response.ok) return this.fail(response);
         if (response.status === 204 || response.headers.get('content-length') === '0') return undefined as T;
         return (await response.json()) as T;
       },
@@ -321,9 +322,89 @@ export class GithubClient implements ForgeClient {
     return out;
   }
 
+  /** Paginated requests with a caller-chosen token, for account endpoints. */
+  private async paginateWith<T>(path: string, token: string, maxPages = 10): Promise<T[]> {
+    const out: T[] = [];
+    for (let page = 1; page <= maxPages; page++) {
+      const separator = path.includes('?') ? '&' : '?';
+      const response = await fetch(`${API}${path}${separator}per_page=100&page=${page}`, { headers: this.headers(token) });
+      if (!response.ok) return this.fail(response);
+      const items = (await response.json()) as T[];
+      out.push(...items);
+      if (items.length < 100) break;
+    }
+    return out;
+  }
+
+  private headers(token: string): Record<string, string> {
+    return {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'User-Agent': 'mureview',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+  }
+
+  private async fail(response: Response): Promise<never> {
+    let message = response.statusText;
+    try {
+      message = ((await response.json()) as { message?: string }).message ?? message;
+    } catch {
+      // keep the status text
+    }
+    throw new ForgeError(response.status, message);
+  }
+
   async listRepos(): Promise<ForgeRepo[]> {
-    const repos = await this.paginate<GithubRepo>('/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name');
-    return repos.map((repo) => ({ repo: repo.full_name, private: repo.private, updatedAt: repo.updated_at }));
+    // The account's repositories are an account endpoint; an installation
+    // token may not call it.
+    return this.listReposWith(this.ownToken || this.token);
+  }
+
+  /**
+   * The account's repositories plus one group per accessible app
+   * installation, so organization repositories the account's own token cannot
+   * list stay pickable. Repositories an installation covers are listed under
+   * that installation alone.
+   */
+  async listRepoSources(): Promise<ForgeRepoSource[]> {
+    const accountToken = this.ownToken || this.token;
+    const accountRepos = await this.listReposWith(accountToken);
+    const covered = new Set<string>();
+    const sources: ForgeRepoSource[] = [];
+    for (const installation of await userInstallations(accountToken)) {
+      if (this.login && installation.account.toLowerCase() === this.login.toLowerCase()) continue;
+      try {
+        const repos = await this.listInstallationRepos(await installationToken(installation.id));
+        for (const repo of repos) covered.add(repo.repo);
+        sources.push({ key: `installation:${installation.id}`, account: installation.account, repos });
+      } catch (error) {
+        console.error(`Could not list the repositories of the ${installation.account} installation:`, error);
+      }
+    }
+    sources.unshift({ key: 'account', account: null, repos: accountRepos.filter((repo) => !covered.has(repo.repo)) });
+    return sources;
+  }
+
+  private async listReposWith(token: string): Promise<ForgeRepo[]> {
+    const repos = await this.paginateWith<GithubRepo>(
+      '/user/repos?affiliation=owner,collaborator,organization_member&sort=full_name',
+      token,
+    );
+    return repos.map(toForgeRepo);
+  }
+
+  private async listInstallationRepos(token: string): Promise<ForgeRepo[]> {
+    const repos: ForgeRepo[] = [];
+    for (let page = 1; page <= 10; page++) {
+      const response = await fetch(`${API}/installation/repositories?per_page=100&page=${page}`, { headers: this.headers(token) });
+      if (!response.ok) return this.fail(response);
+      const data = (await response.json()) as { repositories?: GithubRepo[] };
+      const items = data.repositories ?? [];
+      repos.push(...items.map(toForgeRepo));
+      if (items.length < 100) break;
+    }
+    return repos;
   }
 
   async ensureRepo(repo: string, options: ForgeCallOptions = {}): Promise<void> {
@@ -558,10 +639,12 @@ export class GithubClient implements ForgeClient {
     }
   }
 
+  /** The acting account's login; `/user` is an account endpoint. */
   private async currentLogin(): Promise<string> {
     if (this.login) return this.login;
-    const user = await this.request<{ login: string }>('/user');
-    this.login = user.login;
+    const response = await fetch(`${API}/user`, { headers: this.headers(this.ownToken || this.token) });
+    if (!response.ok) return this.fail(response);
+    this.login = ((await response.json()) as { login: string }).login;
     return this.login;
   }
 

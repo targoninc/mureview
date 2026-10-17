@@ -124,6 +124,8 @@ export interface ReviewSetInput {
 }
 
 export interface RepoSource {
+  /** Identifies the source; one connection may offer several (GitHub App installations). */
+  id: string;
   connectionId: number;
   kind: ForgeKind;
   host: string;
@@ -133,6 +135,8 @@ export interface RepoSource {
 }
 
 export interface AvailableRepo {
+  /** The source this repository belongs to (see RepoSource.id). */
+  sourceId: string;
   connectionId: number;
   repo: string;
   kind: ForgeKind;
