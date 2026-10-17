@@ -800,6 +800,28 @@ svg.checks-pending {
   height: 12px;
 }
 
+.skeleton-branch {
+  width: 90px;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.skeleton-meta {
+  width: 120px;
+  height: 12px;
+}
+
+.skeleton-label {
+  width: 96px;
+  height: 20px;
+  border-radius: 999px;
+}
+
+/* A branch chip hugs its text, also as a flex item inside a column stack. */
+[class*='prc-BranchName-BranchName'] {
+  width: fit-content;
+}
+
 @keyframes skeleton-shimmer {
   0% {
     background-position: 100% 50%;

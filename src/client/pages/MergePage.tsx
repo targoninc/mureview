@@ -114,6 +114,9 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
 function MergeCard({ card }: { card: RepoCardInfo }) {
   if (card.preview) return <RepoCard repo={card.preview} />;
   const status = card.status;
+  // Until the repository's status arrives, and until its preview card is
+  // computed, the values that will fill the row stand in as skeletons.
+  const pending = !status || status.state === 'open';
   return (
     <div className="merge-card">
       <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -124,24 +127,32 @@ function MergeCard({ card }: { card: RepoCardInfo }) {
               {card.host}/{card.repo}
             </span>
           </span>
-          {status?.branch ? <BranchName>{status.branch}</BranchName> : null}
+          {status?.branch ? (
+            <span className="row">
+              <BranchName>{status.branch}</BranchName>
+            </span>
+          ) : pending ? (
+            <span className="row">
+              <span className="skeleton skeleton-branch" role="status" aria-label="Checking the branch" />
+            </span>
+          ) : null}
         </div>
-        {status && status.state !== 'open' ? (
-          <Label variant={status.state === 'error' ? 'danger' : 'secondary'}>{repoStatusText(status)}</Label>
-        ) : null}
+        <div className="row merge-card-meta" style={{ gap: 8, alignItems: 'center' }}>
+          {pending ? (
+            <>
+              <span className="skeleton skeleton-meta" role="status" aria-label="Checking the diff" />
+              <span className="skeleton skeleton-label" />
+            </>
+          ) : (
+            <Label variant={status.state === 'error' ? 'danger' : 'secondary'}>{repoStatusText(status)}</Label>
+          )}
+        </div>
       </div>
-      {status && status.state !== 'open' ? (
-        status.error ? (
-          <span className="load-meta" title={status.error}>
-            {status.error}
-          </span>
-        ) : null
-      ) : (
-        <span className="load-meta row" style={{ gap: 6, marginTop: 8 }}>
-          <Spinner size="small" aria-label="Checking repository" />
-          {status ? 'checking conflicts and checks…' : 'checking branches…'}
+      {status?.state === 'error' && status.error ? (
+        <span className="load-meta" title={status.error}>
+          {status.error}
         </span>
-      )}
+      ) : null}
     </div>
   );
 }
