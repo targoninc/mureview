@@ -1,4 +1,4 @@
-import type { RepoStatus, ReviewMark, ReviewMarkBy } from '../shared/types';
+import type { ForgeKind, RepoStatus, ReviewMark, ReviewMarkBy } from '../shared/types';
 import { repoLabel } from '../shared/types';
 import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
@@ -92,6 +92,55 @@ export function resetReviewed(prId: number, target: ResetTarget, paths: string[]
       reviewed: false,
       itemIds: entry.paths.map((path) => `${target.connectionId}:${target.repo}:${target.position}:${path}`),
     });
+  }
+}
+
+/** Which tracked pull requests a forge push may belong to. */
+export interface PushResetTarget {
+  kind: ForgeKind;
+  /** Restrict to one connection; the app webhook covers every connection of its forge. */
+  connectionId?: number;
+}
+
+/**
+ * A push to a tracked branch: the files it changed lose their viewed marks for
+ * everyone right away, without waiting for a review set to load. Only the
+ * branch whose head was seen before (`before`) is reset; anything else is left
+ * to the load-time comparison.
+ */
+export async function resetMarksForPush(
+  client: ForgeClient,
+  repo: string,
+  before: string,
+  after: string,
+  target: PushResetTarget,
+): Promise<void> {
+  if (!before || !after || before === after) return;
+  const rows = db
+    .query<{ prId: number; connectionId: number; repo: string; position: number; headSha: string }, [string, string, string]>(
+      `SELECT rp.pr_id AS prId, rp.connection_id AS connectionId, rp.repo, rp.position, rp.head_sha AS headSha
+       FROM pull_request_repos rp
+       JOIN pull_requests p ON p.id = rp.pr_id
+       JOIN forge_connections fc ON fc.id = rp.connection_id
+       WHERE p.closed_at IS NULL AND fc.kind = ? AND (rp.repo = ? OR rp.repo LIKE '%/' || ?)`,
+    )
+    .all(target.kind, repo, repo);
+  for (const row of rows) {
+    if (row.headSha !== before) continue;
+    if (target.connectionId !== undefined && row.connectionId !== target.connectionId) continue;
+    try {
+      const comparison = await client.compare(row.repo, before, after);
+      resetReviewed(row.prId, row, comparison.files.map((file) => file.path));
+    } catch (error) {
+      console.error(`Could not compare ${row.repo} over a push to reset its viewed marks:`, error);
+    }
+    db.run('UPDATE pull_request_repos SET head_sha = ? WHERE pr_id = ? AND connection_id = ? AND repo = ? AND position = ?', [
+      after,
+      row.prId,
+      row.connectionId,
+      row.repo,
+      row.position,
+    ]);
   }
 }
 

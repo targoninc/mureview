@@ -127,7 +127,8 @@ app — without them, nothing changes.
      Changing a permission asks every installed organization to approve the
      update; merging fails with "Resource not accessible by integration"
      until it is approved.
-   - **Subscribe to events**: Pull request, Pull request review, Issue
+   - **Subscribe to events**: Push (new commits clear the viewed marks of the
+     files they changed right away), Pull request, Pull request review, Issue
      comment, Installation, Installation repositories and Delete (branch
      deletions change what a review set can still compare). Everything else
      is acknowledged and ignored.

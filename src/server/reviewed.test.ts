@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { RepoStatus } from '../shared/types';
 import { db } from './db';
 import { ForgeError, type ForgeClient } from './forges';
-import { listReviewed, resetMarksForNewCommits } from './reviewed';
+import { listReviewed, resetMarksForNewCommits, resetMarksForPush } from './reviewed';
 
 function addUser(name: string): number {
   const inserted = db.run('INSERT INTO users (name) VALUES (?)', [name]);
@@ -19,6 +19,10 @@ function setup(headSha: string): { prId: number; connectionId: number; repo: str
   const setId = nextId++;
   const prId = nextId++;
   const repo = 'acme/reset';
+  db.run(
+    "INSERT INTO forge_connections (id, user_id, kind, base_url, client_id, client_secret, access_token, login) VALUES (?, ?, 'github', 'https://reset.example', '', '', 'token', 'octo')",
+    [connectionId, owner],
+  );
   db.run(
     "INSERT INTO review_sets (id, owner_id, name, mode, branch_regex, target_branch) VALUES (?, ?, 'reset set', 'pattern', '^feature$', 'main')",
     [setId, owner],
@@ -59,7 +63,7 @@ function status(connectionId: number, repo: string, headSha: string): RepoStatus
   };
 }
 
-function clientThatChanges(connectionId: number, paths: string[]): Map<number, ForgeClient> {
+function clientChanging(paths: string[]): ForgeClient {
   const client = {
     compare: async (_repo: string, baseSha: string, headSha: string) => {
       if (baseSha !== 'oldsha' || headSha !== 'newsha') throw new Error(`unexpected compare ${baseSha}...${headSha}`);
@@ -73,7 +77,11 @@ function clientThatChanges(connectionId: number, paths: string[]): Map<number, F
       };
     },
   } as unknown as ForgeClient;
-  return new Map([[connectionId, client]]);
+  return client;
+}
+
+function clientThatChanges(connectionId: number, paths: string[]): Map<number, ForgeClient> {
+  return new Map([[connectionId, clientChanging(paths)]]);
 }
 
 function storedHead(prId: number, connectionId: number, repo: string): string | null {
@@ -151,5 +159,51 @@ describe('resetMarksForNewCommits', () => {
 
     expect(listReviewed(prId, owner).map((mark) => mark.path)).toEqual(['src/layer-two.ts']);
     expect(listReviewed(otherSet.prId, owner).map((mark) => mark.path)).toEqual(['src/changed.ts']);
+  });
+});
+
+describe('resetMarksForPush', () => {
+  test('a pushed commit clears the marks of the files it changed', async () => {
+    const { prId, connectionId, repo, owner, other } = setup('oldsha');
+    mark(prId, owner, connectionId, repo, 'src/changed.ts');
+    mark(prId, owner, connectionId, repo, 'src/unchanged.ts');
+    mark(prId, other, connectionId, repo, 'src/changed.ts');
+
+    await resetMarksForPush(clientChanging(['src/changed.ts']), repo, 'oldsha', 'newsha', {
+      kind: 'github',
+      connectionId,
+    });
+
+    expect(listReviewed(prId, owner).map((mark) => mark.path)).toEqual(['src/unchanged.ts']);
+    expect(listReviewed(prId, other)).toEqual([]);
+    expect(storedHead(prId, connectionId, repo)).toBe('newsha');
+  });
+
+  test('a push of a commit the head never was stays untouched', async () => {
+    const { prId, connectionId, repo, owner } = setup('oldsha');
+    mark(prId, owner, connectionId, repo, 'src/changed.ts');
+
+    await resetMarksForPush(clientChanging(['src/changed.ts']), repo, 'othersha', 'newsha', {
+      kind: 'github',
+      connectionId,
+    });
+
+    expect(listReviewed(prId, owner).map((mark) => mark.path)).toEqual(['src/changed.ts']);
+    expect(storedHead(prId, connectionId, repo)).toBe('oldsha');
+  });
+
+  test('another connection of the same forge keeps its marks', async () => {
+    const first = setup('oldsha');
+    const second = setup('oldsha');
+    mark(first.prId, first.owner, first.connectionId, first.repo, 'src/changed.ts');
+    mark(second.prId, second.owner, second.connectionId, second.repo, 'src/changed.ts');
+
+    await resetMarksForPush(clientChanging(['src/changed.ts']), first.repo, 'oldsha', 'newsha', {
+      kind: 'github',
+      connectionId: first.connectionId,
+    });
+
+    expect(listReviewed(first.prId, first.owner).map((mark) => mark.path)).toEqual([]);
+    expect(listReviewed(second.prId, second.owner).map((mark) => mark.path)).toEqual(['src/changed.ts']);
   });
 });

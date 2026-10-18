@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { syncForgeComments, type SyncTarget } from './commentSync';
 import { config } from './config';
+import { resetMarksForPush } from './reviewed';
 import { forgetInstallation, forgetRepoInstallations, installationToken, refreshGithubInstallations, verifyAppSignature } from './githubApp';
 import { GithubClient } from './forges/github';
 import { db, type ForgeConnectionRow } from './db';
@@ -26,6 +27,30 @@ function safeEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && timingSafeEqual(left, right);
+}
+
+interface WebhookPayload {
+  eventType?: string;
+  /** GitHub and Gitea name the pushed commit range directly. */
+  before?: string;
+  after?: string;
+  repository?: { full_name?: string };
+  resource?: {
+    repository?: { name?: string; project?: { name?: string } };
+    /** Azure DevOps reports one entry per pushed ref. */
+    refUpdates?: { oldObjectId?: string; newObjectId?: string }[];
+  };
+}
+
+/** The commit ranges a push event carries. */
+function pushedRefs(kind: string, payload: WebhookPayload): Array<{ before: string; after: string }> {
+  if (kind === 'push' && payload.before && payload.after) return [{ before: payload.before, after: payload.after }];
+  if (kind === 'git.push') {
+    return (payload.resource?.refUpdates ?? [])
+      .filter((update) => update.oldObjectId && update.newObjectId)
+      .map((update) => ({ before: update.oldObjectId!, after: update.newObjectId! }));
+  }
+  return [];
 }
 
 function githubSignature(body: string, secret: string): string {
@@ -71,13 +96,9 @@ export async function forgeWebhook(ctx: Ctx): Promise<Response> {
   if (!verified) throw new HttpError(401, 'Invalid webhook signature');
 
   const event = headers.get('x-github-event') ?? headers.get('x-gitea-event') ?? headers.get('x-forgejo-event') ?? '';
-  let payload: {
-    eventType?: string;
-    repository?: { full_name?: string };
-    resource?: { repository?: { name?: string; project?: { name?: string } } };
-  } = {};
+  let payload: WebhookPayload = {};
   try {
-    payload = JSON.parse(body) as typeof payload;
+    payload = JSON.parse(body) as WebhookPayload;
   } catch {
     throw new HttpError(400, 'Webhook body must be JSON');
   }
@@ -100,6 +121,15 @@ export async function forgeWebhook(ctx: Ctx): Promise<Response> {
 
   invalidateForgeCaches();
   const reviewSetIds = rows.map((row) => row.review_set_id);
+  const pushes = pushedRefs(kind, payload);
+  if (pushes.length > 0) {
+    const client = clientFor(connection);
+    if (client) {
+      for (const push of pushes) {
+        await resetMarksForPush(client, repo, push.before, push.after, { kind: connection.kind, connectionId: connection.id });
+      }
+    }
+  }
   if (commentEvents.has(kind)) {
     // Import what the forge just received before telling the clients to refetch.
     const client = clientFor(connection);
@@ -139,11 +169,7 @@ export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
     throw new HttpError(401, 'Invalid webhook signature');
   }
   const event = ctx.req.headers.get('x-github-event') ?? '';
-  let payload: {
-    action?: string;
-    installation?: { id?: number; account?: { login?: string } };
-    repository?: { full_name?: string };
-  };
+  let payload: WebhookPayload & { action?: string; installation?: { id?: number; account?: { login?: string } } };
   try {
     payload = JSON.parse(body) as typeof payload;
   } catch {
@@ -172,6 +198,18 @@ export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
 
   invalidateForgeCaches();
   const reviewSetIds = rows.map((row) => row.review_set_id);
+  const pushes = pushedRefs(event, payload);
+  if (pushes.length > 0) {
+    const installationId = String(payload.installation?.id ?? '');
+    try {
+      const client = new GithubClient(await installationToken(installationId), { refresh: () => installationToken(installationId) });
+      for (const push of pushes) {
+        await resetMarksForPush(client, repo, push.before, push.after, { kind: 'github' });
+      }
+    } catch (error) {
+      console.error('Could not reset the viewed marks after a push:', error);
+    }
+  }
   if (commentEvents.has(event)) {
     const installationId = String(payload.installation?.id ?? '');
     try {

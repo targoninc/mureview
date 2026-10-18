@@ -601,7 +601,7 @@ export class GithubClient implements ForgeClient {
         body: JSON.stringify({
           name: 'web',
           active: true,
-          events: ['pull_request', 'pull_request_review', 'issue_comment'],
+          events: ['push', 'pull_request', 'pull_request_review', 'issue_comment'],
           config: { url, content_type: 'json', secret, insecure_ssl: '0' },
         }),
       });

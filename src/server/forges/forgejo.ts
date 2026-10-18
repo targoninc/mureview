@@ -632,7 +632,7 @@ export class ForgejoClient implements ForgeClient {
         body: JSON.stringify({
           type: 'gitea',
           active: true,
-          events: ['pull_request', 'pull_request_review', 'issue_comment'],
+          events: ['push', 'pull_request', 'pull_request_review', 'issue_comment'],
           config: { url, content_type: 'json', secret },
         }),
       });
