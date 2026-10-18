@@ -23,6 +23,7 @@ import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, forgeAvatarUrl, parseItemId, repoItemKey, repoStatusText } from '../../lib/format';
 import { repoLabel } from '../../../shared/types';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
+import { marksKey, writeCachedMarks } from '../../lib/markCache';
 import { useAutoViewed } from '../../lib/useAutoViewed';
 import { useIsMobile } from '../../lib/useIsMobile';
 import { ServiceIcon, serviceDetail } from '../ServiceIcon';
@@ -185,6 +186,15 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     () => setReviewedItems(new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.position, mark.path)))),
     [pr.reviewed],
   );
+  // Keep the browser cache of this user's checkmarks current, so the next
+  // visit paints them right away.
+  useEffect(() => {
+    if (!user || !pr.prId) return;
+    void writeCachedMarks(
+      marksKey(user.id, reviewSet.id),
+      [...reviewed].map((itemId) => parseItemId(itemId)),
+    );
+  }, [reviewed, pr.prId, reviewSet.id, user]);
   useEffect(() => {
     api<{ repos: RepoChecks[] }>(`/review-sets/${reviewSet.id}/checks`)
       .then((result) => setChecks(result.repos))
