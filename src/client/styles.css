@@ -748,7 +748,7 @@ svg.checks-pending {
 
 .pr-header {
   flex: none;
-  padding: 16px 24px;
+  padding: 10px;
   border-bottom: 1px solid var(--borderColor-default);
   display: flex;
   flex-direction: column;
