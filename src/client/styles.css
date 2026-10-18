@@ -182,7 +182,7 @@ body {
 }
 
 .merge-celebration-title {
-  margin: 0;
+  margin: 0 0 14px;
   font-size: clamp(40px, 8vw, 72px);
   line-height: 1.1;
   animation: celebration-pop 0.5s ease-out;
