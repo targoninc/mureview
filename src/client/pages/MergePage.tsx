@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { BranchName, Button, Checkbox, Dialog, Flash, Heading, Label, Spinner } from '@primer/react';
+import { BranchName, Button, Checkbox, Dialog, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
 import type {
   ForgeKind,
@@ -209,6 +209,7 @@ export function MergePage() {
   const [results, setResults] = useState<MergeResult[] | null>(null);
   const [deleteBranches, setDeleteBranches] = useState(() => window.localStorage.getItem('mureview:merge-delete-branches') === '1');
   const [checksOpen, setChecksOpen] = useState(false);
+  const confirm = useConfirm();
 
   // The stream sends the target branch and every repository first, then each
   // repository's status as its branch is inspected, then the preview cards
@@ -266,6 +267,15 @@ export function MergePage() {
   }, [id]);
 
   const runMerge = async () => {
+    if (deleteBranches) {
+      const approved = await confirm({
+        title: 'Delete the source branches?',
+        content: 'Each source branch is deleted on the forge as soon as its changes have landed.',
+        confirmButtonContent: 'Merge and delete',
+        confirmButtonType: 'danger',
+      });
+      if (!approved) return;
+    }
     setMerging(true);
     setError(null);
     try {
