@@ -14,18 +14,20 @@ export function ReviewSetPage() {
   const [discussion, setDiscussion] = useState<ReviewSetDiscussion | null>(null);
   const [commits, setCommits] = useState<RepoCommits[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [syncComments, setSyncComments] = useState(false);
   const prId = detail?.pr.prId ?? null;
 
-  // The discussion (pull requests, merged comments, reviewed files) and the
-  // commit lists load in parallel after the fast core detail response.
+  // The discussion (pull requests, merged comments) and the commit lists load
+  // in parallel after the fast core detail response. Importing the forge
+  // comments is expensive, so it is left to the server's throttle, and forced
+  // only when the user asked for a refresh.
   useEffect(() => {
     if (!prId) {
       setDiscussion(null);
       return;
     }
     let cancelled = false;
-    const sync = reloadKey === 0 ? '1' : 'force';
-    api<ReviewSetDiscussion>(`/review-sets/${id}/discussion?sync=${sync}`)
+    api<ReviewSetDiscussion>(`/review-sets/${id}/discussion?sync=${syncComments ? 'force' : '1'}`)
       .then((result) => {
         if (!cancelled) setDiscussion(result);
       })
@@ -33,7 +35,7 @@ export function ReviewSetPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, prId, reloadKey]);
+  }, [id, prId, reloadKey, syncComments]);
 
   useEffect(() => {
     if (!id || !detail) return;
@@ -62,7 +64,9 @@ export function ReviewSetPage() {
       pr: {
         ...detail.pr,
         comments: discussion?.comments ?? detail.pr.comments,
-        reviewed: discussion?.reviewed ?? detail.pr.reviewed,
+        // The detail now carries the viewed marks, so they no longer wait for
+        // the discussion; while it reloads, the previous response stays valid.
+        reviewed: detail.pr.state === 'loading' && discussion ? discussion.reviewed : detail.pr.reviewed,
         repos: detail.pr.repos.map((repo) => {
           const key = keyOf(repo);
           const pull = pullsByRepo.get(key);
@@ -79,6 +83,7 @@ export function ReviewSetPage() {
 
   const reloadAll = useCallback(
     (fresh?: boolean) => {
+      setSyncComments(Boolean(fresh));
       setReloadKey((key) => key + 1);
       reload(fresh);
     },

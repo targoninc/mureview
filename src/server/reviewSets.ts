@@ -246,6 +246,9 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
           headSync: true,
           progress: true,
           progressUserId: user.id,
+          // The viewed marks ride along with the fast detail, instead of
+          // waiting for the slower discussion (comments, forge sync).
+          viewerId: user.id,
           onRepo: (repo) => send({ repo }),
           clients,
         });
