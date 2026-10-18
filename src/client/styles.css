@@ -685,6 +685,10 @@ svg.checks-pending {
   gap: 12px;
 }
 
+.pr-header-left {
+  align-items: flex-start;
+}
+
 .pr-header-actions {
   justify-content: flex-end;
 }
@@ -695,22 +699,41 @@ svg.checks-pending {
   margin-left: auto;
 }
 
-.pr-header-footer {
-  display: flex;
-  justify-content: flex-start;
+/* The title block and the action row fold shut instead of jumping; the toggle
+   keeps its place at the top left, left of the title. */
+.pr-header-titles,
+.pr-header-actions-wrap {
+  display: grid;
+  grid-template-rows: 1fr;
+  min-width: 0;
+  opacity: 1;
+  transition:
+    grid-template-rows 200ms ease,
+    opacity 200ms ease;
 }
 
-/* Folded for distraction-free reading: everything above the summary row hides. */
-.pr-header.collapsed .pr-header-left,
-.pr-header.collapsed .pr-header-actions {
-  display: none;
+.pr-header-titles > *,
+.pr-header-actions-wrap > * {
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* The collapsed summary row spans the header, so the toggle on its left stays
-   on the left instead of riding along with the right-aligned controls. */
-.pr-header.collapsed .pr-header-right {
-  width: 100%;
-  align-items: stretch;
+.pr-header-actions-wrap {
+  margin-bottom: 6px;
+  transition:
+    grid-template-rows 200ms ease,
+    opacity 200ms ease,
+    margin-bottom 200ms ease;
+}
+
+.pr-header.collapsed .pr-header-titles,
+.pr-header.collapsed .pr-header-actions-wrap {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.pr-header.collapsed .pr-header-actions-wrap {
+  margin-bottom: 0;
 }
 
 .pr-header-diff {
