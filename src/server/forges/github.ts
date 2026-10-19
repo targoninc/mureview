@@ -535,12 +535,13 @@ export class GithubClient implements ForgeClient {
   async pullRequestReview(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null> {
     const login = await this.currentLogin();
     const reviews = await this.paginate<{ user?: { login?: string }; state?: string }>(`/repos/${repo}/pulls/${pullNumber(ref)}/reviews`);
-    const own = reviews.filter((review) => review.user?.login === login);
+    const own = reviews.filter((review) => review.user?.login === login && review.state !== 'COMMENTED');
     const last = own[own.length - 1];
+    // Commented or dismissed reviews are not a decision; there is no state.
     if (!last) return null;
     if (last.state === 'APPROVED') return 'approve';
     if (last.state === 'CHANGES_REQUESTED') return 'reject';
-    return 'waiting';
+    return null;
   }
 
   async pullRequestReviews(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>> {

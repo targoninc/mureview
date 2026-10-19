@@ -1819,6 +1819,11 @@ a.comment-mention:hover {
   color: var(--fgColor-attention);
 }
 
+/* No decision on the pull request yet. */
+.vote-icon-none {
+  color: var(--fgColor-disabled);
+}
+
 .vote-icon-reject {
   color: var(--fgColor-danger);
 }

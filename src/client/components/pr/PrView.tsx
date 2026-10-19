@@ -708,7 +708,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   } as CSSProperties;
 
   const voteKey = repoItemKey;
-  const voteOf = (repo: RepoStatus): ReviewVote => votes.get(voteKey(repo)) ?? repo.pullRequest?.review ?? 'waiting';
+  // No decision yet (or none of the reviewers voted) is no state at all.
+  const voteOf = (repo: RepoStatus): ReviewVote | null => votes.get(voteKey(repo)) ?? repo.pullRequest?.review ?? null;
   const castVote = async (repo: RepoStatus, vote: ReviewVote) => {
     setVoteError(null);
     setPendingVote(vote);

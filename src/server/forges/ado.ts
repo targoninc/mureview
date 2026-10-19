@@ -925,9 +925,11 @@ export class AdoClient implements ForgeClient {
 
   async pullRequestReview(repo: string, ref: string): Promise<'approve' | 'waiting' | 'reject' | null> {
     const own = await this.ownReviewer(repo, ref);
-    if (!own) return null;
-    if ((own.vote ?? 0) >= 5) return 'approve';
-    if ((own.vote ?? 0) <= -10) return 'reject';
+    const vote = own?.vote ?? 0;
+    // 0 is "no vote" in Azure DevOps; only an actual vote is a decision.
+    if (!own || vote === 0) return null;
+    if (vote >= 5) return 'approve';
+    if (vote <= -10) return 'reject';
     return 'waiting';
   }
 
@@ -937,7 +939,8 @@ export class AdoClient implements ForgeClient {
     }>(`${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`);
     const identity = await this.currentIdentity().catch(() => null);
     const login = this.login.toLowerCase();
-    return (data.reviewers ?? []).map((reviewer) => {
+    // Reviewers without a vote (0) have no decision to show.
+    return (data.reviewers ?? []).filter((reviewer) => (reviewer.vote ?? 0) !== 0).map((reviewer) => {
       const vote = reviewer.vote ?? 0;
       return {
         name: reviewer.displayName || reviewer.uniqueName || 'Reviewer',

@@ -343,7 +343,7 @@ test('reviewer matching works without connection data', async () => {
   });
   try {
     const client = new AdoClient(`http://localhost:${server.port}`, 'token', 'me@example.com');
-    expect(await client.pullRequestReview('project/repo', '5')).toBe('waiting');
+    expect(await client.pullRequestReview('project/repo', '5')).toBeNull();
     expect(calls.some((path) => path.endsWith('/_apis/connectionData'))).toBe(false);
   } finally {
     server.stop(true);

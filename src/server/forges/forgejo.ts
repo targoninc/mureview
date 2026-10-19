@@ -673,12 +673,13 @@ export class ForgejoClient implements ForgeClient {
     const reviews = await this.request<Array<{ id: number; user?: { login?: string } | null; state?: string }>>(
       `/repos/${repo}/pulls/${ref}/reviews`,
     );
-    const own = reviews.filter((review) => review.user?.login === login);
+    const own = reviews.filter((review) => review.user?.login === login && review.state !== 'COMMENT');
     const last = own[own.length - 1];
+    // A comment or a dismissed review is not a decision; there is no state.
     if (!last) return null;
     if (last.state === 'APPROVED') return 'approve';
     if (last.state === 'REQUEST_CHANGES') return 'reject';
-    return 'waiting';
+    return null;
   }
 
   async pullRequestReviews(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>> {

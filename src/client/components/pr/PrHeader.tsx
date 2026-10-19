@@ -3,6 +3,7 @@ import { UserAvatar } from '../UserAvatar';
 import {
   AlertIcon,
   ChevronDownIcon,
+  ClockIcon,
   ChevronUpIcon,
   CommentDiscussionIcon,
   ColumnsIcon,
@@ -70,7 +71,8 @@ interface PrHeaderProps {
   reviewRows?: Array<{
     key: string;
     label: string;
-    vote: ReviewVote;
+    /** Null when nobody decided yet. */
+    vote: ReviewVote | null;
     reviewers?: Array<{ name: string; avatarUrl?: string; vote: ReviewVote; you?: boolean }>;
   }>;
   progress: { loaded: number; total: number } | null;
@@ -245,13 +247,17 @@ export function PrHeader({
                       <ActionMenu.Overlay width="medium">
                         <ActionList>
                           {reviewRows.map((row) => {
-                            const option = voteOptions.find((entry) => entry.vote === row.vote) ?? voteOptions[1];
+                            const option = row.vote ? voteOptions.find((entry) => entry.vote === row.vote) : undefined;
                             return (
                               <ActionList.Item key={row.key} onSelect={(event) => event.preventDefault()}>
                                 <ActionList.LeadingVisual>
-                                  <span className={option.className}>
-                                    <option.icon size={14} />
-                                  </span>
+                                  {option ? (
+                                    <span className={option.className}>
+                                      <option.icon size={14} />
+                                    </span>
+                                  ) : (
+                                    <ClockIcon size={14} className="vote-icon-none" />
+                                  )}
                                 </ActionList.LeadingVisual>
                                 <div className="vote-popover-row">
                                   <span className="mono">{row.label}</span>
@@ -274,7 +280,7 @@ export function PrHeader({
                                     })}
                                   </span>
                                 </div>
-                                <ActionList.TrailingVisual>{option.label}</ActionList.TrailingVisual>
+                                <ActionList.TrailingVisual>{option?.label ?? 'No decision'}</ActionList.TrailingVisual>
                               </ActionList.Item>
                             );
                           })}

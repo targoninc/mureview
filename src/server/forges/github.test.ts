@@ -545,3 +545,31 @@ test('the installations list carries the granted permissions', async () => {
   delete process.env.GITHUB_APP_PRIVATE_KEY;
   app.resetGithubApp();
 });
+
+test('a comment does not erase the earlier decision', async () => {
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.endsWith('/user')) return Response.json({ login: 'me' });
+    if (url.includes('/pulls/5/reviews')) {
+      return Response.json([
+        { id: 1, user: { login: 'me' }, state: 'APPROVED' },
+        { id: 2, user: { login: 'me' }, state: 'COMMENTED' },
+      ]);
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  // Comments are not decisions, so the approval before it still counts.
+  expect(await new GithubClient('token').pullRequestReview('acme/repo', '5')).toBe('approve');
+});
+
+test('no reviews at all means no decision', async () => {
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.endsWith('/user')) return Response.json({ login: 'me' });
+    if (url.includes('/pulls/5/reviews')) return Response.json([{ id: 1, user: { login: 'someone' }, state: 'APPROVED' }]);
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  expect(await new GithubClient('token').pullRequestReview('acme/repo', '5')).toBeNull();
+});
