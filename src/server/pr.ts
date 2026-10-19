@@ -88,9 +88,12 @@ async function loadCommits(
   pullRequest?: string,
 ): Promise<CommitInfo[] | undefined> {
   try {
-    return await cached(commitsCache, `${connectionId}:${repo}:${pullRequest ?? baseSha ?? ''}:${headSha}`, () =>
+    const commits = await cached(commitsCache, `${connectionId}:${repo}:${pullRequest ?? baseSha ?? ''}:${headSha}`, () =>
       client.listCommits(repo, { headSha, baseSha, limit: 300, pullRequest }),
     );
+    // Forge comparison endpoints report the oldest commit first; the commit
+    // list reads newest first.
+    return [...commits].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   } catch (error) {
     console.error(`Could not list commits for ${repo}:`, error);
     return undefined;
