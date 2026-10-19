@@ -1,9 +1,9 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Checkbox } from '@primer/react';
-import { ChevronDownIcon, ChevronRightIcon, CommentDiscussionIcon, FileDirectoryIcon } from '@primer/octicons-react';
+import { ChevronDownIcon, ChevronRightIcon, CommentDiscussionIcon, FileDirectoryIcon, StackIcon } from '@primer/octicons-react';
 import type { FileDiff, FileStatus, ForgeKind, PrStatus, RepoStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
-import { fileItemId, fileSegments, repoItemKey } from '../../lib/format';
+import { fileItemId, fileSegments } from '../../lib/format';
 import { ServiceGlyph } from '../ServiceIcon';
 import { fileIconFor, ensureFileIconSprite } from '../../lib/fileIcons';
 
@@ -98,10 +98,21 @@ export function FileTreePanel({
     return list;
   }, [entries, stacked, hiddenItems]);
 
+  // The tree names directories by their path segments ("host/repo" and, for
+  // stacks, "host/repo/Layer 2 · branch"), so that is what the icons key on.
   const repoKinds = useMemo(
-    () => new Map<string, ForgeKind>(entries.map((repo) => [repoItemKey(repo), repo.kind])),
+    () => new Map<string, ForgeKind>(entries.map((repo) => [`${repo.host}/${repo.repo}`, repo.kind])),
     [entries],
   );
+  const layerKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (!stacked) return keys;
+    for (const repo of entries) {
+      if (repo.position < 0) continue;
+      keys.add(`${repo.host}/${repo.repo}/Layer ${repo.position + 1} · ${repo.branch}`);
+    }
+    return keys;
+  }, [entries, stacked]);
 
   const tree = useMemo(() => buildFileTree(entriesForTree), [entriesForTree]);
   const treeKey = useMemo(
@@ -194,6 +205,7 @@ export function FileTreePanel({
       const allReviewed = node.fileIds.length > 0 && node.fileIds.every((id) => reviewedItems.has(id));
       const someReviewed = !allReviewed && node.fileIds.some((id) => reviewedItems.has(id));
       const repoKind = repoKinds.get(node.key);
+      const isLayer = layerKeys.has(node.key);
       return (
         <div key={node.key} className="tree-row tree-dir" style={indent} onClick={() => toggleDir(node.key)}>
           {onSetReviewed ? (
@@ -207,8 +219,14 @@ export function FileTreePanel({
             </span>
           ) : null}
           <span className="tree-chevron">{isCollapsed ? <ChevronRightIcon size={12} /> : <ChevronDownIcon size={12} />}</span>
-          <span className={`tree-icon ${repoKind ? 'tree-icon-repo' : 'tree-icon-dir'}`}>
-            {repoKind ? <ServiceGlyph kind={repoKind} size={14} /> : <FileDirectoryIcon size={14} />}
+          <span className={`tree-icon ${repoKind ? 'tree-icon-repo' : isLayer ? 'tree-icon-layer' : 'tree-icon-dir'}`}>
+            {repoKind ? (
+              <ServiceGlyph kind={repoKind} size={14} />
+            ) : isLayer ? (
+              <StackIcon size={14} />
+            ) : (
+              <FileDirectoryIcon size={14} />
+            )}
           </span>
           <span className="tree-name" title={node.name}>
             {node.name}

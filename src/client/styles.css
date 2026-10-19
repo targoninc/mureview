@@ -1250,6 +1250,11 @@ body.sidebar-resizing {
   color: var(--fgColor-default);
 }
 
+/* A layer of a stacked review set. */
+.tree-icon-layer {
+  color: var(--fgColor-done);
+}
+
 .tree-checkbox {
   display: inline-flex;
   flex: none;
