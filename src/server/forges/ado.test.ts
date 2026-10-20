@@ -17,6 +17,9 @@ const commit = (id: number, date: string): AdoCommit => ({
 
 const requests: string[] = [];
 const bodies: { method: string; body?: { description?: string; sourceRefName?: string }; source?: string | null }[] = [];
+// What the single pull request endpoint answers; the list endpoint only ever
+// reports the first 400 characters.
+let fullDescription: string | undefined = 'Existing description';
 
 const server = Bun.serve({
   port: 0,
@@ -99,11 +102,20 @@ const server = Bun.serve({
           {
             pullRequestId: 12,
             status: 'active',
+            // Azure DevOps truncates the description in list responses.
             description: source?.includes('feature/already')
               ? 'Has https://mureview.example.com/review-sets/1 inside'
-              : 'Existing description',
+              : 'Existing desc',
           },
         ],
+      });
+    }
+
+    if (url.pathname === '/Proj/_apis/git/repositories/Repo/pullrequests/12' && req.method === 'GET') {
+      return Response.json({
+        pullRequestId: 12,
+        status: 'active',
+        description: fullDescription,
       });
     }
 
@@ -200,9 +212,11 @@ test('appends the mureview link to an existing description', async () => {
 
 test('leaves a description that already links to mureview alone', async () => {
   bodies.length = 0;
+  fullDescription = 'Has https://mureview.example.com/review-sets/1 inside';
   const pull = await client.ensurePullRequest('Proj/Repo', 'main', 'feature/already', 'Merge feature', 'Review set: X', url);
   expect(pull).toEqual({ ref: '12', created: false });
   expect(bodies.some((entry) => entry.method === 'PATCH')).toBe(false);
+  fullDescription = 'Existing description';
 });
 
 test('deletes a thread comment on the forge', async () => {

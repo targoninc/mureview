@@ -100,11 +100,17 @@ export function withMureviewLink(body: string, url?: string): string {
   return text ? `${text}\n\n${mureviewLink(url)}` : mureviewLink(url);
 }
 
-/** The description with the mureview link appended, or null when it is already there. */
-export function appendMureviewLink(body: string | null | undefined, url: string): string | null {
+/**
+ * The description with the mureview link appended, or null when it is already
+ * there, when the description could not be read (undefined), or when the forge
+ * would have to truncate it to fit (`maxLength`). Never risk losing text.
+ */
+export function appendMureviewLink(body: string | null | undefined, url: string, maxLength = Number.POSITIVE_INFINITY): string | null {
+  if (body === undefined) return null;
   const text = (body ?? '').trim();
   if (text.includes(url)) return null;
-  return text ? `${text}\n\n${mureviewLink(url)}` : mureviewLink(url);
+  const next = text ? `${text}\n\n${mureviewLink(url)}` : mureviewLink(url);
+  return next.length > maxLength ? null : next;
 }
 
 export interface ReviewComment {

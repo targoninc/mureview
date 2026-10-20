@@ -30,6 +30,9 @@ import {
 
 const maxFileBytes = 200_000;
 const maxFiles = 300;
+
+/** Azure DevOps rejects pull request descriptions longer than this. */
+const maxDescriptionLength = 4000;
 const maxRefs = 2000;
 const zeroObjectId = '0000000000000000000000000000000000000000';
 
@@ -480,7 +483,13 @@ export class AdoClient implements ForgeClient {
       const existing = active.value?.[0];
       if (!existing) throw new ForgeError(409, 'a conflicting pull request already exists');
       if (mureviewUrl) {
-        const next = appendMureviewLink(existing.description, mureviewUrl);
+        // The list endpoint truncates descriptions to 400 characters, so a
+        // blind write-back would throw most of the text away; read the single
+        // pull request for the full description instead.
+        const full = await this.request<AdoPull>(
+          `${this.repoUrl(repo)}/pullrequests/${existing.pullRequestId}?api-version=7.1`,
+        );
+        const next = appendMureviewLink(full.description, mureviewUrl, maxDescriptionLength);
         if (next !== null) {
           await this.request(`${this.repoUrl(repo)}/pullrequests/${existing.pullRequestId}?api-version=7.1`, {
             method: 'PATCH',
