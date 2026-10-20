@@ -51,4 +51,16 @@ describe('updatePreferences', () => {
     expect(userRow(id).mono_font).toBe('fira-code');
     await expect(updatePreferences(userCtx(id, { monoFont: 'comic-sans' }))).rejects.toThrow('Unknown monospace font.');
   });
+
+  test('the diff font size defaults to 15 and only accepts the offered sizes', async () => {
+    const id = addUser('pref-size');
+    expect(publicUser(userRow(id)).diffFontSize).toBe(15);
+
+    await updatePreferences(userCtx(id, { diffFontSize: 18 }));
+    expect(publicUser(userRow(id)).diffFontSize).toBe(18);
+
+    await expect(updatePreferences(userCtx(id, { diffFontSize: 99 }))).rejects.toThrow('diff font size');
+    await expect(updatePreferences(userCtx(id, { diffFontSize: '18' }))).rejects.toThrow('diff font size');
+    expect(publicUser(userRow(id)).diffFontSize).toBe(18);
+  });
 });

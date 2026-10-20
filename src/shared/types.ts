@@ -11,6 +11,8 @@ export interface User {
   avatarUrl: string;
   /** Bundled monospace font id; null means the default. */
   monoFont: string | null;
+  /** The text size of diffs, in pixels. */
+  diffFontSize: number;
   /** Mark files as viewed once they were fully seen; see useAutoViewed. */
   autoMarkViewed: boolean;
   /** Hide viewed files from the file tree. */

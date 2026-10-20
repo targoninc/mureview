@@ -1,9 +1,9 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, Flash, Heading, Spinner, ToggleSwitch, useConfirm } from '@primer/react';
+import { Avatar, Button, Flash, Heading, Select, Spinner, ToggleSwitch, useConfirm } from '@primer/react';
 import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
 import type { AuthProvider, ForgeKind, MeResponse, User } from '../../shared/types';
 import { useAppContext } from '../lib/appContext';
-import { DEFAULT_MONO_FONT, monoFontFamily, monoFontOption, type MonoFontOption } from '../../shared/fonts';
+import { DEFAULT_DIFF_FONT_SIZE, DEFAULT_MONO_FONT, DIFF_FONT_SIZES, monoFontFamily, monoFontOption, type MonoFontOption } from '../../shared/fonts';
 import { FontPickerDialog } from '../components/FontPicker';
 import { api, basePath, del, put } from '../lib/api';
 import { connectionAvatarUrl } from '../lib/format';
@@ -42,6 +42,7 @@ export function SettingsPage() {
   const [adding, setAdding] = useState<ConnectTarget | null>(null);
   const [savingFont, setSavingFont] = useState<string | null>(null);
   const [savingToggle, setSavingToggle] = useState<string | null>(null);
+  const [savingDiffSize, setSavingDiffSize] = useState(false);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
   const confirm = useConfirm();
   const { updateUser } = useAppContext();
@@ -91,6 +92,21 @@ export function SettingsPage() {
     }
   };
 
+  const chooseDiffFontSize = async (size: number) => {
+    if (savingDiffSize) return;
+    setSavingDiffSize(true);
+    setError(null);
+    applyUser({ diffFontSize: size });
+    try {
+      await put('/me/preferences', { diffFontSize: size });
+    } catch (err) {
+      applyUser({ diffFontSize: me?.user?.diffFontSize ?? DEFAULT_DIFF_FONT_SIZE });
+      setError((err as Error).message);
+    } finally {
+      setSavingDiffSize(false);
+    }
+  };
+
   const setTogglePreference = async (key: 'autoMarkViewed' | 'hideViewedFiles', value: boolean) => {
     if (savingToggle) return;
     setSavingToggle(key);
@@ -110,6 +126,7 @@ export function SettingsPage() {
 
   const currentFont = me.user?.monoFont ?? DEFAULT_MONO_FONT;
   const currentFontLabel = monoFontOption(currentFont).label;
+  const currentDiffFontSize = me.user?.diffFontSize ?? DEFAULT_DIFF_FONT_SIZE;
 
   const hasGithub = me.connections.some((connection) => connection.kind === 'github');
   const connectOptions: ConnectOption[] = [
@@ -366,16 +383,38 @@ export function SettingsPage() {
 
         <div className="stack">
           <Heading as="h2" variant="small">
-            Monospace font
+            Diffs
           </Heading>
-          <div className="settings-panel row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
-            <div className="stack" style={{ gap: 4 }}>
-              <strong style={{ fontSize: 13 }}>{currentFontLabel}</strong>
-              <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-                Used for diffs, file paths and code. All fonts are bundled with mureview.
-              </span>
+          <div className="settings-panel stack" style={{ gap: 16 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+              <div className="stack" style={{ gap: 4 }}>
+                <strong style={{ fontSize: 13 }}>{currentFontLabel}</strong>
+                <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                  Used for diffs, file paths and code. All fonts are bundled with mureview.
+                </span>
+              </div>
+              <Button onClick={() => setFontPickerOpen(true)}>Change font</Button>
             </div>
-            <Button onClick={() => setFontPickerOpen(true)}>Change font</Button>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+              <div className="stack" style={{ gap: 4 }}>
+                <strong style={{ fontSize: 13 }}>Diff text size</strong>
+                <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                  The size of code in diffs and the combined stack view.
+                </span>
+              </div>
+              <Select
+                aria-label="Diff text size"
+                value={String(currentDiffFontSize)}
+                disabled={savingDiffSize}
+                onChange={(event) => chooseDiffFontSize(Number(event.target.value))}
+              >
+                {DIFF_FONT_SIZES.map((size) => (
+                  <Select.Option key={size} value={String(size)}>
+                    {size}px
+                  </Select.Option>
+                ))}
+              </Select>
+            </div>
           </div>
         </div>
 

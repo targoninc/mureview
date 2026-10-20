@@ -22,6 +22,7 @@ import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, forgeAvatarUrl, parseItemId, repoItemKey, repoStatusText } from '../../lib/format';
 import { repoLabel } from '../../../shared/types';
+import { DEFAULT_DIFF_FONT_SIZE, diffLineHeight } from '../../../shared/fonts';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
 import { marksKey, writeCachedMarks } from '../../lib/markCache';
 import { useAutoViewed } from '../../lib/useAutoViewed';
@@ -103,6 +104,8 @@ interface PrViewProps {
 export function PrView({ detail, onReload, progress }: PrViewProps) {
   const { reviewSet, pr } = detail;
   const { user } = useAppContext();
+  const diffFontSize = user?.diffFontSize ?? DEFAULT_DIFF_FONT_SIZE;
+  const diffLine = diffLineHeight(diffFontSize);
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useIsMobile();
@@ -469,7 +472,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       enableGutterUtility: true,
       stickyHeaders: true,
       hunkSeparators: 'line-info',
-      itemMetrics: { lineHeight: 22 },
+      itemMetrics: { lineHeight: diffLine },
       layout: { paddingTop: 8, paddingBottom: 24, gap: 8 },
       onGutterUtilityClick: (range, context) => {
         const entry = parsedRef.current.get(context.item.id);
@@ -502,7 +505,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         });
       },
     }),
-    [diffStyle],
+    [diffStyle, diffLine],
   );
 
   const renderAnnotation = useCallback(
@@ -703,8 +706,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const codeViewStyle = {
     height: '100%',
     overflow: 'auto',
-    '--diffs-font-size': '15px',
-    '--diffs-line-height': '22px',
+    '--diffs-font-size': `${diffFontSize}px`,
+    '--diffs-line-height': `${diffLine}px`,
   } as CSSProperties;
 
   const voteKey = repoItemKey;

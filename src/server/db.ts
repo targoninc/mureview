@@ -16,6 +16,7 @@ export interface UserRow {
   name: string;
   avatar_url: string;
   mono_font: string | null;
+  diff_font_size: number;
   auto_mark_viewed: number;
   hide_viewed_files: number;
   created_at: string;
@@ -600,6 +601,9 @@ if (userVersion() < 12) {
 const userColumns = hasTable('users') ? db.query<{ name: string }, []>('PRAGMA table_info(users)').all() : [];
 if (userColumns.length && !userColumns.some((column) => column.name === 'mono_font')) {
   db.exec('ALTER TABLE users ADD COLUMN mono_font TEXT');
+}
+if (userColumns.length && !userColumns.some((column) => column.name === 'diff_font_size')) {
+  db.exec('ALTER TABLE users ADD COLUMN diff_font_size INTEGER NOT NULL DEFAULT 15');
 }
 if (userColumns.length && !userColumns.some((column) => column.name === 'auto_mark_viewed')) {
   db.exec('ALTER TABLE users ADD COLUMN auto_mark_viewed INTEGER NOT NULL DEFAULT 0');

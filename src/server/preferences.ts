@@ -3,19 +3,27 @@ import { requireUser } from './auth/session';
 import { HttpError, json } from './http';
 import { readJson } from './http';
 import type { Ctx } from './router';
-import { ALL_MONO_FONT_IDS } from '../shared/fonts';
+import { ALL_MONO_FONT_IDS, DIFF_FONT_SIZES } from '../shared/fonts';
 
 /** User preference columns that store a boolean. */
 const booleanPreferences = { autoMarkViewed: 'auto_mark_viewed', hideViewedFiles: 'hide_viewed_files' } as const;
 
 export async function updatePreferences(ctx: Ctx): Promise<Response> {
   const user = requireUser(ctx);
-  const body = await readJson<{ monoFont?: unknown } & Record<string, unknown>>(ctx.req);
+  const body = await readJson<{ monoFont?: unknown; diffFontSize?: unknown } & Record<string, unknown>>(ctx.req);
 
   if (body.monoFont !== undefined) {
     const id = body.monoFont;
     if (typeof id !== 'string' || !ALL_MONO_FONT_IDS.includes(id)) throw new HttpError(400, 'Unknown monospace font.');
     db.run('UPDATE users SET mono_font = ? WHERE id = ?', [id, user.id]);
+  }
+
+  if (body.diffFontSize !== undefined) {
+    const size = body.diffFontSize;
+    if (typeof size !== 'number' || !Number.isInteger(size) || !DIFF_FONT_SIZES.includes(size)) {
+      throw new HttpError(400, `The diff font size must be one of ${DIFF_FONT_SIZES.join(', ')} pixels.`);
+    }
+    db.run('UPDATE users SET diff_font_size = ? WHERE id = ?', [size, user.id]);
   }
 
   for (const [key, column] of Object.entries(booleanPreferences)) {

@@ -11,6 +11,7 @@ export function publicUser(row: UserRow): User {
     name: row.name,
     avatarUrl: row.avatar_url,
     monoFont: row.mono_font ?? null,
+    diffFontSize: row.diff_font_size,
     autoMarkViewed: row.auto_mark_viewed === 1,
     hideViewedFiles: row.hide_viewed_files === 1,
   };

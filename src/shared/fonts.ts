@@ -51,3 +51,13 @@ export function monoFontFamily(id: string | null | undefined): string {
   const font = monoFontOption(id);
   return font.id === SYSTEM_MONO_FONT.id ? SYSTEM_STACK : `${font.family}, ${SYSTEM_STACK}`;
 }
+
+/** The diff text sizes a user can pick, in pixels. */
+export const DIFF_FONT_SIZES = [12, 13, 14, 15, 16, 17, 18, 19, 20];
+
+export const DEFAULT_DIFF_FONT_SIZE = 15;
+
+/** Keeps the diff line height in proportion to the text size. */
+export function diffLineHeight(size: number): number {
+  return Math.round((size * 22) / DEFAULT_DIFF_FONT_SIZE);
+}
