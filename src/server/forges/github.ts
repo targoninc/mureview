@@ -872,8 +872,36 @@ export class GithubClient implements ForgeClient {
     return fetchImage(url, { 'User-Agent': 'mureview' });
   }
 
-  async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
+  /**
+   * The pull request's own commits, as its GitHub page lists them. This is
+   * authoritative for stacked pull requests, where the base branch can
+   * already contain most of the branch's history.
+   */
+  private async pullRequestCommits(repo: string, number: number, limit: number): Promise<CommitInfo[] | null> {
+    try {
+      const commits: GithubCommit[] = [];
+      for (let page = 1; page <= 10 && commits.length < limit; page++) {
+        const batch = await this.request<GithubCommit[]>(`/repos/${repo}/pulls/${number}/commits?per_page=100&page=${page}`);
+        commits.push(...batch);
+        if (batch.length < 100) break;
+      }
+      return commits.slice(0, limit).map(toCommitInfo);
+    } catch (error) {
+      if (!(error instanceof ForgeError)) throw error;
+      return null;
+    }
+  }
+
+  async listCommits(
+    repo: string,
+    options: { headSha: string; baseSha?: string; limit?: number; pullRequest?: string },
+  ): Promise<CommitInfo[]> {
     const limit = options.limit ?? 100;
+    if (options.pullRequest) {
+      const fromPullRequest = await this.pullRequestCommits(repo, pullNumber(options.pullRequest), limit);
+      // GitHub caps this endpoint at 250 commits; the comparison can page further.
+      if (fromPullRequest && (fromPullRequest.length >= limit || fromPullRequest.length < 250)) return fromPullRequest;
+    }
     if (options.baseSha) {
       // The compare endpoint paginates its commit list, so walk the pages to
       // avoid silently truncated commit lists.

@@ -147,9 +147,12 @@ async function inspectBranch(
 
     const files = comparison.files.map(toFileDiff);
     const totals = summarize(files);
-    const commits = includeCommits
+    const loaded = includeCommits
       ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull ?? undefined)
       : undefined;
+    // The comparison already carries the first page of commits; keep them when
+    // the separate commit listing comes back empty.
+    const commits = loaded?.length === 0 && comparison.commits.length > 0 ? comparison.commits : loaded;
     // A layer of a stack is supposed to build on the branch below it; when the
     // forge reports a different merge base, the stack is out of order.
     const diverged =

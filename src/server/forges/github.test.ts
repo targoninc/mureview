@@ -128,6 +128,54 @@ test('refreshGithubToken fails cleanly without a stored refresh token', async ()
   await expect(refreshGithubToken(connection.id)).rejects.toThrow('reconnect GitHub');
 });
 
+function githubCommit(sha: string, date = '2026-10-01T00:00:00Z') {
+  return {
+    sha,
+    commit: { message: `${sha} message\n\nbody`, author: { name: 'Author', date } },
+    author: { login: 'author' },
+    html_url: `https://github.com/acme/repo/commit/${sha}`,
+  };
+}
+
+test('listCommits reads a pull request\'s own commits before the branch comparison', async () => {
+  const urls: string[] = [];
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.includes('/pulls/42/commits')) return Response.json([githubCommit('aaa'), githubCommit('bbb')]);
+    return new Response('{"message":"Not Found"}', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('token');
+  const commits = await client.listCommits('acme/repo', { headSha: 'head', baseSha: 'base', limit: 300, pullRequest: '42' });
+
+  expect(commits.map((commit) => commit.sha)).toEqual(['aaa', 'bbb']);
+  expect(urls.some((url) => url.includes('/compare/'))).toBe(false);
+});
+
+test('listCommits falls back to the comparison when the pull request is gone', async () => {
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.includes('/pulls/42/commits')) return new Response('{"message":"Not Found"}', { status: 404 });
+    if (url.includes('/compare/base...head')) {
+      return Response.json({
+        status: 'ahead',
+        ahead_by: 1,
+        behind_by: 0,
+        total_commits: 1,
+        commits: [githubCommit('ccc')],
+        files: [],
+      });
+    }
+    return new Response('{"message":"Not Found"}', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('token');
+  const commits = await client.listCommits('acme/repo', { headSha: 'head', baseSha: 'base', limit: 300, pullRequest: '42' });
+
+  expect(commits.map((commit) => commit.sha)).toEqual(['ccc']);
+});
+
 test('deleteBranch deletes the reference and tolerates a missing branch', async () => {
   const calls: Array<{ url: string; method: string }> = [];
   globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
