@@ -20,6 +20,7 @@ export function ReviewSetPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [syncComments, setSyncComments] = useState(false);
   const prId = detail?.pr.prId ?? null;
+  const reviewSetId = detail?.reviewSet.id ?? null;
 
   // The last seen checkmarks, so the tree is right from the first paint.
   useEffect(() => {
@@ -54,9 +55,9 @@ export function ReviewSetPage() {
   }, [id, prId, reloadKey, syncComments]);
 
   useEffect(() => {
-    if (!id || !detail) return;
+    if (!id || !reviewSetId) return;
     let cancelled = false;
-    api<{ repos: RepoCommits[] }>(`/review-sets/${id}/commits`)
+    api<{ repos: RepoCommits[] }>(`/review-sets/${id}/commits${syncComments ? '?fresh=1' : ''}`)
       .then((result) => {
         if (!cancelled) setCommits(result.repos);
       })
@@ -64,7 +65,7 @@ export function ReviewSetPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, detail, reloadKey]);
+  }, [id, reviewSetId, reloadKey, syncComments]);
 
   const merged = useMemo(() => {
     if (!detail) return null;

@@ -272,7 +272,8 @@ export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
   const access = await loadReadableReviewSet(user, requireId(ctx));
   const connections = connectionsFor(access.ownerId);
-  const status = await buildPrStatus(connections, access.reviewSet, false, {
+  const fresh = ctx.url.searchParams.get('fresh') === '1';
+  const status = await buildPrStatus(connections, access.reviewSet, fresh, {
     discussions: false,
     commits: true,
     ensurePulls: false,
