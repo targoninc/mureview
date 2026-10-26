@@ -96,6 +96,9 @@ export function forgeErrorMessage(error: unknown): string {
       return detail ? `access forbidden (${detail})` : 'access forbidden';
     }
     if (error.status === 404) return 'not found or no access';
+    if (error.status >= 500) {
+      return `the forge returned HTTP ${error.status}${detail ? ` (${detail})` : ''} — retry in a moment`;
+    }
     return detail || `request failed with status ${error.status}`;
   }
   return error instanceof Error ? error.message : 'unknown error';

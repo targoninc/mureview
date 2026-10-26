@@ -141,10 +141,13 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         continue;
       }
       const target = layer.target || reviewSet.targetBranch;
+      let action = 'read the branch';
+      let pullRef: string | undefined;
       try {
         const headRef = await client.getBranch(layer.repo, layer.branch!, { fresh: true });
         if (!headRef) throw new Error('the matched branch no longer exists');
 
+        action = 'check the required checks';
         const checks = await client.checks(layer.repo, headRef.sha, { pullRequest: layer.pullRequest?.ref });
         if (checks.state === 'failure') {
           const failing = checks.runs
@@ -157,12 +160,14 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         }
 
         if (!layer.targetExists) {
+          action = `create ${target}`;
           await client.createBranch(layer.repo, target, { sha: headRef.sha, branch: layer.branch! });
           messages.push(`${layerName}: created ${target} from ${layer.branch}`);
           continue;
         }
 
-        const pullRef =
+        action = 'create the pull request';
+        pullRef =
           (layer.pullRequest?.state === 'closed' ? undefined : layer.pullRequest?.ref) ??
           (
             await client.ensurePullRequest(
@@ -178,11 +183,13 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
         // Once the layers below are in, an upper layer's pull request points
         // at the review set's target so its merge lands there too.
         if (stacked && layer.position > 0 && target !== reviewSet.targetBranch && client.retargetPullRequest) {
+          action = 'retarget the pull request';
           await client.retargetPullRequest(layer.repo, pullRef, reviewSet.targetBranch);
         }
 
         // Comments are synced as they are written; this catches the ones whose
         // immediate sync failed.
+        action = 'post the review comments';
         const comments = unsynced.filter(
           (comment) =>
             comment.connectionId === layer.connectionId && comment.repo === layer.repo && comment.position === layer.position,
@@ -205,7 +212,22 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
           }
         }
 
-        const message = await client.mergePullRequest(layer.repo, pullRef, `Merge ${layer.branch} into ${target}`);
+        action = 'merge the pull request';
+        let message: string;
+        let mergeNote = '';
+        try {
+          message = await client.mergePullRequest(layer.repo, pullRef, `Merge ${layer.branch} into ${target}`);
+        } catch (error) {
+          // A failed merge request may still have completed; check before
+          // reporting it, so a forge hiccup does not look like a lost merge.
+          const state =
+            client.pullRequestState && pullRef
+              ? await client.pullRequestState(layer.repo, pullRef).catch(() => null)
+              : null;
+          if (state?.state !== 'merged') throw error;
+          message = `merged pull request #${pullRef}`;
+          mergeNote = `the forge reported an error, but the merge completed (${error instanceof Error ? error.message : 'unknown error'})`;
+        }
         mergedPrs += 1;
         let branchNote = '';
         if (deleteBranches) {
@@ -221,6 +243,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
           }
         }
         const commentNote = [
+          mergeNote,
           posted > 0 ? `${posted} late comment${posted === 1 ? '' : 's'} synced` : '',
           commentFailed > 0 ? `${commentFailed} comment${commentFailed === 1 ? '' : 's'} could not be synced` : '',
           branchNote,
@@ -229,7 +252,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
           .join(' · ');
         messages.push(`${layerName}: ${message}${commentNote ? ` · ${commentNote}` : ''}`);
       } catch (error) {
-        messages.push(`${layerName}: ${forgeErrorMessage(error)}`);
+        messages.push(`${layerName}: could not ${action}${pullRef ? ` #${pullRef}` : ''} — ${forgeErrorMessage(error)}`);
         failed = true;
       }
     }

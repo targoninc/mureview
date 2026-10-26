@@ -69,4 +69,10 @@ describe('forgeErrorMessage', () => {
   test('keeps other forbidden details', () => {
     expect(forgeErrorMessage(new ForgeError(403, 'upgrade required'))).toBe('access forbidden (upgrade required)');
   });
+
+  test('explains a forge server error', () => {
+    expect(forgeErrorMessage(new ForgeError(500, 'Server Error'))).toBe(
+      'the forge returned HTTP 500 (Server Error) — retry in a moment',
+    );
+  });
 });
