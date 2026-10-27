@@ -137,6 +137,9 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const [collapsedChecks, setCollapsedChecks] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<Draft | null>(null);
   const [comments, setComments] = useState<Comment[]>(pr.comments);
+  const addComment = useCallback((comment: Comment) => {
+    setComments((current) => (current.some((item) => item.id === comment.id) ? current : [...current, comment]));
+  }, []);
   const [reviewed, setReviewedItems] = useState<Set<string>>(
     () => new Set(pr.reviewed.map((mark) => fileItemId(mark.connectionId, mark.repo, mark.position, mark.path))),
   );
@@ -521,7 +524,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
             onCancel={() => setDraft(null)}
             onDone={(comment) => {
               setDraft(null);
-              setComments((current) => [...current, comment]);
+              addComment(comment);
             }}
           />
         );
@@ -531,12 +534,12 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           prId={pr.prId}
           comments={meta.comments}
           repos={pr.repos}
-          onAdded={(comment) => setComments((current) => [...current, comment])}
+          onAdded={addComment}
           onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
         />
       );
     },
-    [pr.prId, pr.repos],
+    [pr.prId, pr.repos, addComment],
   );
 
   const applyReviewed = useCallback(
@@ -798,7 +801,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         prId={pr.prId}
         comments={comments}
         repos={pr.repos}
-        onAdded={(comment) => setComments((current) => [...current, comment])}
+        onAdded={addComment}
         onDeleted={(id) => setComments((current) => current.filter((item) => item.id !== id))}
       />
     );
