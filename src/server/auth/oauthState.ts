@@ -1,8 +1,10 @@
 import type { AuthProvider } from '../../shared/types';
-import { randomToken } from '../crypto';
+import { decrypt, encrypt, randomToken } from '../crypto';
 import { db } from '../db';
 
 export type OAuthMode = 'login' | 'connect';
+
+const encryptedPayloadPrefix = 'enc:v1:';
 
 interface StateRow {
   state: string;
@@ -25,7 +27,7 @@ export function createState(input: { provider: AuthProvider; mode: OAuthMode; us
   db.run('DELETE FROM oauth_states WHERE expires_at < datetime(\'now\')');
   db.run(
     `INSERT INTO oauth_states (state, provider, mode, user_id, payload, expires_at) VALUES (?, ?, ?, ?, ?, datetime('now', '+15 minutes'))`,
-    [state, input.provider, input.mode, input.userId ?? null, JSON.stringify(input.payload ?? {})],
+    [state, input.provider, input.mode, input.userId ?? null, `${encryptedPayloadPrefix}${encrypt(JSON.stringify(input.payload ?? {}))}`],
   );
   return state;
 }
@@ -40,6 +42,8 @@ export function takeState(state: string, provider: AuthProvider): PendingAuth {
     provider,
     mode: row.mode === 'connect' ? 'connect' : 'login',
     userId: row.user_id,
-    payload: JSON.parse(row.payload) as Record<string, string>,
+    payload: JSON.parse(
+      row.payload.startsWith(encryptedPayloadPrefix) ? decrypt(row.payload.slice(encryptedPayloadPrefix.length)) : row.payload,
+    ) as Record<string, string>,
   };
 }

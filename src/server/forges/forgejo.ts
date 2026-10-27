@@ -10,6 +10,7 @@ import {
   type CheckInfo,
   type ChecksSummary,
   type CommitInfo,
+  commitInfo,
   type CompareFile,
   type CompareResult,
   type ForgeCallOptions,
@@ -25,7 +26,7 @@ import {
   decodeText,
   appendMureviewLink,
   withMureviewLink,
-  fetchImage,
+  fetchForgeAvatar,
   statusMap,
   summarizeChecks,
 } from './types';
@@ -566,7 +567,7 @@ export class ForgejoClient implements ForgeClient {
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
-    return fetchImage(url, { 'User-Agent': 'mureview' });
+    return fetchForgeAvatar(url);
   }
 
   async listCommits(repo: string, options: { headSha: string; baseSha?: string; limit?: number }): Promise<CommitInfo[]> {
@@ -583,13 +584,15 @@ export class ForgejoClient implements ForgeClient {
       commits.push(...next);
     }
     // Both the compare and the commits endpoints list newest first.
-    return commits.slice(0, limit).map((commit) => ({
-      sha: commit.sha,
-      message: commit.commit.message.split('\n')[0],
-      author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
-      date: commit.commit.author?.date ?? '',
-      url: commit.html_url,
-    }));
+    return commits.slice(0, limit).map((commit) =>
+      commitInfo({
+        sha: commit.sha,
+        message: commit.commit.message,
+        author: commit.author?.login ?? commit.commit.author?.name,
+        date: commit.commit.author?.date,
+        url: commit.html_url,
+      }),
+    );
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {

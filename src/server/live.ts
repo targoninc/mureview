@@ -21,6 +21,19 @@ export function liveClose(ws: LiveSocket): void {
   sockets.delete(ws);
 }
 
+/** Ends the sockets of a signed-out account so revocation is immediate. */
+export function closeUserSockets(userId: number): void {
+  for (const ws of sockets) {
+    if (ws.data.user.id !== userId) continue;
+    sockets.delete(ws);
+    try {
+      ws.close(1008, 'Signed out');
+    } catch {
+      // Already closed.
+    }
+  }
+}
+
 export function liveMessage(ws: LiveSocket, raw: string | Buffer): void {
   let message: { type?: unknown; reviewSetId?: unknown };
   try {

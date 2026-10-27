@@ -7,6 +7,7 @@ import {
   type CheckInfo,
   type ChecksSummary,
   type CommitInfo,
+  commitInfo,
   type CompareFile,
   type CompareResult,
   type ForgeCallOptions,
@@ -122,13 +123,13 @@ interface AdoPatToken {
 }
 
 function toCommitInfo(commit: AdoCommit, repoWebUrl: string): CommitInfo {
-  return {
+  return commitInfo({
     sha: commit.commitId,
-    message: commit.comment.split('\n')[0],
-    author: commit.author?.name ?? 'unknown',
-    date: commit.author?.date ?? '',
+    message: commit.comment,
+    author: commit.author?.name,
+    date: commit.author?.date,
     url: commit.remoteUrl || `${repoWebUrl}/commit/${commit.commitId}`,
-  };
+  });
 }
 
 interface AdoEvaluation {

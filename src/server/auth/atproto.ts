@@ -113,7 +113,7 @@ async function atprotoCallbackInner(ctx: Ctx, pending: PendingAtproto | null): P
       connection,
       { provider: 'atproto', mode: pending.mode, userId: pending.userId ?? null, payload: {} },
     );
-    response.headers.append('Set-Cookie', clearCookie(pendingCookie, cookiePath()));
+    response.headers.append('Set-Cookie', clearCookie(pendingCookie, cookiePath(), isSecure()));
     return response;
   } catch (error) {
     if (error instanceof HttpError) throw error;

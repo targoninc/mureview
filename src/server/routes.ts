@@ -41,13 +41,8 @@ import { requireUser } from './auth/session';
 import type { Ctx } from './router';
 import { HttpError, json } from './http';
 import { listWarnings } from './warnings';
-import {
-  createMcpKeyRoute,
-  deleteMcpKeyRoute,
-  listMcpKeysRoute,
-  mcpEndpoint,
-  mcpMethodNotAllowed,
-} from './mcp';
+import { mcpEndpoint, mcpMethodNotAllowed } from './mcp';
+import { createMcpKeyRoute, deleteMcpKeyRoute, listMcpKeysRoute } from './mcpKeys';
 
 export const api = new Router();
 

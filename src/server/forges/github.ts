@@ -17,6 +17,7 @@ import {
   type CheckInfo,
   type ChecksSummary,
   type CommitInfo,
+  commitInfo,
   type CompareResult,
   type ForgeCallOptions,
   type ForgeClient,
@@ -30,7 +31,7 @@ import {
   type ReviewComment,
   type TreeListing,
   decodeText,
-  fetchImage,
+  fetchForgeAvatar,
   appendMureviewLink,
   withMureviewLink,
   statusMap,
@@ -168,13 +169,13 @@ interface GithubIssueComment {
 }
 
 function toCommitInfo(commit: GithubCommit): CommitInfo {
-  return {
+  return commitInfo({
     sha: commit.sha,
-    message: commit.commit.message.split('\n')[0],
-    author: commit.author?.login ?? commit.commit.author?.name ?? 'unknown',
-    date: commit.commit.author?.date ?? '',
+    message: commit.commit.message,
+    author: commit.author?.login ?? commit.commit.author?.name,
+    date: commit.commit.author?.date,
     url: commit.html_url,
-  };
+  });
 }
 
 interface GithubTreeEntry {
@@ -869,7 +870,7 @@ export class GithubClient implements ForgeClient {
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
-    return fetchImage(url, { 'User-Agent': 'mureview' });
+    return fetchForgeAvatar(url);
   }
 
   /**

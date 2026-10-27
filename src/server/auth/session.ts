@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { User } from '../../shared/types';
 import { constants, config } from '../config';
 import { randomToken } from '../crypto';
@@ -17,13 +18,21 @@ export function publicUser(row: UserRow): User {
   };
 }
 
+function sessionTokenHash(token: string): string {
+  return `sha256:${createHash('sha256').update(token).digest('hex')}`;
+}
+
 export function getSessionUser(req: Request): UserRow | null {
   const token = parseCookies(req.headers.get('cookie'))[constants.sessionCookie];
   if (!token) return null;
   return (
     db
-      .query<UserRow, [string]>(`SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.expires_at > datetime('now')`)
-      .get(token) ?? null
+      .query<UserRow, [string, string]>(
+        `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE ((s.token NOT LIKE 'sha256:%' AND s.token = ?) OR s.token = ?)
+           AND s.expires_at > datetime('now')`,
+      )
+      .get(token, sessionTokenHash(token)) ?? null
   );
 }
 
@@ -38,7 +47,7 @@ export const isSecure = () => config.baseUrl.startsWith('https');
 export function startSession(userId: number): string {
   const token = randomToken();
   db.run(`INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', ?))`, [
-    token,
+    sessionTokenHash(token),
     userId,
     `+${constants.sessionDays} days`,
   ]);
@@ -52,6 +61,6 @@ export function startSession(userId: number): string {
 
 export function endSession(req: Request): string {
   const token = parseCookies(req.headers.get('cookie'))[constants.sessionCookie];
-  if (token) db.run('DELETE FROM sessions WHERE token = ?', [token]);
-  return clearCookie(constants.sessionCookie, cookiePath());
+  if (token) db.run('DELETE FROM sessions WHERE token = ? OR token = ?', [token, sessionTokenHash(token)]);
+  return clearCookie(constants.sessionCookie, cookiePath(), isSecure());
 }

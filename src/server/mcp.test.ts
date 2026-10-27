@@ -1,12 +1,7 @@
 import { expect, test } from 'bun:test';
 import { db } from './db';
-import {
-  createMcpKey,
-  deleteMcpKey,
-  listMcpKeys,
-  lookupMcpKey,
-  mcpEndpoint,
-} from './mcp';
+import { mcpEndpoint } from './mcp';
+import { createMcpKey, deleteMcpKey, listMcpKeys, lookupMcpKey } from './mcpKeys';
 import type { Ctx } from './router';
 
 function addUser(name: string): number {

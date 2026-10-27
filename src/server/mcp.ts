@@ -1,31 +1,13 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { z } from 'zod';
-import type { McpKey, RepoStatus, ReviewSet } from '../shared/types';
+import type { RepoStatus, ReviewSet } from '../shared/types';
 import { config } from './config';
-import { requireUser } from './auth/session';
-import { type UserRow, db } from './db';
-import { HttpError, json } from './http';
+import type { UserRow } from './db';
+import { HttpError, readText } from './http';
 import { buildDetail, readableReviewSets } from './reviewSets';
+import { lookupMcpKey, markInitialized, markUsed, mcpUser } from './mcpKeys';
 import type { Ctx } from './router';
-
-const keyPrefix = 'mrv_';
-const mcpUrl = () => `${config.baseUrl}/api/mcp`;
-
-interface McpKeyRow {
-  id: number;
-  user_id: number;
-  client_name: string | null;
-}
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex');
-}
-
-function newToken(): string {
-  return `${keyPrefix}${randomBytes(32).toString('base64url')}`;
-}
 
 function jsonText(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }] };
@@ -39,59 +21,6 @@ function messageOf(error: unknown): string {
   if (error instanceof HttpError) return error.message;
   if (error instanceof Error) return error.message;
   return 'mureview could not complete the request.';
-}
-
-export function createMcpKey(userId: number): { id: number; prefix: string; token: string } {
-  const token = newToken();
-  const prefix = token.slice(0, keyPrefix.length + 6);
-  const inserted = db.run('INSERT INTO mcp_keys (user_id, key_hash, key_prefix) VALUES (?, ?, ?)', [
-    userId,
-    hashToken(token),
-    prefix,
-  ]);
-  return { id: Number(inserted.lastInsertRowid), prefix, token };
-}
-
-export function lookupMcpKey(token: string): McpKeyRow | null {
-  return (
-    db
-      .query<McpKeyRow, [string]>('SELECT id, user_id, client_name FROM mcp_keys WHERE key_hash = ?')
-      .get(hashToken(token)) ?? null
-  );
-}
-
-function mcpUser(row: McpKeyRow): UserRow | null {
-  return db.query<UserRow, [number]>('SELECT * FROM users WHERE id = ?').get(row.user_id) ?? null;
-}
-
-export function listMcpKeys(userId: number): McpKey[] {
-  return db
-    .query<McpKey, [number]>(
-      `SELECT id, key_prefix AS prefix, client_name AS clientName, created_at AS createdAt,
-              used_at AS usedAt, last_used_at AS lastUsedAt
-       FROM mcp_keys
-       WHERE user_id = ? AND used_at IS NOT NULL
-       ORDER BY last_used_at DESC, id DESC`,
-    )
-    .all(userId);
-}
-
-export function deleteMcpKey(userId: number, id: number): boolean {
-  return db.run('DELETE FROM mcp_keys WHERE id = ? AND user_id = ?', [id, userId]).changes > 0;
-}
-
-function markInitialized(key: McpKeyRow, clientName: unknown): void {
-  const name =
-    typeof clientName === 'string' && clientName.trim() ? clientName.trim().slice(0, 100) : null;
-  if (!name) return;
-  db.run('UPDATE mcp_keys SET client_name = ? WHERE id = ?', [name, key.id]);
-}
-
-function markUsed(key: McpKeyRow): void {
-  db.run(
-    "UPDATE mcp_keys SET used_at = COALESCE(used_at, datetime('now')), last_used_at = datetime('now') WHERE id = ?",
-    [key.id],
-  );
 }
 
 function unauthorized(): Response {
@@ -331,47 +260,6 @@ function buildServer(user: UserRow): McpServer {
   return server;
 }
 
-export function buildMcpPrompt(token: string): string {
-  const url = mcpUrl();
-  return `Connect to mureview over MCP.
-
-Add this MCP server to the client you are running in:
-- Name: mureview
-- Transport: streamable HTTP (POST)
-- URL: ${url}
-- Header: Authorization: Bearer ${token}
-
-Use the setup method that fits this client. For example:
-- Claude Code: claude mcp add --transport http mureview ${url} --header "Authorization: Bearer ${token}"
-- Codex: add an [mcp_servers.mureview] entry to ~/.codex/config.toml with this URL and an Authorization HTTP header.
-- Cursor or VS Code: add an "mureview" server with type "http", this URL, and the Authorization header.
-
-Keep the URL and header exactly as written. After connecting, call tools/list and tell me which mureview tools are available. Do not copy the key anywhere else.`;
-}
-
-export async function createMcpKeyRoute(ctx: Ctx): Promise<Response> {
-  const user = requireUser(ctx);
-  const key = createMcpKey(user.id);
-  return json(
-    { prompt: buildMcpPrompt(key.token), prefix: key.prefix },
-    201,
-    { 'Cache-Control': 'no-store' },
-  );
-}
-
-export function listMcpKeysRoute(ctx: Ctx): Response {
-  const user = requireUser(ctx);
-  return json({ keys: listMcpKeys(user.id) });
-}
-
-export function deleteMcpKeyRoute(ctx: Ctx): Response {
-  const user = requireUser(ctx);
-  const id = Number(ctx.params.id);
-  if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'Key not found');
-  if (!deleteMcpKey(user.id, id)) throw new HttpError(404, 'Key not found');
-  return new Response(null, { status: 204 });
-}
-
 function bearerToken(header: string | null): string | null {
   const match = /^Bearer\s+(.+)$/i.exec(header ?? '');
   return match?.[1]?.trim() || null;
@@ -405,8 +293,9 @@ export async function mcpEndpoint(ctx: Ctx): Promise<Response> {
 
   let parsedBody: unknown;
   try {
-    parsedBody = await ctx.req.clone().json();
-  } catch {
+    parsedBody = JSON.parse(await readText(ctx.req, 4_000_000));
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
     return new Response(
       JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }),
       { status: 400, headers: { 'Content-Type': 'application/json; charset=utf-8' } },

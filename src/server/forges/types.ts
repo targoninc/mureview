@@ -224,22 +224,107 @@ export const statusMap: Record<string, FileStatus> = {
   changed: 'changed',
 };
 
+export function commitInfo(input: {
+  sha: string;
+  message: string;
+  author?: string | null;
+  date?: string | null;
+  url?: string;
+}): CommitInfo {
+  return {
+    sha: input.sha,
+    message: (input.message ?? '').split('\n')[0],
+    author: input.author || 'unknown',
+    date: input.date || '',
+    ...(input.url ? { url: input.url } : {}),
+  };
+}
+
 export function decodeText(buffer: Buffer): string | null {
   if (buffer.includes(0)) return null;
   return buffer.toString('utf8');
 }
 
 const maxAvatarBytes = 2_000_000;
+const imageTypes = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/x-icon',
+  'image/vnd.microsoft.icon',
+]);
 
-/** Fetches an image, with optional forge credentials, for the avatar proxy. */
+async function readLimited(response: Response, maxBytes: number): Promise<Buffer | null> {
+  const declared = Number(response.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!response.body) return null;
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+
+/**
+ * Fetches an image, with optional forge credentials, for the avatar proxy.
+ * Redirects are followed only on the same origin: a forged avatar URL must not
+ * turn the server into a proxy for another host, and credentials must not
+ * travel to it. SVG is rejected because serving it from this origin would make
+ * an avatar URL a script execution surface when opened directly.
+ */
 export async function fetchImage(url: string, headers?: HeadersInit): Promise<{ contentType: string; body: Buffer } | null> {
-  const response = await fetch(url, { headers });
-  if (!response.ok) return null;
-  const contentType = response.headers.get('content-type') ?? '';
-  if (!contentType.startsWith('image/')) return null;
-  const body = Buffer.from(await response.arrayBuffer());
-  if (!body.length || body.length > maxAvatarBytes) return null;
-  return { contentType, body };
+  let current = url;
+  for (let redirects = 0; redirects < 4; redirects++) {
+    const parsed = new URL(current);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    const response = await fetch(parsed, { headers, redirect: 'manual' });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) return null;
+      const next = new URL(location, current);
+      if (next.origin !== parsed.origin) return null;
+      await response.body?.cancel().catch(() => undefined);
+      current = next.toString();
+      continue;
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const contentType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+    if (!imageTypes.has(contentType)) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const body = await readLimited(response, maxAvatarBytes);
+    if (!body?.length) return null;
+    return { contentType, body };
+  }
+  return null;
+}
+
+/** The avatar fetch GitHub, Forgejo and Tangled share. */
+export function fetchForgeAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
+  return fetchImage(url, { 'User-Agent': 'mureview' });
 }
 
 export function summarizeChecks(runs: CheckInfo[]): ChecksSummary['state'] {

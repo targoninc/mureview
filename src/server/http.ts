@@ -10,7 +10,7 @@ export class HttpError extends Error {
 export function json(data: unknown, status = 200, headers: HeadersInit = {}): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers },
   });
 }
 
@@ -22,7 +22,12 @@ export function parseCookies(header: string | null): Record<string, string> {
     if (idx === -1) continue;
     const name = part.slice(0, idx).trim();
     const value = part.slice(idx + 1).trim();
-    if (name) cookies[name] = decodeURIComponent(value);
+    if (!name) continue;
+    try {
+      cookies[name] = decodeURIComponent(value);
+    } catch {
+      cookies[name] = value;
+    }
   }
   return cookies;
 }
@@ -44,13 +49,54 @@ export function setCookie(name: string, value: string, options: CookieOptions = 
   return parts.join('; ');
 }
 
-export function clearCookie(name: string, path = '/'): string {
-  return `${name}=; Path=${path}; Max-Age=0; HttpOnly; SameSite=Lax`;
+export function clearCookie(name: string, path = '/', secure = false): string {
+  return `${name}=; Path=${path}; Max-Age=0; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
 }
 
-export async function readJson<T>(req: Request): Promise<T> {
+const defaultMaxBodyBytes = 1_000_000;
+
+/**
+ * Reads a request body with a hard byte cap, so a large payload cannot be
+ * buffered into memory before it is rejected.
+ */
+export async function readText(req: Request, maxBytes = defaultMaxBodyBytes): Promise<string> {
+  const declared = Number(req.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new HttpError(413, 'Request body is too large.');
+  }
+  if (!req.body) return '';
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
   try {
-    return (await req.json()) as T;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new HttpError(413, 'Request body is too large.');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(body);
+}
+
+export async function readJson<T>(req: Request, maxBytes = defaultMaxBodyBytes): Promise<T> {
+  const text = await readText(req, maxBytes);
+  try {
+    return JSON.parse(text) as T;
   } catch {
     throw new HttpError(400, 'Request body must be valid JSON');
   }

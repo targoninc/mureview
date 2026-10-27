@@ -8,6 +8,7 @@ import {
   type BranchInfo,
   type ChecksSummary,
   type CommitInfo,
+  commitInfo,
   type CompareFile,
   type CompareResult,
   type ForgeCallOptions,
@@ -20,7 +21,7 @@ import {
   type ReviewComment,
   type TreeBlob,
   type TreeListing,
-  fetchImage,
+  fetchForgeAvatar,
   withMureviewLink,
 } from './types';
 
@@ -460,24 +461,24 @@ function toCompareFile(file: KnotFile): CompareFile {
 }
 
 function toCommitInfo(entry: KnotPatchEntry, url: (sha: string) => string): CommitInfo {
-  return {
+  return commitInfo({
     sha: entry.SHA,
     message: entry.Title || entry.Body?.split('\n')[0] || '',
-    author: entry.Author?.Name || 'unknown',
-    date: entry.AuthorDate ?? '',
+    author: entry.Author?.Name,
+    date: entry.AuthorDate,
     url: url(entry.SHA),
-  };
+  });
 }
 
 function toLogCommit(commit: KnotCommit, url: (sha: string) => string): CommitInfo {
   const sha = commit.this ?? '';
-  return {
+  return commitInfo({
     sha,
-    message: (commit.message ?? '').split('\n')[0],
-    author: commit.author?.Name || 'unknown',
-    date: commit.author?.When ?? '',
+    message: commit.message ?? '',
+    author: commit.author?.Name,
+    date: commit.author?.When,
     url: sha ? url(sha) : undefined,
-  };
+  });
 }
 
 // --- client ------------------------------------------------------------------
@@ -719,7 +720,7 @@ export class TangledClient implements ForgeClient {
   }
 
   async fetchAvatar(url: string): Promise<{ contentType: string; body: Buffer } | null> {
-    return fetchImage(url, { 'User-Agent': 'mureview' });
+    return fetchForgeAvatar(url);
   }
 
   async pullRequestPermission(): Promise<'write' | 'read' | 'unknown'> {

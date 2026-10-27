@@ -6,7 +6,7 @@ import { forgetInstallation, forgetRepoInstallations, installationToken, refresh
 import { GithubClient } from './forges/github';
 import { db, type ForgeConnectionRow } from './db';
 import { clientFor, invalidateForgeCaches } from './forges';
-import { HttpError, json } from './http';
+import { HttpError, json, readText } from './http';
 import { publishToSets } from './live';
 import type { Ctx } from './router';
 
@@ -75,7 +75,7 @@ export async function forgeWebhook(ctx: Ctx): Promise<Response> {
     : null;
   if (!connection) throw new HttpError(404, 'Unknown connection');
 
-  const body = await ctx.req.text();
+  const body = await readText(ctx.req, 5_000_000);
   const secret = connection.webhook_secret ?? '';
   const headers = ctx.req.headers;
   const signature = headers.get('x-hub-signature-256');
@@ -164,7 +164,7 @@ export async function forgeWebhook(ctx: Ctx): Promise<Response> {
  * connections; repository events reach the review sets that track the repo.
  */
 export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
-  const body = await ctx.req.text();
+  const body = await readText(ctx.req, 5_000_000);
   if (!verifyAppSignature(body, ctx.req.headers.get('x-hub-signature-256') ?? '')) {
     throw new HttpError(401, 'Invalid webhook signature');
   }
@@ -268,7 +268,10 @@ export async function ensureWebhooksForReviewSet(reviewSetId: number): Promise<v
     const connection = db.query<ForgeConnectionRow, [number]>('SELECT * FROM forge_connections WHERE id = ?').get(entry.connection_id);
     if (!connection) continue;
     const client = clientFor(connection);
-    if (!client?.registerWebhook) continue;
+    const register = client?.registerWebhook?.bind(client);
+    // Azure DevOps service hooks are created by hand, but still need a secret
+    // for mureview to verify their deliveries.
+    if (!register && connection.kind !== 'ado') continue;
     // The GitHub App delivers webhooks for its installations already.
     if (connection.kind === 'github' && connection.installation_id) continue;
     let secret = connection.webhook_secret;
@@ -276,7 +279,8 @@ export async function ensureWebhooksForReviewSet(reviewSetId: number): Promise<v
       secret = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
       db.run('UPDATE forge_connections SET webhook_secret = ? WHERE id = ?', [secret, connection.id]);
     }
+    if (!register) continue;
     const url = `${config.baseUrl}/api/webhooks/forge/${connection.id}`;
-    await client.registerWebhook(entry.repo, url, secret);
+    await register(entry.repo, url, secret);
   }
 }

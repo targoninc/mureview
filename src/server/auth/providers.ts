@@ -8,7 +8,7 @@ import { ForgeError, invalidateForgeCaches, organizationOf } from '../forges';
 import { AdoClient, normalizeAdoOrganization } from '../forges/ado';
 import { getForgejoUser } from '../forges/forgejo';
 import { getUser as getGithubUser } from '../forges/github';
-import { HttpError, json, readJson } from '../http';
+import { HttpError, json, readJson, readText } from '../http';
 import type { Ctx } from '../router';
 import {
   type ConnectionInput,
@@ -26,6 +26,7 @@ import {
 import { type OAuthMode, type PendingAuth, createState, takeState } from './oauthState';
 import { attachGithubInstallation, freshGithubInstallations, githubApp, githubAppSlug, resolveGithubAppSlug } from '../githubApp';
 import { endSession, publicUser, requireUser, startSession } from './session';
+import { closeUserSockets } from '../live';
 
 export function enabledProviders(): AuthProvider[] {
   const providers: AuthProvider[] = ['email', 'forgejo', 'atproto'];
@@ -431,9 +432,33 @@ function absoluteAvatar(baseUrl: string, avatar: string): string {
 
 async function readForm(req: Request): Promise<Record<string, unknown>> {
   const contentType = req.headers.get('content-type') ?? '';
-  if (contentType.includes('application/json')) return (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const text = await req.text();
-  return Object.fromEntries(new URLSearchParams(text));
+  if (contentType.includes('application/json')) {
+    return readJson<Record<string, unknown>>(req).catch(() => ({}));
+  }
+  return Object.fromEntries(new URLSearchParams(await readText(req)));
+}
+
+const loginFailures = new Map<string, { count: number; resetAt: number }>();
+const loginWindowMs = 15 * 60_000;
+const maxLoginFailures = 10;
+
+/** Limits password guessing for one email; successful sign-ins clear it. */
+function guardLogin(email: string): void {
+  const now = Date.now();
+  const entry = loginFailures.get(email);
+  if (entry && entry.resetAt > now) {
+    if (entry.count >= maxLoginFailures) {
+      throw new HttpError(429, 'Too many failed sign-in attempts. Try again later.');
+    }
+    entry.count += 1;
+    return;
+  }
+  if (loginFailures.size > 5_000) {
+    for (const [key, value] of loginFailures) {
+      if (value.resetAt <= now) loginFailures.delete(key);
+    }
+  }
+  loginFailures.set(email, { count: 1, resetAt: now + loginWindowMs });
 }
 
 // --- Email + password -------------------------------------------------------
@@ -442,7 +467,7 @@ export async function register(ctx: Ctx): Promise<Response> {
   const body = await readJson<{ email?: unknown; password?: unknown; name?: unknown }>(ctx.req);
   const email = normalizeEmail(typeof body.email === 'string' ? body.email : '');
   const password = requirePassword(typeof body.password === 'string' ? body.password : '');
-  const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : email.split('@')[0];
+  const name = (typeof body.name === 'string' && body.name.trim() ? body.name.trim() : email.split('@')[0]).slice(0, 100);
 
   if (findUserByIdentity('email', email)) throw new HttpError(400, 'An account with this email already exists. Sign in instead.');
 
@@ -456,6 +481,8 @@ export async function passwordLogin(ctx: Ctx): Promise<Response> {
   const body = await readJson<{ email?: unknown; password?: unknown }>(ctx.req);
   const email = normalizeEmail(typeof body.email === 'string' ? body.email : '');
   const password = typeof body.password === 'string' ? body.password : '';
+  guardLogin(email);
+  if (!password || password.length > 1024) throw new HttpError(401, 'Wrong email or password.');
 
   const identity = db
     .query<{ id: number; user_id: number; password_hash: string | null }, [string, string]>(
@@ -467,24 +494,30 @@ export async function passwordLogin(ctx: Ctx): Promise<Response> {
   }
   const user = userById(identity.user_id);
   if (!user) throw new HttpError(401, 'Wrong email or password.');
+  loginFailures.delete(email);
   return json({ user: publicUser(user) }, 200, { 'Set-Cookie': startSession(user.id) });
 }
 
 function normalizeEmail(value: string): string {
   const email = value.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Enter a valid email address.');
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpError(400, 'Enter a valid email address.');
+  }
   return email;
 }
 
 function requirePassword(value: string): string {
   if (value.length < 8) throw new HttpError(400, 'Passwords need at least 8 characters.');
+  if (value.length > 1024) throw new HttpError(400, 'Passwords must be at most 1024 characters.');
   return value;
 }
 
 // --- Session, connections, me ----------------------------------------------
 
 export function logout(ctx: Ctx): Response {
-  return json({ ok: true }, 200, { 'Set-Cookie': endSession(ctx.req) });
+  const cookie = endSession(ctx.req);
+  if (ctx.user) closeUserSockets(ctx.user.id);
+  return json({ ok: true }, 200, { 'Set-Cookie': cookie });
 }
 
 function manageUrlFor(connection: ForgeConnectionRow): string | null {
