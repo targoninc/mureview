@@ -857,7 +857,6 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     ) : tab === 'files' ? (
       hasFiles ? (
         <FileTreePanel
-          pr={pr}
           entries={treeEntries}
           stacked={Boolean(pr.combined)}
           reviewedItems={reviewed}
@@ -936,7 +935,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       />
       <div className="pr-banners">
         {voteError ? <Flash variant="danger">{voteError}</Flash> : null}
-        <PrStatusBanner pr={pr} reviewSet={reviewSet} />
+        <PrStatusBanner pr={pr} />
       </div>
       <div className="pr-body">
         {isMobile ? null : (

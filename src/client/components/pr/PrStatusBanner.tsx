@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Flash } from '@primer/react';
-import type { PrStatus, ReviewSet } from '../../../shared/types';
+import type { PrStatus } from '../../../shared/types';
 import { repoLabel } from '../../../shared/types';
 import { basePath } from '../../lib/api';
 import { useAppContext } from '../../lib/appContext';
@@ -49,7 +49,7 @@ function ErrorList({ errors }: { errors: string[] }) {
   );
 }
 
-export function PrStatusBanner({ pr, reviewSet }: { pr: PrStatus; reviewSet: ReviewSet }) {
+export function PrStatusBanner({ pr }: { pr: PrStatus }) {
   if (pr.state === 'loading') return null;
 
   // Notes explain collapsed or out-of-order stack layers; they are not errors.

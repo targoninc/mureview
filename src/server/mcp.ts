@@ -17,6 +17,10 @@ function toolError(message: string) {
   return { content: [{ type: 'text' as const, text: message }], isError: true };
 }
 
+function readResult<T>(run: () => Promise<T>) {
+  return run().then(jsonText).catch((error) => toolError(messageOf(error)));
+}
+
 function messageOf(error: unknown): string {
   if (error instanceof HttpError) return error.message;
   if (error instanceof Error) return error.message;
@@ -77,13 +81,14 @@ function buildServer(user: UserRow): McpServer {
         'List the mureview review sets this account can read, with their target branch and repository count. Read-only.',
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async () => {
-      const { reviewSets, sharedReviewSets } = await readableReviewSets(user);
-      return jsonText({
-        owned: reviewSets.map(summary),
-        shared: sharedReviewSets.map(summary),
-      });
-    },
+    async () =>
+      readResult(async () => {
+        const { reviewSets, sharedReviewSets } = await readableReviewSets(user);
+        return {
+          owned: reviewSets.map(summary),
+          shared: sharedReviewSets.map(summary),
+        };
+      }),
   );
 
   server.registerTool(
@@ -97,10 +102,10 @@ function buildServer(user: UserRow): McpServer {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ reviewSetId }) => {
-      try {
+    async ({ reviewSetId }) =>
+      readResult(async () => {
         const detail = await buildDetail(user, reviewSetId);
-        return jsonText({
+        return {
           reviewSet: summary(detail.reviewSet),
           state: detail.pr.state,
           prId: detail.pr.prId,
@@ -108,11 +113,8 @@ function buildServer(user: UserRow): McpServer {
           errors: detail.pr.errors,
           repos: detail.pr.repos.map(repoSummary),
           combined: detail.pr.combined?.map(repoSummary) ?? null,
-        });
-      } catch (error) {
-        return toolError(messageOf(error));
-      }
-    },
+        };
+      }),
   );
 
   server.registerTool(
@@ -128,8 +130,8 @@ function buildServer(user: UserRow): McpServer {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ reviewSetId, offset, limit }) => {
-      try {
+    async ({ reviewSetId, offset, limit }) =>
+      readResult(async () => {
         const detail = await buildDetail(user, reviewSetId);
         const files = detail.pr.repos.flatMap((repo) =>
           (repo.files ?? []).map((file) => ({
@@ -147,17 +149,14 @@ function buildServer(user: UserRow): McpServer {
         );
         const start = offset ?? 0;
         const size = limit ?? 100;
-        return jsonText({
+        return {
           total: files.length,
           offset: start,
           limit: size,
           files: files.slice(start, start + size),
           truncated: start + size < files.length,
-        });
-      } catch (error) {
-        return toolError(messageOf(error));
-      }
-    },
+        };
+      }),
   );
 
   server.registerTool(
@@ -175,8 +174,8 @@ function buildServer(user: UserRow): McpServer {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ reviewSetId, path, connectionId, repo, position }) => {
-      try {
+    async ({ reviewSetId, path, connectionId, repo, position }) =>
+      readResult(async () => {
         const detail = await buildDetail(user, reviewSetId);
         const matches = detail.pr.repos.flatMap((entry) => {
           if (connectionId !== undefined && entry.connectionId !== connectionId) return [];
@@ -184,22 +183,22 @@ function buildServer(user: UserRow): McpServer {
           if (position !== undefined && entry.position !== position) return [];
           return (entry.files ?? []).filter((file) => file.path === path).map((file) => ({ entry, file }));
         });
-        if (matches.length === 0) return toolError(`No file ${path} in review set ${reviewSetId}.`);
+        if (matches.length === 0) throw new HttpError(404, `No file ${path} in review set ${reviewSetId}.`);
         if (matches.length > 1 && position === undefined) {
-          return jsonText({
+          return {
             matches: matches.map(({ entry }) => ({
               connectionId: entry.connectionId,
               repo: entry.repo,
               position: entry.position,
             })),
             note: 'The path exists in more than one layer. Pass position to choose one.',
-          });
+          };
         }
         const { entry, file } = matches[0];
         const patch = file.patch ?? null;
         const maxChars = 200_000;
         const truncated = patch !== null && patch.length > maxChars;
-        return jsonText({
+        return {
           connectionId: entry.connectionId,
           repo: entry.repo,
           position: entry.position,
@@ -210,11 +209,8 @@ function buildServer(user: UserRow): McpServer {
           deletions: file.deletions,
           patch: truncated ? patch.slice(0, maxChars) : patch,
           truncated,
-        });
-      } catch (error) {
-        return toolError(messageOf(error));
-      }
-    },
+        };
+      }),
   );
 
   server.registerTool(
@@ -230,12 +226,12 @@ function buildServer(user: UserRow): McpServer {
       },
       annotations: { readOnlyHint: true, openWorldHint: true },
     },
-    async ({ reviewSetId, includeResolved, limit }) => {
-      try {
+    async ({ reviewSetId, includeResolved, limit }) =>
+      readResult(async () => {
         const detail = await buildDetail(user, reviewSetId);
         const all = includeResolved ? detail.pr.comments : detail.pr.comments.filter((comment) => !comment.resolved);
         const size = limit ?? 200;
-        return jsonText({
+        return {
           prId: detail.pr.prId,
           total: all.length,
           comments: all.slice(0, size).map((comment) => ({
@@ -250,11 +246,8 @@ function buildServer(user: UserRow): McpServer {
             createdAt: comment.createdAt,
           })),
           truncated: all.length > size,
-        });
-      } catch (error) {
-        return toolError(messageOf(error));
-      }
-    },
+        };
+      }),
   );
 
   return server;

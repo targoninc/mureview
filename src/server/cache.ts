@@ -61,6 +61,10 @@ export async function cached<T>(cache: Cache<T>, key: string, load: () => Promis
   return value;
 }
 
+export async function cachedUnlessFresh<T>(cache: Cache<T>, key: string, fresh: boolean, load: () => Promise<T>): Promise<T> {
+  return fresh ? load() : cached(cache, key, load);
+}
+
 export async function mapLimit<A, B>(items: A[], limit: number, fn: (item: A, index: number) => Promise<B>): Promise<B[]> {
   const results = new Array<B>(items.length);
   let next = 0;

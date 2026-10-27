@@ -168,7 +168,7 @@ export interface ForgeClient {
   /** Records the acting user's review decision on a pull request. */
   reviewPullRequest?(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void>;
   /** Everyone's review decision on a pull request, when the forge reports them. */
-  pullRequestReviews?(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>>;
+  pullRequestReviews?(repo: string, ref: string): Promise<ForgeReviewer[]>;
   /** The pull request's current state and branches on the forge. */
   pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null>;
   /** Registers a webhook that pushes live updates into mureview. */
@@ -224,13 +224,57 @@ export const statusMap: Record<string, FileStatus> = {
   changed: 'changed',
 };
 
-export function commitInfo(input: {
-  sha: string;
-  message: string;
-  author?: string | null;
-  date?: string | null;
-  url?: string;
-}): CommitInfo {
+export interface ForgeReviewer { name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }
+export interface ForgeReview { user?: { login?: string; avatar_url?: string } | null; state?: string }
+
+/** Latest review per author, which is the decision the forge shows. */
+export function summarizeReviewers(
+  reviews: ForgeReview[],
+  login: string,
+  states: { approve: string; reject: string },
+): ForgeReviewer[] {
+  const latest = new Map<string, ForgeReviewer>();
+  for (const { user, state } of reviews) {
+    if (!user?.login) continue;
+    latest.set(user.login, {
+      name: user.login,
+      avatarUrl: user.avatar_url,
+      vote: state === states.approve ? 'approve' : state === states.reject ? 'reject' : 'waiting',
+      you: user.login === login,
+    });
+  }
+  return [...latest.values()];
+}
+
+/** The acting account's last non-comment review, for withdrawing a vote. */
+export function latestOwnReview<T extends ForgeReview>(reviews: T[], login: string, commentState: string): T | undefined {
+  return reviews.filter((review) => review.user?.login === login && review.state !== commentState).at(-1);
+}
+
+export function toPullRequestState(pull: { state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }): { state: 'open' | 'closed' | 'merged'; head: string; base: string } {
+  return {
+    state: pull.merged ? 'merged' : pull.state === 'closed' ? 'closed' : 'open',
+    head: pull.head?.ref ?? '',
+    base: pull.base?.ref ?? '',
+  };
+}
+
+/** The payload a forge review submission expects for a vote. */
+export function reviewPayload(vote: 'approve' | 'waiting' | 'reject', approve: Record<string, unknown> = {}) {
+  return vote === 'approve' ? { event: 'APPROVE', ...approve } : { event: 'REQUEST_CHANGES', body: 'Changes requested in mureview' };
+}
+
+export async function registerWebhookSafely(repo: string, register: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await register();
+    return true;
+  } catch (error) {
+    console.error(`Could not register a webhook for ${repo}:`, error);
+    return false;
+  }
+}
+
+export function commitInfo(input: { sha: string; message: string; author?: string | null; date?: string | null; url?: string }): CommitInfo {
   return {
     sha: input.sha,
     message: (input.message ?? '').split('\n')[0],

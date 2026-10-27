@@ -1,7 +1,6 @@
 import { Agent } from '@atproto/api';
 import { atprotoClient } from '../atproto/client';
 import { tangledAvatar, tangledDid, tangledHandleFor } from '../forges/tangled';
-import { config } from '../config';
 import { decrypt, encrypt } from '../crypto';
 import { HttpError, clearCookie, parseCookies, setCookie } from '../http';
 import type { Ctx } from '../router';

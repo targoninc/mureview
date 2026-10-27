@@ -1,8 +1,7 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
-import { Cache, cached } from '../cache';
+import { Cache, cached, cachedUnlessFresh } from '../cache';
 import {
   installationCanManagePullRequests,
-  installationForRepo,
   installationToken,
   installationUnavailable,
   userInstallations,
@@ -24,7 +23,14 @@ import {
   type ForgeComment,
   type ForgeRepo,
   type ForgeRepoSource,
+  type ForgeReview,
+  type ForgeReviewer,
   ForgeError,
+  latestOwnReview,
+  registerWebhookSafely,
+  summarizeReviewers,
+  reviewPayload,
+  toPullRequestState,
   type PostedComment,
   type PullRequestRef,
   type RefInfo,
@@ -424,12 +430,7 @@ export class GithubClient implements ForgeClient {
         throw error;
       }
     };
-    if (options.fresh) return load();
-    const hit = branchCache.get(key);
-    if (hit !== undefined) return hit;
-    const value = await load();
-    branchCache.set(key, value);
-    return value;
+    return cachedUnlessFresh(branchCache, key, Boolean(options.fresh), load);
   }
 
   compare(repo: string, baseSha: string, headSha: string): Promise<CompareResult> {
@@ -545,23 +546,10 @@ export class GithubClient implements ForgeClient {
     return null;
   }
 
-  async pullRequestReviews(repo: string, ref: string): Promise<Array<{ name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>> {
+  async pullRequestReviews(repo: string, ref: string): Promise<ForgeReviewer[]> {
     const login = await this.currentLogin().catch(() => '');
-    const reviews = await this.paginate<{ user?: { login?: string; avatar_url?: string }; state?: string }>(
-      `/repos/${repo}/pulls/${pullNumber(ref)}/reviews`,
-    );
-    const latest = new Map<string, { name: string; avatarUrl?: string; vote: 'approve' | 'waiting' | 'reject'; you?: boolean }>();
-    for (const review of reviews) {
-      const name = review.user?.login;
-      if (!name) continue;
-      latest.set(name, {
-        name,
-        avatarUrl: review.user?.avatar_url,
-        vote: review.state === 'APPROVED' ? 'approve' : review.state === 'CHANGES_REQUESTED' ? 'reject' : 'waiting',
-        you: name === login,
-      });
-    }
-    return [...latest.values()];
+    const reviews = await this.paginate<ForgeReview>(`/repos/${repo}/pulls/${pullNumber(ref)}/reviews`);
+    return summarizeReviewers(reviews, login, { approve: 'APPROVED', reject: 'CHANGES_REQUESTED' });
   }
 
   async reviewPullRequest(repo: string, ref: string, vote: 'approve' | 'waiting' | 'reject'): Promise<void> {
@@ -569,8 +557,7 @@ export class GithubClient implements ForgeClient {
     if (vote === 'waiting') {
       const login = await this.currentLogin();
       const reviews = await this.paginate<{ id?: number; user?: { login?: string }; state?: string }>(`/repos/${repo}/pulls/${number}/reviews`);
-      const own = reviews.filter((review) => review.user?.login === login && review.state !== 'COMMENTED');
-      const last = own[own.length - 1];
+      const last = latestOwnReview(reviews, login, 'COMMENTED');
       if (!last?.id) return;
       try {
         await this.request(`/repos/${repo}/pulls/${number}/reviews/${last.id}/dismissals`, {
@@ -587,17 +574,13 @@ export class GithubClient implements ForgeClient {
     await this.request(`/repos/${repo}/pulls/${number}/reviews`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(
-        vote === 'approve'
-          ? { event: 'APPROVE' }
-          : { event: 'REQUEST_CHANGES', body: 'Changes requested in mureview' },
-      ),
+      body: JSON.stringify(reviewPayload(vote)),
     });
   }
 
-  async registerWebhook(repo: string, url: string, secret: string): Promise<boolean> {
-    try {
-      await this.request(`/repos/${repo}/hooks`, {
+  registerWebhook(repo: string, url: string, secret: string): Promise<boolean> {
+    return registerWebhookSafely(repo, () =>
+      this.request(`/repos/${repo}/hooks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -606,12 +589,8 @@ export class GithubClient implements ForgeClient {
           events: ['push', 'pull_request', 'pull_request_review', 'issue_comment'],
           config: { url, content_type: 'json', secret, insecure_ssl: '0' },
         }),
-      });
-      return true;
-    } catch (error) {
-      console.error(`Could not register a webhook for ${repo}:`, error);
-      return false;
-    }
+      }),
+    );
   }
 
   async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
@@ -619,11 +598,7 @@ export class GithubClient implements ForgeClient {
       const pull = await this.request<{ state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }>(
         `/repos/${repo}/pulls/${pullNumber(ref)}`,
       );
-      return {
-        state: pull.merged ? 'merged' : pull.state === 'closed' ? 'closed' : 'open',
-        head: pull.head?.ref ?? '',
-        base: pull.base?.ref ?? '',
-      };
+      return toPullRequestState(pull);
     } catch (error) {
       if (error instanceof ForgeError && error.status === 404) return null;
       throw error;

@@ -59,12 +59,6 @@ function toReviewSet(row: ReviewSetRow): ReviewSet {
   };
 }
 
-export function loadOwnedReviewSet(user: UserRow, id: number): ReviewSet {
-  const row = reviewSetRow(id);
-  if (!row || row.owner_id !== user.id) throw new HttpError(404, 'Review set not found');
-  return toReviewSet(row);
-}
-
 export interface ReadableReviewSet {
   reviewSet: ReviewSet;
   ownerId: number;
@@ -185,10 +179,14 @@ function isFresh(ctx: Ctx): boolean {
  * the database so the diff renders immediately; the forge work happens in
  * parallel afterwards via the comments and commits endpoints.
  */
-export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
+async function loadStatusContext(user: UserRow, id: number) {
   const access = await loadReadableReviewSet(user, id);
   const connections = connectionsFor(access.ownerId);
-  const clients = clientsForActor(user.id, connections);
+  return { access, connections, clients: clientsForActor(user.id, connections) };
+}
+
+export async function buildDetail(user: UserRow, id: number, fresh = false): Promise<ReviewSetDetail> {
+  const { access, connections, clients } = await loadStatusContext(user, id);
   const [pr, canManage] = await Promise.all([
     buildPrStatus(connections, access.reviewSet, fresh, {
       commits: false,
@@ -217,10 +215,8 @@ export function getReviewSetProgress(ctx: Ctx): Response {
  */
 export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const access = await loadReadableReviewSet(user, requireId(ctx));
+  const { access, connections, clients } = await loadStatusContext(user, requireId(ctx));
   const fresh = isFresh(ctx);
-  const connections = connectionsFor(access.ownerId);
-  const clients = clientsForActor(user.id, connections);
   if (fresh && !(await canManageReviewSet(user.id, access.reviewSet, connections))) {
     throw new HttpError(403, 'You need merge permission on every repository in this review set to refresh it.');
   }
@@ -270,14 +266,13 @@ export async function streamReviewSetDetail(ctx: Ctx): Promise<Response> {
 
 export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const access = await loadReadableReviewSet(user, requireId(ctx));
-  const connections = connectionsFor(access.ownerId);
+  const { access, connections, clients } = await loadStatusContext(user, requireId(ctx));
   const fresh = ctx.url.searchParams.get('fresh') === '1';
   const status = await buildPrStatus(connections, access.reviewSet, fresh, {
     discussions: false,
     commits: true,
     ensurePulls: false,
-    clients: clientsForActor(user.id, connections),
+    clients,
   });
   return json({
     repos: status.repos.map((repo) => ({
@@ -292,9 +287,7 @@ export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
 /** The checks of every matched branch, for the pull request list. */
 export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const access = await loadReadableReviewSet(user, requireId(ctx));
-  const connections = connectionsFor(access.ownerId);
-  const clients = clientsForActor(user.id, connections);
+  const { access, connections, clients } = await loadStatusContext(user, requireId(ctx));
   const status = await buildPrStatus(connections, access.reviewSet, false, {
     discussions: false,
     commits: false,
@@ -332,12 +325,10 @@ export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
  */
 export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   const user = ctx.user!;
-  const access = await loadReadableReviewSet(user, requireId(ctx));
-  const connections = connectionsFor(access.ownerId);
+  const { access, connections, clients } = await loadStatusContext(user, requireId(ctx));
   // Creating forge pull requests is a write: only viewers who may merge every
   // branch trigger it, and they do it with their own credentials.
   const canManage = await canManageReviewSet(user.id, access.reviewSet, connections);
-  const clients = clientsForActor(user.id, connections);
   const status = await buildPrStatus(connections, access.reviewSet, false, {
     discussions: false,
     commits: false,

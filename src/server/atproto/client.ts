@@ -1,8 +1,8 @@
-import { resolveTxt } from 'node:dns/promises';
 import { AtprotoHandleResolver } from '@atproto-labs/handle-resolver';
 import { NodeOAuthClient, type NodeSavedSession, type NodeSavedSessionStore } from '@atproto/oauth-client-node';
 import { Agent } from '@atproto/api';
 import { config } from '../config';
+import { resolveHandleTxt } from './handle';
 
 class MemoryStore<T> {
   private values = new Map<string, T>();
@@ -73,17 +73,6 @@ export const atprotoMetadata = {
   token_endpoint_auth_method: 'none',
   application_type: 'web',
 };
-
-async function resolveHandleTxt(hostname: string): Promise<string[] | null> {
-  try {
-    const records = await resolveTxt(hostname);
-    return records.map((chunks) => chunks.join(''));
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (code === 'EBADNAME') throw error;
-    return null;
-  }
-}
 
 const locks = new Map<string, Promise<unknown>>();
 

@@ -1,5 +1,5 @@
 import type { FileStatus, ForgeKind } from '../../shared/types';
-import { Cache, cached } from '../cache';
+import { Cache, cached, cachedUnlessFresh } from '../cache';
 import { pullNumber } from './github';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from '../patch';
 import {
@@ -333,9 +333,7 @@ export class AdoClient implements ForgeClient {
   }
 
   async listBranches(repo: string, options: ForgeCallOptions = {}): Promise<BranchInfo[]> {
-    const key = `${this.baseUrl}#${repo}`;
-    if (options.fresh) return this.loadBranches(repo);
-    return cached(branchListCache, key, () => this.loadBranches(repo));
+    return cachedUnlessFresh(branchListCache, `${this.baseUrl}#${repo}`, Boolean(options.fresh), () => this.loadBranches(repo));
   }
 
   async getBranch(repo: string, branch: string, options: ForgeCallOptions = {}): Promise<BranchInfo | null> {
@@ -347,12 +345,7 @@ export class AdoClient implements ForgeClient {
       const ref = data.value[0];
       return ref ? { name: branch, sha: ref.objectId } : null;
     };
-    if (options.fresh) return load();
-    const hit = branchCache.get(key);
-    if (hit !== undefined) return hit;
-    const value = await load();
-    branchCache.set(key, value);
-    return value;
+    return cachedUnlessFresh(branchCache, key, Boolean(options.fresh), load);
   }
 
   private async contentAt(repo: string, sha: string, path: string): Promise<string | null> {
@@ -734,24 +727,37 @@ export class AdoClient implements ForgeClient {
   }
 
   /** The commits of a pull request, exactly as the Azure DevOps UI lists them. */
+  private async commitPages(
+    limit: number,
+    skipParam: '$skip' | 'searchCriteria.$skip',
+    buildUrl: (paging: string) => string,
+  ): Promise<AdoCommit[]> {
+    const commits: AdoCommit[] = [];
+    const seen = new Set<string>();
+    let continuation: string | null = null;
+    for (let page = 0; page < 6 && commits.length < limit; page++) {
+      const paging = continuation
+        ? `&continuationToken=${encodeURIComponent(continuation)}`
+        : `&${skipParam}=${page * 100}`;
+      const response = await this.fetchResponse(buildUrl(paging));
+      const data = (await response.json()) as AdoCommit[] | { value?: AdoCommit[] };
+      const batch = Array.isArray(data) ? data : (data.value ?? []);
+      for (const commit of batch) {
+        if (seen.has(commit.commitId)) continue;
+        seen.add(commit.commitId);
+        commits.push(commit);
+      }
+      continuation = response.headers.get('x-ms-continuationtoken');
+      if (!continuation && batch.length < 100) break;
+    }
+    return commits;
+  }
+
   private async pullRequestCommits(repo: string, number: number, limit: number): Promise<CommitInfo[] | null> {
     try {
-      const commits: AdoCommit[] = [];
-      const seen = new Set<string>();
-      let continuation: string | null = null;
-      for (let page = 0; page < 6 && commits.length < limit; page++) {
-        const paging = continuation ? `&continuationToken=${encodeURIComponent(continuation)}` : `&$skip=${page * 100}`;
-        const response = await this.fetchResponse(`${this.repoUrl(repo)}/pullrequests/${number}/commits?$top=100${paging}&api-version=7.1`);
-        const data = (await response.json()) as AdoCommit[] | { value?: AdoCommit[] };
-        const batch = Array.isArray(data) ? data : (data.value ?? []);
-        for (const commit of batch) {
-          if (seen.has(commit.commitId)) continue;
-          seen.add(commit.commitId);
-          commits.push(commit);
-        }
-        continuation = response.headers.get('x-ms-continuationtoken');
-        if (!continuation && batch.length < 100) break;
-      }
+      const commits = await this.commitPages(limit, '$skip', (paging) =>
+        `${this.repoUrl(repo)}/pullrequests/${number}/commits?$top=100${paging}&api-version=7.1`,
+      );
       return commits
         .slice(0, limit)
         .map((commit) => toCommitInfo(commit, this.repoWebUrl(repo)))
@@ -776,25 +782,10 @@ export class AdoClient implements ForgeClient {
     // The commits endpoint pages with $skip and, on busy repositories, a
     // continuation token; walking them avoids silently dropping commits of
     // long-running branches.
-    const commits: AdoCommit[] = [];
-    const seen = new Set<string>();
-    let continuation: string | null = null;
-    for (let page = 0; page < 6 && commits.length < limit; page++) {
-      const paging = continuation ? `&continuationToken=${encodeURIComponent(continuation)}` : `&searchCriteria.$skip=${page * 100}`;
-      const url =
-        `${this.repoUrl(repo)}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(options.headSha)}` +
-        `&searchCriteria.itemVersion.versionType=commit${compare}&searchCriteria.$top=100${paging}&api-version=7.1`;
-      const response = await this.fetchResponse(url);
-      const data = (await response.json()) as { value?: AdoCommit[] };
-      const batch = data.value ?? [];
-      for (const commit of batch) {
-        if (seen.has(commit.commitId)) continue;
-        seen.add(commit.commitId);
-        commits.push(commit);
-      }
-      continuation = response.headers.get('x-ms-continuationtoken');
-      if (!continuation && batch.length < 100) break;
-    }
+    const commits = await this.commitPages(limit, 'searchCriteria.$skip', (paging) =>
+      `${this.repoUrl(repo)}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(options.headSha)}` +
+      `&searchCriteria.itemVersion.versionType=commit${compare}&searchCriteria.$top=100${paging}&api-version=7.1`,
+    );
     // Both the commits and the pull request endpoints list newest first.
     return commits.slice(0, limit).map((commit) => toCommitInfo(commit, this.repoWebUrl(repo)));
   }

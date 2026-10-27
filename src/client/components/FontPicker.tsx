@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import { processFile } from '@pierre/diffs';
 import { CodeView, type CodeViewItem, type CodeViewReactOptions } from '@pierre/diffs/react';
-import { Button, Dialog, TextInput } from '@primer/react';
+import { Dialog, TextInput } from '@primer/react';
 import { CheckIcon, SearchIcon } from '@primer/octicons-react';
 import { MONO_FONTS, SYSTEM_MONO_FONT, monoFontFamily, monoFontOption, type MonoFontOption } from '../../shared/fonts';
 

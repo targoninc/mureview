@@ -184,7 +184,7 @@ async function githubCallbackInner(ctx: Ctx): Promise<Response> {
     throw new HttpError(400, (error as Error).message);
   }
 
-  const { user: ghUser, connection, profile } = await exchangeGithubCode(code);
+  const { connection, profile } = await exchangeGithubCode(code);
   return completeAuth(profile, connection, pending);
 }
 

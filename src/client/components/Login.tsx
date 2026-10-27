@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button, Flash, FormControl, TextInput } from '@primer/react';
 import { FileDiffIcon, MarkGithubIcon, ServerIcon, GlobeIcon, MailIcon } from '@primer/octicons-react';
 import { ServiceGlyph } from './ServiceIcon';
-import type { AuthProvider, ForgeConnectionInfo } from '../../shared/types';
+import type { AuthProvider } from '../../shared/types';
 import { basePath, post } from '../lib/api';
 
 interface LoginProps {

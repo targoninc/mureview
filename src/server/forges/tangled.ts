@@ -1,8 +1,8 @@
-import { resolveTxt } from 'node:dns/promises';
 import { AtprotoHandleResolver } from '@atproto-labs/handle-resolver';
 import type { FileStatus, ForgeKind } from '../../shared/types';
-import { Cache, cached } from '../cache';
+import { Cache, cached, cachedUnlessFresh } from '../cache';
 import { constants } from '../config';
+import { resolveHandleTxt } from '../atproto/handle';
 import { patchHeader } from '../patch';
 import {
   type BranchInfo,
@@ -30,17 +30,6 @@ const maxDirectories = 120;
 const pageSize = 100;
 
 // --- atproto identity --------------------------------------------------------
-
-async function resolveHandleTxt(hostname: string): Promise<string[] | null> {
-  try {
-    const records = await resolveTxt(hostname);
-    return records.map((chunks) => chunks.join(''));
-  } catch (error) {
-    const code = (error as { code?: string }).code;
-    if (code === 'EBADNAME') throw error;
-    return null;
-  }
-}
 
 // The default resolver wraps fetch in the Node SSRF dispatcher, which needs
 // process.versions.undici and therefore fails on Bun.
@@ -561,9 +550,7 @@ export class TangledClient implements ForgeClient {
 
   async listBranches(repo: string, options: ForgeCallOptions = {}): Promise<BranchInfo[]> {
     const target = await resolveRepo(repo, options.fresh);
-    const key = `${target.knot}#${target.repoArg}`;
-    if (options.fresh) return this.loadBranches(target);
-    return cached(branchListCache, key, () => this.loadBranches(target));
+    return cachedUnlessFresh(branchListCache, `${target.knot}#${target.repoArg}`, Boolean(options.fresh), () => this.loadBranches(target));
   }
 
   async getBranch(repo: string, branch: string, options: ForgeCallOptions = {}): Promise<BranchInfo | null> {
@@ -578,12 +565,7 @@ export class TangledClient implements ForgeClient {
         throw error;
       }
     };
-    if (options.fresh) return load();
-    const hit = branchCache.get(key);
-    if (hit !== undefined) return hit;
-    const value = await load();
-    branchCache.set(key, value);
-    return value;
+    return cachedUnlessFresh(branchCache, key, Boolean(options.fresh), load);
   }
 
   private compareOut(repo: string, baseSha: string, headSha: string) {

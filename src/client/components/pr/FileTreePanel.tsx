@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Checkbox } from '@primer/react';
 import { ChevronDownIcon, ChevronRightIcon, CommentDiscussionIcon, FileDirectoryIcon, StackIcon } from '@primer/octicons-react';
-import type { FileDiff, FileStatus, ForgeKind, PrStatus, RepoStatus } from '../../../shared/types';
+import type { FileDiff, FileStatus, ForgeKind, RepoStatus } from '../../../shared/types';
 import { buildFileTree, type TreeEntry, type TreeNode } from '../../lib/fileTree';
 import { fileItemId, fileSegments } from '../../lib/format';
 import { ServiceGlyph } from '../ServiceIcon';
@@ -41,7 +41,6 @@ const statusClass: Record<FileStatus, string> = {
 };
 
 interface FileTreePanelProps {
-  pr: PrStatus;
   /** The repository entries to show: layers, or the cumulative diff. */
   entries: RepoStatus[];
   /** Whether the entries are layers of stacks. */
@@ -60,7 +59,6 @@ interface FileTreePanelProps {
 }
 
 export function FileTreePanel({
-  pr,
   entries,
   stacked,
   reviewedItems,

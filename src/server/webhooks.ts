@@ -5,10 +5,61 @@ import { resetMarksForPush } from './reviewed';
 import { forgetInstallation, forgetRepoInstallations, installationToken, refreshGithubInstallations, verifyAppSignature } from './githubApp';
 import { GithubClient } from './forges/github';
 import { db, type ForgeConnectionRow } from './db';
-import { clientFor, invalidateForgeCaches } from './forges';
+import { type ForgeClient, clientFor, invalidateForgeCaches } from './forges';
 import { HttpError, json, readText } from './http';
 import { publishToSets } from './live';
 import type { Ctx } from './router';
+
+async function handleRepositoryEvent(input: {
+  kind: string;
+  repo: string;
+  reviewSetIds: number[];
+  pushes: Array<{ before: string; after: string }>;
+  markClient: ForgeClient | null;
+  commentClient: ForgeClient | null;
+  commentConnectionId?: number;
+  reason: string;
+}): Promise<void> {
+  invalidateForgeCaches();
+  if (input.pushes.length > 0 && input.markClient) {
+    try {
+      for (const push of input.pushes) {
+        await resetMarksForPush(input.markClient, input.repo, push.before, push.after, {
+          kind: input.markClient.kind,
+          connectionId: input.commentConnectionId,
+        });
+      }
+    } catch (error) {
+      console.error(`Could not reset the viewed marks after a push (${input.reason}):`, error);
+    }
+  }
+  if (commentEvents.has(input.kind) && input.commentClient) {
+    for (const reviewSetId of input.reviewSetIds) {
+      const pr = db
+        .query<{ id: number }, [number]>('SELECT id FROM pull_requests WHERE review_set_id = ? AND closed_at IS NULL ORDER BY id DESC LIMIT 1')
+        .get(reviewSetId);
+      if (!pr) continue;
+      const targets = db
+        .query<SyncTarget, [number]>(
+          `SELECT rp.connection_id AS connectionId, rp.repo, rp.position, rp.forge_pr_ref AS pullRequestRef
+           FROM pull_request_repos rp JOIN pull_requests p ON p.id = rp.pr_id
+           WHERE p.review_set_id = ? AND p.closed_at IS NULL`,
+        )
+        .all(reviewSetId)
+        .filter((target) => input.commentConnectionId === undefined || target.connectionId === input.commentConnectionId);
+      try {
+        const clients = new Map(targets.map((target) => [target.connectionId, input.commentClient!]));
+        await syncForgeComments(pr.id, clients, targets, true);
+      } catch (error) {
+        console.error(`Could not import comments after a webhook (${input.reason}):`, error);
+      }
+    }
+  }
+  await publishToSets(input.reviewSetIds, {
+    type: commentEvents.has(input.kind) ? 'comments' : 'prs',
+    reason: input.reason,
+  });
+}
 
 /** The events mureview reacts to; everything else is acknowledged and ignored. */
 const commentEvents = new Set(['issue_comment', 'ms.vss-code.git.pull-request-comment-event', 'git.pull-request-comment-event']);
@@ -119,42 +170,17 @@ export async function forgeWebhook(ctx: Ctx): Promise<Response> {
     .all(connectionId, repo, repo);
   if (rows.length === 0) return json({ ok: true, ignored: 'no review set' });
 
-  invalidateForgeCaches();
-  const reviewSetIds = rows.map((row) => row.review_set_id);
-  const pushes = pushedRefs(kind, payload);
-  if (pushes.length > 0) {
-    const client = clientFor(connection);
-    if (client) {
-      for (const push of pushes) {
-        await resetMarksForPush(client, repo, push.before, push.after, { kind: connection.kind, connectionId: connection.id });
-      }
-    }
-  }
-  if (commentEvents.has(kind)) {
-    // Import what the forge just received before telling the clients to refetch.
-    const client = clientFor(connection);
-    if (client) {
-      for (const reviewSetId of reviewSetIds) {
-        const pr = db
-          .query<{ id: number }, [number]>('SELECT id FROM pull_requests WHERE review_set_id = ? AND closed_at IS NULL ORDER BY id DESC LIMIT 1')
-          .get(reviewSetId);
-        if (!pr) continue;
-        const targets = db
-          .query<SyncTarget, [number]>(
-            `SELECT rp.connection_id AS connectionId, rp.repo, rp.position, rp.forge_pr_ref AS pullRequestRef
-             FROM pull_request_repos rp JOIN pull_requests p ON p.id = rp.pr_id
-             WHERE p.review_set_id = ? AND p.closed_at IS NULL`,
-          )
-          .all(reviewSetId);
-        try {
-          await syncForgeComments(pr.id, new Map([[connection.id, client]]), targets, true);
-        } catch (error) {
-          console.error('Could not import the forge comments after a webhook:', error);
-        }
-      }
-    }
-  }
-  await publishToSets(reviewSetIds, commentEvents.has(kind) ? { type: 'comments', reason: 'forge' } : { type: 'prs', reason: 'forge' });
+  const client = clientFor(connection);
+  await handleRepositoryEvent({
+    kind,
+    repo,
+    reviewSetIds: rows.map((row) => row.review_set_id),
+    pushes: pushedRefs(kind, payload),
+    markClient: client,
+    commentClient: client,
+    commentConnectionId: connection.id,
+    reason: 'forge',
+  });
   return json({ ok: true });
 }
 
@@ -196,43 +222,24 @@ export async function githubAppWebhook(ctx: Ctx): Promise<Response> {
     .all(repo, repo);
   if (rows.length === 0) return json({ ok: true, ignored: 'no review set' });
 
-  invalidateForgeCaches();
-  const reviewSetIds = rows.map((row) => row.review_set_id);
-  const pushes = pushedRefs(event, payload);
-  if (pushes.length > 0) {
-    const installationId = String(payload.installation?.id ?? '');
+  const installationId = String(payload.installation?.id ?? '');
+  let client: GithubClient | null = null;
+  if (pushedRefs(event, payload).length > 0 || commentEvents.has(event)) {
     try {
-      const client = new GithubClient(await installationToken(installationId), { refresh: () => installationToken(installationId) });
-      for (const push of pushes) {
-        await resetMarksForPush(client, repo, push.before, push.after, { kind: 'github' });
-      }
+      client = new GithubClient(await installationToken(installationId), { refresh: () => installationToken(installationId) });
     } catch (error) {
-      console.error('Could not reset the viewed marks after a push:', error);
+      console.error('Could not use the GitHub installation for a webhook:', error);
     }
   }
-  if (commentEvents.has(event)) {
-    const installationId = String(payload.installation?.id ?? '');
-    try {
-      const client = new GithubClient(await installationToken(installationId), { refresh: () => installationToken(installationId) });
-      for (const reviewSetId of reviewSetIds) {
-        const pr = db
-          .query<{ id: number }, [number]>('SELECT id FROM pull_requests WHERE review_set_id = ? AND closed_at IS NULL ORDER BY id DESC LIMIT 1')
-          .get(reviewSetId);
-        if (!pr) continue;
-        const targets = db
-          .query<SyncTarget, [number]>(
-            `SELECT rp.connection_id AS connectionId, rp.repo, rp.position, rp.forge_pr_ref AS pullRequestRef
-             FROM pull_request_repos rp JOIN pull_requests p ON p.id = rp.pr_id
-             WHERE p.review_set_id = ? AND p.closed_at IS NULL`,
-          )
-          .all(reviewSetId);
-        await syncForgeComments(pr.id, new Map([[0, client]]), targets, true);
-      }
-    } catch (error) {
-      console.error('Could not import GitHub comments after an app webhook:', error);
-    }
-  }
-  await publishToSets(reviewSetIds, commentEvents.has(event) ? { type: 'comments', reason: 'github-app' } : { type: 'prs', reason: 'github-app' });
+  await handleRepositoryEvent({
+    kind: event,
+    repo,
+    reviewSetIds: rows.map((row) => row.review_set_id),
+    pushes: pushedRefs(event, payload),
+    markClient: client,
+    commentClient: client,
+    reason: 'github-app',
+  });
   return json({ ok: true });
 }
 

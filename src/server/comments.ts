@@ -103,16 +103,6 @@ export function listComments(prId: number): Comment[] {
   return rows.map(toComment);
 }
 
-export function loadOwnedPr(userId: number, id: number): PrRow {
-  const pr = db
-    .query<PrRow, [number]>(
-      `SELECT p.id, p.review_set_id, p.closed_at, r.owner_id FROM pull_requests p JOIN review_sets r ON r.id = p.review_set_id WHERE p.id = ?`,
-    )
-    .get(id);
-  if (!pr || pr.owner_id !== userId) throw new HttpError(404, 'Pull request not found');
-  return pr;
-}
-
 /** Loads a pull request the user may read: their own or a shared review set's. */
 export async function loadReadablePr(userId: number, id: number): Promise<PrRow> {
   const pr = db.query<PrRow, [number]>('SELECT id, review_set_id, closed_at FROM pull_requests WHERE id = ?').get(id);
