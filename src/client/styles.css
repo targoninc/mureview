@@ -1050,25 +1050,6 @@ body.sidebar-resizing {
   background-color: transparent;
 }
 
-.split-resizer::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 3px;
-  width: 1px;
-  background-color: var(--borderColor-default);
-  opacity: 0.8;
-  transition: opacity 120ms ease, background-color 120ms ease;
-}
-
-.split-resizer:hover::after,
-.split-resizer:focus-visible::after,
-body.split-resizing .split-resizer::after {
-  background-color: var(--fgColor-accent);
-  opacity: 1;
-}
-
 .split-resizer:focus-visible {
   outline: none;
 }

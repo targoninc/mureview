@@ -157,6 +157,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     return Number.isFinite(stored) && stored >= 0.2 && stored <= 0.8 ? stored : 0.5;
   });
   const [splitBounds, setSplitBounds] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [splitActive, setSplitActive] = useState(false);
   const [fileMode, setFileMode] = useState<'all' | 'single'>(
     () => (window.localStorage.getItem('mureview:file-mode') === 'single' ? 'single' : 'all'),
   );
@@ -187,6 +188,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const codeViewRef = useRef<CodeViewHandle<AnnotationMeta, undefined>>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const diffsRef = useRef<HTMLDivElement>(null);
+  const splitDragging = useRef(false);
   const visibleFrame = useRef<number | null>(null);
   const visibleTrailing = useRef<number | null>(null);
   const restoredFromUrl = useRef(false);
@@ -479,7 +481,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       themeType: 'dark',
       diffStyle,
       unsafeCSS:
-        '[data-diff-type="split"][data-overflow="scroll"] { grid-template-columns: var(--mureview-split-left, 1fr) var(--mureview-split-right, 1fr); }',
+        '[data-diff-type="split"][data-overflow="scroll"] { grid-template-columns: var(--mureview-split-left, 1fr) var(--mureview-split-right, 1fr); } [data-diff-type="split"][data-overflow="scroll"] [data-deletions] { border-right-color: var(--mureview-split-line, var(--borderColor-default)); }',
       enableGutterUtility: true,
       stickyHeaders: true,
       hunkSeparators: 'line-info',
@@ -638,6 +640,11 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   );
 
   const hasFiles = parsed.length > 0;
+  // Added, deleted and pure-rename files render on one side; a split only
+  // exists when a file has content on both sides.
+  const hasSideBySide = parsed.some(
+    (file) => file.fileDiff.type === 'change' || file.fileDiff.type === 'rename-changed',
+  );
 
   useEffect(() => {
     window.localStorage.setItem('mureview:split-ratio', String(splitRatio));
@@ -646,7 +653,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   useEffect(() => {
     const scroll = scrollRef.current;
     const host = diffsRef.current;
-    if (diffStyle !== 'split' || !hasFiles || !scroll || !host) {
+    if (diffStyle !== 'split' || !hasSideBySide || !scroll || !host) {
       setSplitBounds(null);
       return;
     }
@@ -668,7 +675,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       observer.disconnect();
       window.removeEventListener('resize', update);
     };
-  }, [diffStyle, hasFiles, fileMode, activeEntry?.id, view]);
+  }, [diffStyle, hasSideBySide, fileMode, activeEntry?.id, view]);
 
   const nudgeSplit = useCallback((delta: number) => {
     setSplitRatio((current) => Math.min(Math.max(current + delta, 0.2), 0.8));
@@ -678,6 +685,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!splitBounds || splitBounds.width <= 0) return;
       event.preventDefault();
+      splitDragging.current = true;
+      setSplitActive(true);
       const startX = event.clientX;
       const startRatio = splitRatio;
       const move = (moveEvent: PointerEvent) => {
@@ -688,6 +697,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', finish);
         document.body.classList.remove('split-resizing');
+        splitDragging.current = false;
+        setSplitActive(false);
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', finish);
@@ -778,6 +789,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     '--diffs-line-height': `${diffLine}px`,
     '--mureview-split-left': `${splitRatio * 100}%`,
     '--mureview-split-right': `${(1 - splitRatio) * 100}%`,
+    '--mureview-split-line': splitActive ? 'var(--fgColor-accent)' : 'var(--borderColor-default)',
   } as CSSProperties;
 
   const voteKey = repoItemKey;
@@ -1023,7 +1035,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
             ) : (
               <div className="empty-state">There are no reviewable file changes in this pull request.</div>
             )}
-            {diffStyle === 'split' && !isMobile && splitBounds ? (
+            {diffStyle === 'split' && hasSideBySide && !isMobile && splitBounds ? (
               <div
                 className="split-resizer"
                 role="separator"
@@ -1039,6 +1051,14 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
                   height: splitBounds.height,
                 }}
                 onPointerDown={beginSplitResize}
+                onPointerEnter={() => setSplitActive(true)}
+                onPointerLeave={() => {
+                  if (!splitDragging.current) setSplitActive(false);
+                }}
+                onFocus={() => setSplitActive(true)}
+                onBlur={() => {
+                  if (!splitDragging.current) setSplitActive(false);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'ArrowLeft') {
                     event.preventDefault();
