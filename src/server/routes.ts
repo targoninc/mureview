@@ -41,12 +41,25 @@ import { requireUser } from './auth/session';
 import type { Ctx } from './router';
 import { HttpError, json } from './http';
 import { listWarnings } from './warnings';
+import {
+  createMcpKeyRoute,
+  deleteMcpKeyRoute,
+  listMcpKeysRoute,
+  mcpEndpoint,
+  mcpMethodNotAllowed,
+} from './mcp';
 
 export const api = new Router();
 
 api.get('/api/me', me, true);
 api.put('/api/me/preferences', updatePreferences);
 api.get('/api/warnings', listWarnings);
+api.post('/api/mcp', mcpEndpoint, true);
+api.get('/api/mcp', mcpMethodNotAllowed, true);
+api.delete('/api/mcp', mcpMethodNotAllowed, true);
+api.post('/api/mcp/keys', createMcpKeyRoute);
+api.get('/api/mcp/keys', listMcpKeysRoute);
+api.delete('/api/mcp/keys/:id', deleteMcpKeyRoute);
 api.post('/api/auth/register', register, true);
 api.post('/api/auth/login', passwordLogin, true);
 api.post('/api/auth/logout', logout, true);

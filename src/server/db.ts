@@ -173,6 +173,17 @@ const SCHEMA_V2 = `
     value TEXT NOT NULL
   );
 
+  CREATE TABLE mcp_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL,
+    client_name TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    used_at TEXT,
+    last_used_at TEXT
+  );
+
   CREATE TABLE atproto_sessions (
     did TEXT PRIMARY KEY,
     session TEXT NOT NULL,
@@ -185,6 +196,7 @@ const SCHEMA_V2 = `
   CREATE INDEX IF NOT EXISTS idx_review_sets_owner ON review_sets(owner_id);
   CREATE INDEX IF NOT EXISTS idx_pull_requests_set ON pull_requests(review_set_id);
   CREATE INDEX IF NOT EXISTS idx_comments_pr ON comments(pr_id);
+  CREATE INDEX IF NOT EXISTS idx_mcp_keys_user ON mcp_keys(user_id, used_at);
 `;
 
 function hasTable(name: string): boolean {
@@ -598,6 +610,23 @@ if (userVersion() < 12) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
+if (userVersion() < 16) {
+  // Bearer keys for the MCP endpoint. Only hashes are stored; a key is hard
+  // deleted when its owner revokes it.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mcp_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key_hash TEXT NOT NULL UNIQUE,
+      key_prefix TEXT NOT NULL,
+      client_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      used_at TEXT,
+      last_used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_mcp_keys_user ON mcp_keys(user_id, used_at);
+  `);
+}
 const userColumns = hasTable('users') ? db.query<{ name: string }, []>('PRAGMA table_info(users)').all() : [];
 if (userColumns.length && !userColumns.some((column) => column.name === 'mono_font')) {
   db.exec('ALTER TABLE users ADD COLUMN mono_font TEXT');
@@ -618,7 +647,7 @@ if (connectionColumns.length && !connectionColumns.some((column) => column.name 
 if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'installation_id')) {
   db.exec('ALTER TABLE forge_connections ADD COLUMN installation_id TEXT');
 }
-db.exec('PRAGMA user_version = 15;');
+db.exec('PRAGMA user_version = 16;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

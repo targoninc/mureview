@@ -369,8 +369,9 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   });
 }
 
-export async function listReviewSets(ctx: Ctx): Promise<Response> {
-  const user = ctx.user!;
+export async function readableReviewSets(
+  user: UserRow,
+): Promise<{ reviewSets: ReviewSet[]; sharedReviewSets: ReviewSet[] }> {
   const rows = db.query<ReviewSetRow, []>('SELECT * FROM review_sets ORDER BY name COLLATE NOCASE').all();
   const reviewSets: ReviewSet[] = [];
   const foreign: ReviewSetRow[] = [];
@@ -387,7 +388,11 @@ export async function listReviewSets(ctx: Ctx): Promise<Response> {
   });
   sharedReviewSets.sort((a, b) => a.name.localeCompare(b.name));
 
-  return json({ reviewSets, sharedReviewSets });
+  return { reviewSets, sharedReviewSets };
+}
+
+export async function listReviewSets(ctx: Ctx): Promise<Response> {
+  return json(await readableReviewSets(ctx.user!));
 }
 
 export async function createReviewSet(ctx: Ctx): Promise<Response> {

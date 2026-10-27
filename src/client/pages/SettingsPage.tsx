@@ -1,12 +1,12 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, Flash, Heading, Select, Spinner, ToggleSwitch, useConfirm } from '@primer/react';
-import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
-import type { AuthProvider, ForgeKind, MeResponse, User } from '../../shared/types';
+import { Avatar, Button, Dialog, Flash, Heading, Select, Spinner, Textarea, ToggleSwitch, useConfirm } from '@primer/react';
+import { ShieldIcon, SyncIcon, TrashIcon } from '@primer/octicons-react';
+import type { AuthProvider, ForgeKind, McpKey, MeResponse, User } from '../../shared/types';
 import { useAppContext } from '../lib/appContext';
 import { DEFAULT_DIFF_FONT_SIZE, DEFAULT_MONO_FONT, DIFF_FONT_SIZES, monoFontFamily, monoFontOption, type MonoFontOption } from '../../shared/fonts';
 import { FontPickerDialog } from '../components/FontPicker';
-import { api, basePath, del, put } from '../lib/api';
-import { connectionAvatarUrl } from '../lib/format';
+import { api, basePath, del, post, put } from '../lib/api';
+import { connectionAvatarUrl, timeAgo } from '../lib/format';
 import { AdoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail, serviceNames } from '../components/ServiceIcon';
 
@@ -44,6 +44,10 @@ export function SettingsPage() {
   const [savingToggle, setSavingToggle] = useState<string | null>(null);
   const [savingDiffSize, setSavingDiffSize] = useState(false);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
+  const [mcpKeys, setMcpKeys] = useState<McpKey[] | null>(null);
+  const [mcpPrompt, setMcpPrompt] = useState<string | null>(null);
+  const [creatingMcpKey, setCreatingMcpKey] = useState(false);
+  const [deletingMcpKey, setDeletingMcpKey] = useState<number | null>(null);
   const confirm = useConfirm();
   const { updateUser } = useAppContext();
 
@@ -61,6 +65,74 @@ export function SettingsPage() {
   }, []);
 
   useEffect(load, [load]);
+
+  const loadMcpKeys = useCallback(() => {
+    api<{ keys: McpKey[] }>('/mcp/keys')
+      .then((result) => setMcpKeys(result.keys))
+      .catch((err: Error) => {
+        setMcpKeys([]);
+        setError(err.message);
+      });
+  }, []);
+
+  useEffect(() => {
+    if (me?.user) loadMcpKeys();
+  }, [me?.user, loadMcpKeys]);
+
+  const createAgentKey = async () => {
+    if (creatingMcpKey) return;
+    setCreatingMcpKey(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await post<{ prompt: string; prefix: string }>('/mcp/keys', {});
+      loadMcpKeys();
+      try {
+        await navigator.clipboard.writeText(result.prompt);
+        setMcpPrompt(null);
+        setNotice('Setup prompt copied. Paste it into your agent.');
+      } catch {
+        setMcpPrompt(result.prompt);
+        setError('Could not copy automatically. Select the prompt text and copy it manually.');
+      }
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCreatingMcpKey(false);
+    }
+  };
+
+  const copyMcpPrompt = async () => {
+    if (!mcpPrompt) return;
+    try {
+      await navigator.clipboard.writeText(mcpPrompt);
+      setNotice('Setup prompt copied. Paste it into your agent.');
+      setMcpPrompt(null);
+    } catch {
+      setError('Could not copy automatically. Select the prompt text and copy it manually.');
+    }
+  };
+
+  const removeMcpKey = async (mcpKey: McpKey) => {
+    const approved = await confirm({
+      title: 'Disconnect this agent?',
+      content: 'The key is deleted and stops working immediately.',
+      confirmButtonContent: 'Delete key',
+      confirmButtonType: 'danger',
+    });
+    if (!approved) return;
+    setDeletingMcpKey(mcpKey.id);
+    setError(null);
+    try {
+      await del(`/mcp/keys/${mcpKey.id}`);
+      setMcpKeys((current) => current?.filter((entry) => entry.id !== mcpKey.id) ?? current);
+      setNotice('Agent key deleted.');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setDeletingMcpKey(null);
+    }
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -461,6 +533,77 @@ export function SettingsPage() {
 
         <div className="stack">
           <Heading as="h2" variant="small">
+            Agents (MCP)
+          </Heading>
+          <div className="settings-panel stack" style={{ gap: 14 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+              <div className="stack" style={{ gap: 4 }}>
+                <strong style={{ fontSize: 13 }}>Connect an agent over MCP</strong>
+                <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                  Copy a setup prompt, then paste it into Claude Code, Codex, Cursor, VS Code or another MCP
+                  client. Each prompt gets its own key. Keys appear below after an agent connects and lists the
+                  available tools.
+                </span>
+              </div>
+              <Button variant="primary" onClick={createAgentKey} disabled={creatingMcpKey}>
+                {creatingMcpKey ? 'Creating…' : 'Copy setup prompt'}
+              </Button>
+            </div>
+
+            <div className="stack" style={{ gap: 8 }}>
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                <strong style={{ fontSize: 13 }}>Connected keys</strong>
+                <Button
+                  size="small"
+                  variant="invisible"
+                  leadingVisual={SyncIcon}
+                  onClick={loadMcpKeys}
+                  aria-label="Refresh connected keys"
+                >
+                  Refresh
+                </Button>
+              </div>
+              {mcpKeys === null ? (
+                <Spinner size="small" aria-label="Loading agent keys" />
+              ) : mcpKeys.length === 0 ? (
+                <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>No agents connected yet.</span>
+              ) : (
+                <div className="repo-list">
+                  {mcpKeys.map((mcpKey) => (
+                    <div className="repo-list-item" key={mcpKey.id} style={{ cursor: 'default' }}>
+                      <div className="stack" style={{ gap: 2 }}>
+                        <span className="row" style={{ gap: 6 }}>
+                          <strong>{mcpKey.clientName ?? 'MCP client'}</strong>
+                          <span className="mono" style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                            {mcpKey.prefix}…
+                          </span>
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                          Last used {timeAgo(mcpKey.lastUsedAt)} · added {timeAgo(mcpKey.createdAt)}
+                        </span>
+                      </div>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        leadingVisual={TrashIcon}
+                        disabled={deletingMcpKey === mcpKey.id}
+                        onClick={() => removeMcpKey(mcpKey)}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+                Deleting a key disconnects that agent immediately. Keys that have never listed tools stay hidden.
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="stack">
+          <Heading as="h2" variant="small">
             Danger zone
           </Heading>
           <div className="settings-panel row" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
@@ -485,6 +628,31 @@ export function SettingsPage() {
           onClose={() => setFontPickerOpen(false)}
           onPick={chooseFont}
         />
+      ) : null}
+
+      {mcpPrompt ? (
+        <Dialog
+          title="Agent setup prompt"
+          width="large"
+          onClose={() => setMcpPrompt(null)}
+          footerButtons={[
+            { content: 'Close', onClick: () => setMcpPrompt(null) },
+            { content: 'Copy prompt', buttonType: 'primary', onClick: copyMcpPrompt },
+          ]}
+        >
+          <div className="stack" style={{ gap: 12 }}>
+            <span style={{ fontSize: 13 }}>
+              Paste this into your agent. It contains a new key that is shown only once.
+            </span>
+            <Textarea
+              readOnly
+              rows={16}
+              value={mcpPrompt}
+              aria-label="Agent setup prompt"
+              onFocus={(event) => event.currentTarget.select()}
+            />
+          </div>
+        </Dialog>
       ) : null}
     </div>
   );

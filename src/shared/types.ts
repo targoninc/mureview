@@ -5,6 +5,15 @@ export type ReviewVote = 'approve' | 'waiting' | 'reject';
 
 export type AuthProvider = 'github' | 'forgejo' | 'atproto' | 'email' | 'entra';
 
+export interface McpKey {
+  id: number;
+  prefix: string;
+  clientName: string | null;
+  createdAt: string;
+  usedAt: string;
+  lastUsedAt: string;
+}
+
 export interface User {
   id: number;
   name: string;
