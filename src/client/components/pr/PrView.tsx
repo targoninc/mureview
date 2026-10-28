@@ -16,7 +16,7 @@ import {
   GitCommitIcon,
   GitPullRequestIcon,
 } from '@primer/octicons-react';
-import type { Comment, PrStatus, RepoChecks, RepoStatus, ReviewMarkBy, ReviewSetDetail, ReviewVote } from '../../../shared/types';
+import type { Comment, FileDiff, PrStatus, RepoChecks, RepoStatus, ReviewMarkBy, ReviewSetDetail, ReviewVote } from '../../../shared/types';
 import { api, post, put } from '../../lib/api';
 import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
@@ -48,6 +48,8 @@ interface ParsedFile {
   layer?: string;
   combined: boolean;
   path: string;
+  /** Whether the forge supplied a text diff, rather than a placeholder. */
+  text: boolean;
   fileDiff: FileDiffMetadata;
 }
 
@@ -67,6 +69,15 @@ function layerLabel(repo: RepoStatus): string | undefined {
   return `Layer ${repo.position + 1} · ${repo.branch}`;
 }
 
+/** A placeholder patch keeps non-text and mode-only changes in the review. */
+function placeholderPatch(file: FileDiff): string {
+  const prev = file.prevPath ?? file.path;
+  const minus = file.type === 'added' ? '/dev/null' : `a/${prev}`;
+  const plus = file.type === 'deleted' ? '/dev/null' : `b/${file.path}`;
+  const note = 'No text preview is available for this file.';
+  return `diff --git a/${prev} b/${file.path}\n--- ${minus}\n+++ ${plus}\n@@ -1 +1 @@\n ${note}\n`;
+}
+
 function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
   const parsed: ParsedFile[] = [];
   const entries = view === 'combined' ? (pr.combined ?? []) : pr.repos;
@@ -74,10 +85,24 @@ function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
   for (const repo of entries) {
     const layer = stacked && repo.position >= 0 ? layerLabel(repo) : undefined;
     for (const file of repo.files ?? []) {
-      if (!file.patch) continue;
       const id = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
-      const fileDiff = processFile(file.patch, { cacheKey: id });
+      let text = Boolean(file.patch);
+      let fileDiff = processFile(file.patch ?? placeholderPatch(file), { cacheKey: id });
+      if (!fileDiff) {
+        text = false;
+        fileDiff = processFile(placeholderPatch(file), { cacheKey: `${id}:placeholder` });
+      }
       if (fileDiff) {
+        if (!file.patch) {
+          fileDiff.type =
+            file.type === 'added'
+              ? 'new'
+              : file.type === 'deleted'
+                ? 'deleted'
+                : file.type === 'renamed' || file.type === 'copied'
+                  ? 'rename-changed'
+                  : 'change';
+        }
         parsed.push({
           id,
           connectionId: repo.connectionId,
@@ -87,6 +112,7 @@ function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
           layer,
           combined: repo.position < 0,
           path: file.path,
+          text,
           fileDiff,
         });
       }
@@ -489,7 +515,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       layout: { paddingTop: 8, paddingBottom: 24, gap: 8 },
       onGutterUtilityClick: (range, context) => {
         const entry = parsedRef.current.get(context.item.id);
-        if (!entry || entry.combined) return;
+        if (!entry || entry.combined || !entry.text) return;
         setDraft({
           itemId: entry.id,
           connectionId: entry.connectionId,
@@ -506,7 +532,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
         if (!window.matchMedia('(pointer: coarse)').matches) return;
         if (!('annotationSide' in props)) return;
         const entry = parsedRef.current.get(context.item.id);
-        if (!entry || entry.combined) return;
+        if (!entry || entry.combined || !entry.text) return;
         setDraft({
           itemId: entry.id,
           connectionId: entry.connectionId,
@@ -592,7 +618,6 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     for (const repo of treeEntries) {
       if (repo.position < 0) continue;
       for (const file of repo.files ?? []) {
-        if (!file.patch) continue;
         const id = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
         if (reviewed.has(id)) ids.add(id);
       }
@@ -872,7 +897,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           onSetReviewed={applyReviewed}
         />
       ) : (
-        <div className="empty-state">No text diffs to show.</div>
+        <div className="empty-state">No files to show.</div>
       )
     ) : (
       <ConversationPanel

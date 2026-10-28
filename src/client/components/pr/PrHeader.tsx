@@ -23,7 +23,6 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { PrStatus, ReviewSetDetail, ReviewVote } from '../../../shared/types';
 import { ReviewVoteButtons, voteOptions } from './ReviewVoteButtons';
-import { repoLabel } from '../../../shared/types';
 
 type LabelVariant = 'default' | 'accent' | 'success' | 'attention' | 'danger' | 'done' | 'secondary';
 
@@ -120,9 +119,6 @@ export function PrHeader({
   const state = stateVariant(pr.state);
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
-  const skippedFiles = pr.repos.flatMap((repo) =>
-    (repo.files ?? []).filter((file) => !file.patch).map((file) => `${repoLabel(repo)}: ${file.path}`),
-  );
   const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
   const showDiffRow = pr.state === 'loading' || pr.stats.files > 0;
   const collapseToggle = (
@@ -215,14 +211,6 @@ export function PrHeader({
                     )}
                   </>
                 )}
-                {skippedFiles.length > 0 ? (
-                  <>
-                    {' · '}
-                    <span title={skippedFiles.join('\n')} style={{ cursor: 'help' }}>
-                      {skippedFiles.length} non-text {skippedFiles.length === 1 ? 'file' : 'files'} skipped
-                    </span>
-                  </>
-                ) : null}
                 {!owned && detail.owner ? ` · shared by ${detail.owner.name}` : ''}
               </span>
               </div>

@@ -82,7 +82,6 @@ export function FileTreePanel({
     for (const repo of entries) {
       const layer = stacked && repo.position >= 0 ? `Layer ${repo.position + 1} · ${repo.branch}` : undefined;
       for (const file of repo.files ?? []) {
-        if (!file.patch) continue;
         const itemId = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
         if (hiddenItems?.has(itemId)) continue;
         list.push({
