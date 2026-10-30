@@ -173,6 +173,18 @@ const SCHEMA_V2 = `
     value TEXT NOT NULL
   );
 
+  CREATE TABLE diff_cache (
+    version INTEGER NOT NULL,
+    connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
+    repo TEXT NOT NULL,
+    base_sha TEXT NOT NULL,
+    head_sha TEXT NOT NULL,
+    result TEXT NOT NULL,
+    commits TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (version, connection_id, repo, base_sha)
+  );
+
   CREATE TABLE mcp_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -610,6 +622,21 @@ if (userVersion() < 12) {
     db.exec('PRAGMA foreign_keys = ON;');
   }
 }
+if (userVersion() < 17) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS diff_cache (
+      version INTEGER NOT NULL,
+      connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
+      repo TEXT NOT NULL,
+      base_sha TEXT NOT NULL,
+      head_sha TEXT NOT NULL,
+      result TEXT NOT NULL,
+      commits TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (version, connection_id, repo, base_sha)
+    );
+  `);
+}
 if (userVersion() < 16) {
   // Bearer keys for the MCP endpoint. Only hashes are stored; a key is hard
   // deleted when its owner revokes it.
@@ -647,7 +674,7 @@ if (connectionColumns.length && !connectionColumns.some((column) => column.name 
 if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'installation_id')) {
   db.exec('ALTER TABLE forge_connections ADD COLUMN installation_id TEXT');
 }
-db.exec('PRAGMA user_version = 16;');
+db.exec('PRAGMA user_version = 17;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

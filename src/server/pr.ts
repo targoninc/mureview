@@ -3,6 +3,7 @@ import { repoLabel } from '../shared/types';
 import { connectionOrMatching } from './auth/identities';
 import { Cache, cached, mapLimit } from './cache';
 import { listComments } from './comments';
+import { cachedCompare, rememberCommits } from './diffCache';
 import { constants } from './config';
 import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
@@ -131,7 +132,8 @@ async function inspectBranch(
       };
     }
 
-    const comparison = await client.compare(repo, targetRef.sha, branchSha);
+    const cached = await cachedCompare(client, status.connectionId, repo, targetRef.sha, branchSha);
+    const comparison = cached.comparison;
     if (comparison.merged) {
       onPhase?.('done');
       return {
@@ -148,8 +150,15 @@ async function inspectBranch(
     const files = comparison.files.map(toFileDiff);
     const totals = summarize(files);
     const loaded = includeCommits
-      ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull ?? undefined)
+      ? knownPull
+        ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull)
+        : cached.commits.length >= comparison.aheadBy
+          ? cached.commits
+          : await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha)
       : undefined;
+    if (loaded && loaded.length > 0) {
+      rememberCommits(status.connectionId, repo, targetRef.sha, branchSha, loaded);
+    }
     // The comparison already carries the first page of commits; keep them when
     // the separate commit listing comes back empty.
     const commits = loaded?.length === 0 && comparison.commits.length > 0 ? comparison.commits : loaded;
@@ -394,7 +403,7 @@ async function combinedStacks(
     try {
       const targetRef = await client.getBranch(top.repo, reviewSet.targetBranch, { fresh });
       if (!targetRef) return;
-      const comparison = await client.compare(top.repo, targetRef.sha, top.headSha!);
+      const comparison = (await cachedCompare(client, top.connectionId, top.repo, targetRef.sha, top.headSha!)).comparison;
       const files = comparison.files.map(toFileDiff);
       const totals = summarize(files);
       combined.push({

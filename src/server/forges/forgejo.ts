@@ -59,6 +59,7 @@ interface GiteaCompareFile {
 
 interface GiteaCompare {
   total_commits: number;
+  merge_base?: string;
   files?: GiteaCompareFile[];
   commits?: GiteaCommit[];
 }
@@ -381,6 +382,7 @@ export class ForgejoClient implements ForgeClient {
           url: commit.html_url,
         })),
         truncated: changed.length > capped.length,
+        mergeBase: comparison.merge_base,
       };
     });
   }

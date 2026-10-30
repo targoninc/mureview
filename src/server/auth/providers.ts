@@ -613,6 +613,7 @@ export async function connectAdo(ctx: Ctx): Promise<Response> {
  */
 export function deleteAccountData(ctx: Ctx): Response {
   const user = requireUser(ctx);
+  db.run('DELETE FROM diff_cache WHERE connection_id IN (SELECT id FROM forge_connections WHERE user_id = ?)', [user.id]);
   const result = db.run('DELETE FROM review_sets WHERE owner_id = ?', [user.id]);
   return json({ ok: true, reviewSets: result.changes });
 }
