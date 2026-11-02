@@ -248,32 +248,36 @@ export function cachedCompare(
       !cached.comparison.merged &&
       !cached.comparison.truncated
     ) {
-      const delta = await client.compare(repo, stored.head, headSha);
-      const mergeBase = delta.mergeBase ?? (await client.mergeBase(repo, stored.head, headSha).catch(() => null));
-      if (!delta.truncated && !delta.merged && delta.behindBy === 0 && mergeBase === stored.head) {
-        const files =
-          delta.files.length === 0
-            ? cached.comparison.files
-            : await mergeFiles(client, repo, baseSha, headSha, cached.comparison.files, delta.files);
-        if (files) {
-          const commits = combineCommits(cached.commits, delta.commits);
-          const comparison = withRevisions(
-            {
-              ...cached.comparison,
-              aheadBy: cached.comparison.aheadBy + delta.aheadBy,
-              files,
-              commits,
-              truncated: cached.comparison.truncated || delta.truncated,
-              mergeBase: cached.comparison.mergeBase ?? delta.mergeBase,
-            },
-            baseSha,
-            headSha,
-          );
-          write(connectionId, repo, comparison, commits);
-          const result = { comparison, commits };
-          memory.set(memoryKey, result);
-          return result;
+      try {
+        const delta = await client.compare(repo, stored.head, headSha);
+        const mergeBase = delta.mergeBase ?? (await client.mergeBase(repo, stored.head, headSha).catch(() => null));
+        if (!delta.truncated && !delta.merged && delta.behindBy === 0 && mergeBase === stored.head) {
+          const files =
+            delta.files.length === 0
+              ? cached.comparison.files
+              : await mergeFiles(client, repo, baseSha, headSha, cached.comparison.files, delta.files);
+          if (files) {
+            const commits = combineCommits(cached.commits, delta.commits);
+            const comparison = withRevisions(
+              {
+                ...cached.comparison,
+                aheadBy: cached.comparison.aheadBy + delta.aheadBy,
+                files,
+                commits,
+                truncated: cached.comparison.truncated || delta.truncated,
+                mergeBase: cached.comparison.mergeBase ?? delta.mergeBase,
+              },
+              baseSha,
+              headSha,
+            );
+            write(connectionId, repo, comparison, commits);
+            const result = { comparison, commits };
+            memory.set(memoryKey, result);
+            return result;
+          }
         }
+      } catch (error) {
+        console.error('Incremental diff failed, falling back to a full comparison:', error);
       }
     }
 

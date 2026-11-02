@@ -116,3 +116,20 @@ test('a non-ancestor head falls back to a full comparison', async () => {
   expect(compareCalls).toContain(`${base}...${other}`);
   expect(result.comparison.aheadBy).toBe(0);
 });
+
+test('a failing incremental comparison falls back to the full comparison', async () => {
+  const failing = {
+    ...client,
+    async compare(repo: string, baseSha: string, headSha: string): Promise<CompareResult> {
+      if (baseSha === old && headSha === next) throw new Error('old head is gone');
+      return client.compare(repo, baseSha, headSha);
+    },
+  } as ForgeClient;
+
+  await cachedCompare(client, connectionId, 'acme/repo-2', base, old);
+  const fullCalls = compareCalls.length;
+  const result = await cachedCompare(failing, connectionId, 'acme/repo-2', base, next);
+  expect(compareCalls.length).toBeGreaterThan(fullCalls);
+  expect(compareCalls).toContain(`${base}...${next}`);
+  expect(result.comparison.aheadBy).toBe(2);
+});

@@ -87,7 +87,12 @@ function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
     for (const file of repo.files ?? []) {
       const id = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
       let text = Boolean(file.patch);
-      let fileDiff = processFile(file.patch ?? placeholderPatch(file), { cacheKey: id });
+      let fileDiff = null;
+      try {
+        fileDiff = processFile(file.patch ?? placeholderPatch(file), { cacheKey: id });
+      } catch {
+        fileDiff = null;
+      }
       if (!fileDiff) {
         text = false;
         fileDiff = processFile(placeholderPatch(file), { cacheKey: `${id}:placeholder` });
