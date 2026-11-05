@@ -155,6 +155,12 @@ interface GithubCommit {
   html_url: string;
 }
 
+interface GithubReviewThread {
+  id: string;
+  isResolved: boolean;
+  commentIds: string[];
+}
+
 interface GithubReviewComment {
   id: number;
   user: { login: string; avatar_url: string } | null;
@@ -200,15 +206,37 @@ interface GithubRepo {
 const toForgeRepo = (repo: GithubRepo): ForgeRepo => ({ repo: repo.full_name, private: repo.private, updatedAt: repo.updated_at });
 
 const repoCache = new Cache<void>(200, 5 * 60_000);
-const branchListCache = new Cache<BranchInfo[]>(100, 45_000);
-const branchCache = new Cache<BranchInfo | null>(300, 45_000);
+const branchListCache = new Cache<BranchInfo[]>(100, 2 * 60_000);
+const branchCache = new Cache<BranchInfo | null>(300, 2 * 60_000);
 const compareCache = new Cache<CompareResult>(60, 60 * 60_000);
 const treeCache = new Cache<TreeListing>(60, 24 * 60 * 60_000);
 const blobCache = new Cache<string>(400, 24 * 60 * 60_000);
+const reviewThreadsCache = new Cache<GithubReviewThread[]>(200, 60_000);
+const checksCache = new Cache<ChecksSummary>(300, 30_000);
+
+interface CachedGithubResponse {
+  value: unknown;
+  etag?: string;
+}
+
+const responseCache = new Cache<CachedGithubResponse>(500, 30_000);
+const pendingResponses = new Map<string, Promise<unknown>>();
+const responseStaleMs = 10 * 60_000;
+let responseGeneration = 0;
+
+/** How long an ordinary GitHub response may be reused without a request. */
+function responseTtl(path: string): number {
+  if (/^\/user(?:\?|$)/.test(path) || /^\/repos\/[^/]+\/[^/?#]+(?:\?|$)/.test(path)) return 5 * 60_000;
+  return 30_000;
+}
 
 export function invalidateGithubBranchCaches(): void {
   branchListCache.clear();
   branchCache.clear();
+  reviewThreadsCache.clear();
+  checksCache.clear();
+  responseCache.clear();
+  responseGeneration += 1;
 }
 
 export class GithubClient implements ForgeClient {
@@ -221,6 +249,8 @@ export class GithubClient implements ForgeClient {
    * account's own token, kept for account endpoints and permission checks even
    * when an app installation answers the calls.
    */
+  private readonly responseScope: string;
+
   constructor(
     private token: string,
     private auth?: GithubAuth,
@@ -229,7 +259,9 @@ export class GithubClient implements ForgeClient {
     private installation?: string,
     /** The connection's account login, to tell its installation groups apart. */
     private login = '',
-  ) {}
+  ) {
+    this.responseScope = this.ownToken || this.token || this.login;
+  }
 
   /** Refreshes an expired token once per request before giving up. */
   private async retryOnExpiry<T>(
@@ -285,7 +317,50 @@ export class GithubClient implements ForgeClient {
     return response;
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    options: { revalidate?: boolean; invalidate?: boolean } = {},
+  ): Promise<T> {
+    const method = (init.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') {
+      const value = await this.send<T>(path, init);
+      if (options.invalidate !== false) invalidateGithubBranchCaches();
+      return value;
+    }
+    const generation = responseGeneration;
+    const key = `${this.responseScope}:${generation}:${path}`;
+    if (!options.revalidate) {
+      const hit = responseCache.get(key);
+      if (hit) return hit.value as T;
+      const pending = pendingResponses.get(key);
+      if (pending) return pending as Promise<T>;
+    }
+    const stale = responseCache.getStale(key, responseStaleMs);
+    const task = (async () => {
+      const headers: { etag?: string } = { etag: stale?.etag };
+      const value = await this.send<T>(path, init, headers, generation, stale);
+      if (generation === responseGeneration) {
+        responseCache.set(key, { value, etag: headers.etag }, responseTtl(path));
+      }
+      return value;
+    })();
+    if (!options.revalidate) {
+      pendingResponses.set(key, task);
+      void task.finally(() => {
+        if (pendingResponses.get(key) === task) pendingResponses.delete(key);
+      }).catch(() => undefined);
+    }
+    return task;
+  }
+
+  private async send<T>(
+    path: string,
+    init: RequestInit,
+    headers: { etag?: string } = {},
+    generation?: number,
+    stale?: CachedGithubResponse,
+  ): Promise<T> {
     return this.retryOnExpiry(
       () =>
         fetch(API + path, {
@@ -295,11 +370,19 @@ export class GithubClient implements ForgeClient {
             Authorization: `Bearer ${this.token}`,
             'User-Agent': 'mureview',
             'X-GitHub-Api-Version': '2022-11-28',
+            ...(headers.etag ? { 'If-None-Match': headers.etag } : {}),
             ...init.headers,
           },
         }),
       async (response) => {
+        if (response.status === 304 && headers.etag) {
+          if (generation !== undefined && generation !== responseGeneration) {
+            return this.send<T>(path, init);
+          }
+          return stale?.value as T;
+        }
         if (!response.ok) return this.fail(response);
+        headers.etag = response.headers.get('etag') ?? undefined;
         if (response.status === 204 || response.headers.get('content-length') === '0') return undefined as T;
         return (await response.json()) as T;
       },
@@ -307,11 +390,11 @@ export class GithubClient implements ForgeClient {
     );
   }
 
-  private async paginate<T>(path: string, maxPages = 10): Promise<T[]> {
+  private async paginate<T>(path: string, maxPages = 10, options: { revalidate?: boolean } = {}): Promise<T[]> {
     const out: T[] = [];
     for (let page = 1; page <= maxPages; page++) {
       const separator = path.includes('?') ? '&' : '?';
-      const items = await this.request<T[]>(`${path}${separator}per_page=100&page=${page}`);
+      const items = await this.request<T[]>(`${path}${separator}per_page=100&page=${page}`, {}, options);
       out.push(...items);
       if (items.length < 100) break;
     }
@@ -404,18 +487,18 @@ export class GithubClient implements ForgeClient {
   }
 
   async ensureRepo(repo: string, options: ForgeCallOptions = {}): Promise<void> {
-    if (options.fresh) return void (await this.request(`/repos/${repo}`));
+    if (options.fresh) return void (await this.request(`/repos/${repo}`, {}, { revalidate: true }));
     await cached(repoCache, repo, async () => void (await this.request(`/repos/${repo}`)));
   }
 
-  private loadBranches(repo: string): Promise<BranchInfo[]> {
-    return this.paginate<GithubBranch>(`/repos/${repo}/branches`).then((branches) =>
+  private loadBranches(repo: string, revalidate = false): Promise<BranchInfo[]> {
+    return this.paginate<GithubBranch>(`/repos/${repo}/branches`, 10, { revalidate }).then((branches) =>
       branches.map((branch) => ({ name: branch.name, sha: branch.commit.sha })),
     );
   }
 
   async listBranches(repo: string, options: ForgeCallOptions = {}): Promise<BranchInfo[]> {
-    if (options.fresh) return this.loadBranches(repo);
+    if (options.fresh) return this.loadBranches(repo, true);
     return cached(branchListCache, repo, () => this.loadBranches(repo));
   }
 
@@ -423,7 +506,7 @@ export class GithubClient implements ForgeClient {
     const key = `${repo}#${branch}`;
     const load = async (): Promise<BranchInfo | null> => {
       try {
-        const found = await this.request<GithubBranch>(`/repos/${repo}/branches/${encodeURIComponent(branch)}`);
+        const found = await this.request<GithubBranch>(`/repos/${repo}/branches/${encodeURIComponent(branch)}`, {}, { revalidate: Boolean(options.fresh) });
         return { name: found.name, sha: found.commit.sha };
       } catch (error) {
         if (error instanceof ForgeError && error.status === 404) return null;
@@ -685,10 +768,10 @@ export class GithubClient implements ForgeClient {
    * GitHub only exposes resolved review threads through GraphQL; this maps
    * every review comment id of the pull request to its thread's state.
    */
-  private async reviewThreads(
-    repo: string,
-    number: number,
-  ): Promise<{ id: string; isResolved: boolean; commentIds: string[] }[]> {
+  private async reviewThreads(repo: string, number: number): Promise<GithubReviewThread[]> {
+    const key = `${repo}#${number}`;
+    const hit = reviewThreadsCache.get(key);
+    if (hit) return hit;
     const [owner, name] = repo.split('/');
     const data = await this.request<{
       data?: {
@@ -709,13 +792,15 @@ export class GithubClient implements ForgeClient {
           'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved comments(first:100){nodes{databaseId}}}}}}}',
         variables: { owner, name, number },
       }),
-    });
+    }, { invalidate: false });
     if (data.errors?.length) throw new ForgeError(400, data.errors[0]?.message ?? 'the graphql query failed');
-    return (data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []).map((thread) => ({
+    const threads = (data.data?.repository?.pullRequest?.reviewThreads?.nodes ?? []).map((thread) => ({
       id: thread.id,
       isResolved: thread.isResolved,
       commentIds: (thread.comments?.nodes ?? []).map((comment) => String(comment.databaseId)),
     }));
+    reviewThreadsCache.set(key, threads);
+    return threads;
   }
 
   async setCommentResolved(repo: string, ref: string, commentId: string, resolved: boolean): Promise<void> {
@@ -908,6 +993,10 @@ export class GithubClient implements ForgeClient {
   }
 
   async checks(repo: string, sha: string): Promise<ChecksSummary> {
+    return cached(checksCache, `${repo}#${sha}`, () => this.loadChecks(repo, sha));
+  }
+
+  private async loadChecks(repo: string, sha: string): Promise<ChecksSummary> {
     const runs: CheckInfo[] = [];
     try {
       const checkRuns = await this.request<{

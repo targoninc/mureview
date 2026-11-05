@@ -1,7 +1,7 @@
 import type { RepoStatus, ReviewSetRepo } from '../shared/types';
 import { repoLabel } from '../shared/types';
 import { mapLimit } from './cache';
-import { type ForgeClient, ForgeError } from './forges';
+import { type BranchInfo, type ForgeClient, ForgeError } from './forges';
 import { parseRepoList } from './repos';
 
 /**
@@ -154,7 +154,7 @@ export async function inspectRepos(
 ): Promise<LocatedRepo[]> {
   const { patterns, perRepo = false, defaultTarget = '', stack = false, fresh = false } = options;
 
-  // Layers of one repository share a branch listing and an access check.
+  // Layers of one repository share a branch lookup.
   const groups = new Map<string, ReviewSetRepo[]>();
   for (const repo of repos) {
     const key = `${repo.connectionId}:${repo.repo}`;
@@ -171,37 +171,54 @@ export async function inspectRepos(
       return group.map((repo) => ({ status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`, defaultTarget), sha: null }));
     }
     onPhase?.(first, 'checking');
-    try {
-      await client.ensureRepo(first.repo, { fresh });
-    } catch (error) {
-      for (const repo of group) onPhase?.(repo, 'error');
-      return group.map((repo) => ({
-        status: emptyRepoStatus(repo, `You don't have access to ${repoLabel(first)} (${forgeErrorMessage(error)}).`, defaultTarget),
-        sha: null,
-      }));
+
+    if (stack) return inspectStack(group, client, defaultTarget, fresh, onPhase);
+
+    if (perRepo) {
+      const repo = first;
+      if (!repo.branch) {
+        onPhase?.(repo, 'done');
+        return [{ status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true }, sha: null }];
+      }
+      try {
+        const found = await client.getBranch(repo.repo, repo.branch, { fresh });
+        if (!found) {
+          onPhase?.(repo, 'done');
+          return [{ status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true }, sha: null }];
+        }
+        return [
+          {
+            status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true, matches: [found.name], branch: found.name },
+            sha: found.sha,
+          },
+        ];
+      } catch (error) {
+        onPhase?.(repo, 'error');
+        return [
+          {
+            status: emptyRepoStatus(repo, `Could not read the branch ${repo.branch} for ${repoLabel(repo)} (${forgeErrorMessage(error)}).`, defaultTarget),
+            sha: null,
+          },
+        ];
+      }
     }
-    let branches: Awaited<ReturnType<ForgeClient['listBranches']>>;
+
+    let branches: BranchInfo[];
     try {
       branches = await client.listBranches(first.repo, { fresh });
     } catch (error) {
       for (const repo of group) onPhase?.(repo, 'error');
       return group.map((repo) => ({
-        status: emptyRepoStatus(repo, `Could not list branches for ${repoLabel(first)} (${forgeErrorMessage(error)}).`, defaultTarget),
+        status: emptyRepoStatus(repo, `Could not list branches for ${repoLabel(repo)} (${forgeErrorMessage(error)}).`, defaultTarget),
         sha: null,
       }));
     }
 
-    if (stack) return inspectStack(group, branches, defaultTarget, onPhase);
-
     const repo = first;
-    const matches = perRepo
-      ? repo.branch && branches.some((branch) => branch.name === repo.branch)
-        ? [repo.branch]
-        : []
-      : matchingBranches(
-          branches.map((branch) => branch.name),
-          patterns,
-        );
+    const matches = matchingBranches(
+      branches.map((branch) => branch.name),
+      patterns,
+    );
     const branch = matches.length === 1 ? matches[0] : null;
     const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
     if (!sha) onPhase?.(repo, 'done');
@@ -216,23 +233,40 @@ export async function inspectRepos(
  * whose branch is gone is skipped, and the layers above it are compared
  * against the last branch that does exist.
  */
-function inspectStack(
+async function inspectStack(
   group: ReviewSetRepo[],
-  branches: Awaited<ReturnType<ForgeClient['listBranches']>>,
+  client: ForgeClient,
   defaultTarget: string,
+  fresh: boolean,
   onPhase?: (repo: ReviewSetRepo, phase: 'checking' | 'done' | 'error') => void,
-): LocatedRepo[] {
+): Promise<LocatedRepo[]> {
   const ordered = [...group].sort((a, b) => a.position - b.position);
   const located: LocatedRepo[] = [];
   let previous: { branch: string; sha: string } | null = null;
   let skipped: string[] = [];
 
   for (const repo of ordered) {
-    const found = repo.branch ? branches.find((branch) => branch.name === repo.branch) : null;
+    if (!repo.branch) {
+      onPhase?.(repo, 'error');
+      located.push({ status: emptyRepoStatus(repo, 'the branch (none) does not exist', defaultTarget), sha: null });
+      continue;
+    }
+    let found: BranchInfo | null;
+    try {
+      found = await client.getBranch(repo.repo, repo.branch, { fresh });
+    } catch (error) {
+      onPhase?.(repo, 'error');
+      located.push({
+        status: emptyRepoStatus(repo, `Could not read the branch ${repo.branch} (${forgeErrorMessage(error)}).`, defaultTarget),
+        sha: null,
+      });
+      skipped.push(repo.branch);
+      continue;
+    }
     if (!found) {
       onPhase?.(repo, 'error');
-      located.push({ status: emptyRepoStatus(repo, `the branch ${repo.branch ?? '(none)'} does not exist`, defaultTarget), sha: null });
-      if (repo.branch) skipped.push(repo.branch);
+      located.push({ status: emptyRepoStatus(repo, `the branch ${repo.branch} does not exist`, defaultTarget), sha: null });
+      skipped.push(repo.branch);
       continue;
     }
     const base = previous?.branch ?? defaultTarget;

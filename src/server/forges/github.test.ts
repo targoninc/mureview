@@ -1,12 +1,13 @@
-import { afterAll, expect, test } from 'bun:test';
+import { afterAll, beforeEach, expect, test } from 'bun:test';
 import { upsertConnection } from '../auth/identities';
 import { decrypt, encrypt } from '../crypto';
 import { db, type ForgeConnectionRow } from '../db';
 import * as app from '../githubApp';
 import { clientFor } from './index';
-import { GithubClient, exchangeGithubRefreshToken, refreshGithubToken } from './github';
+import { GithubClient, exchangeGithubRefreshToken, invalidateGithubBranchCaches, refreshGithubToken } from './github';
 
 const realFetch = globalThis.fetch;
+beforeEach(() => invalidateGithubBranchCaches());
 afterAll(() => {
   globalThis.fetch = realFetch;
 });
@@ -620,4 +621,80 @@ test('no reviews at all means no decision', async () => {
   }) as unknown as typeof fetch;
 
   expect(await new GithubClient('token').pullRequestReview('acme/repo', '5')).toBeNull();
+});
+
+test('cached reads are reused and fresh reads revalidate with an ETag', async () => {
+  const calls: Array<{ url: string; ifNoneMatch?: string }> = [];
+  globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>;
+    calls.push({ url: String(input), ifNoneMatch: headers['If-None-Match'] });
+    if (calls.length === 1) {
+      return Response.json([{ name: 'main', commit: { sha: 'abc123' } }], { headers: { etag: '"branches-1"' } });
+    }
+    return new Response(null, { status: 304, headers: { etag: '"branches-1"' } });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('cache-token');
+  expect((await client.listBranches('acme/cache')).map((branch) => branch.name)).toEqual(['main']);
+  expect((await client.listBranches('acme/cache')).map((branch) => branch.name)).toEqual(['main']);
+  expect(calls).toHaveLength(1);
+
+  expect((await client.listBranches('acme/cache', { fresh: true })).map((branch) => branch.name)).toEqual(['main']);
+  expect(calls).toHaveLength(2);
+  expect(calls[1].ifNoneMatch).toBe('"branches-1"');
+});
+
+test('a write invalidates cached reads', async () => {
+  let calls = 0;
+  globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+    calls += 1;
+    if ((init?.method ?? 'GET') === 'DELETE') return new Response(null, { status: 204 });
+    return Response.json([{ name: 'main', commit: { sha: 'abc123' } }], { headers: { etag: '"branches-1"' } });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('write-token');
+  await client.listBranches('acme/write');
+  await client.listBranches('acme/write');
+  expect(calls).toBe(1);
+  await client.deleteBranch('acme/write', 'gone');
+  await client.listBranches('acme/write');
+  expect(calls).toBe(3);
+});
+
+test('checks are cached across repeated detail builds', async () => {
+  let calls = 0;
+  globalThis.fetch = (async (input: unknown) => {
+    calls += 1;
+    return String(input).includes('/check-runs')
+      ? Response.json({ check_runs: [{ name: 'test', status: 'completed', conclusion: 'success' }] })
+      : Response.json({ statuses: [] });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('checks-token');
+  const first = await client.checks('acme/checks', 'abc123');
+  const second = await client.checks('acme/checks', 'abc123');
+  expect(first.state).toBe('success');
+  expect(second.state).toBe('success');
+  expect(calls).toBe(2);
+});
+
+test('the review decision and reviewers share one review listing', async () => {
+  let reviewCalls = 0;
+  globalThis.fetch = (async (input: unknown) => {
+    const url = String(input);
+    if (url.endsWith('/user')) return Response.json({ login: 'me' });
+    if (url.includes('/pulls/5/reviews')) {
+      reviewCalls += 1;
+      return Response.json([
+        { user: { login: 'me', avatar_url: 'https://a/me.png' }, state: 'APPROVED' },
+        { user: { login: 'lena', avatar_url: 'https://a/lena.png' }, state: 'CHANGES_REQUESTED' },
+      ]);
+    }
+    return new Response('not found', { status: 404 });
+  }) as unknown as typeof fetch;
+
+  const client = new GithubClient('reviews-token');
+  expect(await client.pullRequestReview('acme/reviews', '5')).toBe('approve');
+  expect(await client.pullRequestReviews('acme/reviews', '5')).toHaveLength(2);
+  expect(reviewCalls).toBe(1);
 });

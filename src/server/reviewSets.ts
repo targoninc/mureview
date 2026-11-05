@@ -301,14 +301,13 @@ export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
     if (!client)
       return { connectionId: repo.connectionId, repo: repo.repo, position: repo.position, checks: { state: 'unknown' as const, runs: [] } };
     try {
-      const head = await client.getBranch(repo.repo, repo.branch!, {});
-      if (!head)
+      if (!repo.headSha)
         return { connectionId: repo.connectionId, repo: repo.repo, position: repo.position, checks: { state: 'none' as const, runs: [] } };
       return {
         connectionId: repo.connectionId,
         repo: repo.repo,
         position: repo.position,
-        checks: await client.checks(repo.repo, head.sha, { pullRequest: repo.pullRequest?.ref }),
+        checks: await client.checks(repo.repo, repo.headSha, { pullRequest: repo.pullRequest?.ref }),
       };
     } catch (error) {
       console.error(`Could not read the checks for ${repo.repo}:`, error);

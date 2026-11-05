@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RepoStatus } from '../shared/types';
-import { ForgeError } from './forges';
-import { compilePatterns, emptyRepoStatus, forgeErrorMessage, matchingBranches, multiMatchError, splitPatterns } from './validate';
+import { ForgeError, type ForgeClient } from './forges';
+import { compilePatterns, emptyRepoStatus, forgeErrorMessage, inspectRepos, matchingBranches, multiMatchError, splitPatterns } from './validate';
 
 describe('splitPatterns', () => {
   test('splits on top-level commas', () => {
@@ -74,5 +74,35 @@ describe('forgeErrorMessage', () => {
     expect(forgeErrorMessage(new ForgeError(500, 'Server Error'))).toBe(
       'the forge returned HTTP 500 (Server Error) — retry in a moment',
     );
+  });
+});
+
+
+describe('inspectRepos', () => {
+  test('reads known per-repo branches without listing every branch', async () => {
+    let listed = 0;
+    const client = {
+      async listBranches() {
+        listed += 1;
+        return [];
+      },
+      async getBranch(_repo: string, branch: string) {
+        return { name: branch, sha: 'abc123' };
+      },
+    } as unknown as ForgeClient;
+    const repo = {
+      connectionId: 1,
+      repo: 'owner/name',
+      kind: 'github' as const,
+      host: 'github.com',
+      org: null,
+      branch: 'feature',
+      target: null,
+      position: 0,
+    };
+    const located = await inspectRepos(new Map([[1, client]]), [repo], { patterns: [], perRepo: true });
+    expect(listed).toBe(0);
+    expect(located[0].status.branch).toBe('feature');
+    expect(located[0].sha).toBe('abc123');
   });
 });

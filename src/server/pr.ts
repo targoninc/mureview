@@ -22,7 +22,7 @@ interface BranchDiff {
 }
 
 const targetlessCache = new Cache<BranchDiff>(60, 60 * 60_000);
-const commitsCache = new Cache<CommitInfo[]>(200, 60_000);
+const commitsCache = new Cache<CommitInfo[]>(200, 60 * 60_000);
 
 export function clientsFor(connections: ForgeConnectionRow[]): Map<number, ForgeClient> {
   return new Map(connections.map((connection) => [connection.id, clientFor(connection)]));
@@ -149,19 +149,20 @@ async function inspectBranch(
 
     const files = comparison.files.map(toFileDiff);
     const totals = summarize(files);
+    const comparisonCommits =
+      comparison.commits.length >= comparison.aheadBy
+        ? [...comparison.commits].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        : null;
+    const cachedCommits = cached.commits.length >= comparison.aheadBy ? cached.commits : null;
     const loaded = includeCommits
-      ? knownPull
-        ? await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull)
-        : cached.commits.length >= comparison.aheadBy
-          ? cached.commits
-          : await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha)
+      ? (comparisonCommits ??
+        cachedCommits ??
+        (await loadCommits(client, status.connectionId, repo, branchSha, targetRef.sha, knownPull ?? undefined)))
       : undefined;
     if (loaded && loaded.length > 0) {
       rememberCommits(status.connectionId, repo, targetRef.sha, branchSha, loaded);
     }
-    // The comparison already carries the first page of commits; keep them when
-    // the separate commit listing comes back empty.
-    const commits = loaded?.length === 0 && comparison.commits.length > 0 ? comparison.commits : loaded;
+    const commits = loaded;
     // A layer of a stack is supposed to build on the branch below it; when the
     // forge reports a different merge base, the stack is out of order.
     const diverged =
