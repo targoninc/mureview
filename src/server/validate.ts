@@ -132,6 +132,7 @@ export function multiMatchError(status: RepoStatus): string | null {
 export interface LocatedRepo {
   status: RepoStatus;
   sha: string | null;
+  targetSha?: string | null;
 }
 
 export interface InspectOptions {
@@ -221,8 +222,10 @@ export async function inspectRepos(
     );
     const branch = matches.length === 1 ? matches[0] : null;
     const sha = branch ? (branches.find((candidate) => candidate.name === branch)?.sha ?? null) : null;
+    const target = repo.target || defaultTarget;
+    const targetSha = target ? (branches.find((candidate) => candidate.name === target)?.sha ?? null) : undefined;
     if (!sha) onPhase?.(repo, 'done');
-    return [{ status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true, matches, branch }, sha }];
+    return [{ status: { ...emptyRepoStatus(repo, undefined, defaultTarget), accessible: true, matches, branch }, sha, targetSha }];
   });
   return inspected.flat();
 }
@@ -281,7 +284,7 @@ async function inspectStack(
       branch: found.name,
       note,
     };
-    located.push({ status, sha: found.sha });
+    located.push({ status, sha: found.sha, targetSha: previous?.sha });
     previous = { branch: found.name, sha: found.sha };
     onPhase?.(repo, 'done');
   }

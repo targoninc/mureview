@@ -28,7 +28,7 @@ export interface SyncTarget {
 }
 
 const lastSyncByPr = new Map<number, number>();
-const syncIntervalMs = 30_000;
+const syncIntervalMs = 5 * 60_000;
 
 /**
  * Imports comments that exist on the forge pull requests (written by anyone,

@@ -109,12 +109,18 @@ async function inspectBranch(
   includeCommits: boolean,
   knownPull: string | null = null,
   onPhase?: (phase: 'diffing' | 'done' | 'error') => void,
+  targetSha?: string | null,
 ): Promise<RepoStatus> {
   const repo = status.repo;
   const target = status.target;
   onPhase?.('diffing');
   try {
-    const targetRef = await client.getBranch(repo, target, { fresh });
+    const targetRef =
+      targetSha === undefined
+        ? await client.getBranch(repo, target, { fresh })
+        : targetSha === null
+          ? null
+          : { name: target, sha: targetSha };
     if (!targetRef) {
       const diff = await targetlessDiff(client, repo, branchSha);
       onPhase?.('done');
@@ -274,15 +280,22 @@ export async function buildPrStatus(
       { patterns: compiled.patterns, perRepo, stack: stacked, defaultTarget: reviewSet.targetBranch, fresh },
       (repo, value) => phase(repo.connectionId, repo.repo, repo.position, value),
     );
-    const repos = await mapLimit(located, 4, async ({ status, sha }) => {
+    const repos = await mapLimit(located, 4, async ({ status, sha, targetSha }) => {
       const client = clients.get(status.connectionId);
       if (!status.branch || !sha || !client) {
         options.onRepo?.(status);
         return status;
       }
       const knownPull = reviewSetPullRequest(reviewSet.id, status.connectionId, status.repo, status.position);
-      const result = await inspectBranch(client, status, sha, fresh, includeCommits, knownPull, (value) =>
-        phase(status.connectionId, status.repo, status.position, value),
+      const result = await inspectBranch(
+        client,
+        status,
+        sha,
+        fresh,
+        includeCommits,
+        knownPull,
+        (value) => phase(status.connectionId, status.repo, status.position, value),
+        targetSha,
       );
       options.onRepo?.(result);
       return result;
