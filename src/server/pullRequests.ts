@@ -44,6 +44,30 @@ export function reviewSetPullRequest(reviewSetId: number, connectionId: number, 
  * one, so comments can be synced to the forge right away instead of waiting
  * for the merge. Existing pull requests are reused.
  */
+export async function createRepoPullRequest(
+  client: ForgeClient,
+  reviewSet: ReviewSet,
+  repo: RepoStatus,
+  prId: number,
+): Promise<{ ref: string; url: string }> {
+  const base = repo.target || reviewSet.targetBranch;
+  const pull = await client.ensurePullRequest(
+    repo.repo,
+    base,
+    repo.branch!,
+    `Merge ${repo.branch} into ${base}`,
+    `Review set: ${reviewSet.name}`,
+    reviewSetUrl(reviewSet.id),
+  );
+  db.run(
+    `INSERT INTO pull_request_repos (pr_id, connection_id, repo, position, forge_pr_ref, head_sha) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(pr_id, connection_id, repo, position)
+     DO UPDATE SET forge_pr_ref = excluded.forge_pr_ref, head_sha = excluded.head_sha`,
+    [prId, repo.connectionId, repo.repo, repo.position, pull.ref, repo.headSha ?? ''],
+  );
+  return { ref: pull.ref, url: client.pullRequestUrl(repo.repo, pull.ref) };
+}
+
 export async function ensureRepoPullRequests(
   clients: Map<number, ForgeClient>,
   reviewSet: ReviewSet,
@@ -62,23 +86,7 @@ export async function ensureRepoPullRequests(
     const client = clients.get(repo.connectionId);
     if (!client || client.readOnly) return;
     try {
-      // Each layer's pull request targets the layer below it (the review set's
-      // target branch for the bottom layer).
-      const base = repo.target || reviewSet.targetBranch;
-      const pull = await client.ensurePullRequest(
-        repo.repo,
-        base,
-        repo.branch!,
-        `Merge ${repo.branch} into ${base}`,
-        `Review set: ${reviewSet.name}`,
-        reviewSetUrl(reviewSet.id),
-      );
-      db.run(
-        `INSERT INTO pull_request_repos (pr_id, connection_id, repo, position, forge_pr_ref, head_sha) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(pr_id, connection_id, repo, position)
-         DO UPDATE SET forge_pr_ref = excluded.forge_pr_ref, head_sha = excluded.head_sha`,
-        [prId, repo.connectionId, repo.repo, repo.position, pull.ref, repo.headSha ?? ''],
-      );
+      await createRepoPullRequest(client, reviewSet, repo, prId);
     } catch (error) {
       // Surfaced on the review page; creating pull requests must not fail
       // silently, the forge usually explains what is missing.

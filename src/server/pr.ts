@@ -9,7 +9,7 @@ import { type ForgeConnectionRow, db } from './db';
 import { type CompareFile, type ForgeClient, clientFor } from './forges';
 import { addedFilePatch, countLines } from './patch';
 import { beginRun, finishRun, setPhase } from './progress';
-import { attachKnownPullRequests, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
+import { attachKnownPullRequests, createRepoPullRequest, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
 import { listReviewed, listReviewedBy, resetMarksForNewCommits } from './reviewed';
 import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
 
@@ -352,9 +352,10 @@ export async function buildPrStatus(
       await mapLimit(repos, 4, async (repo) => {
         const client = clients.get(repo.connectionId);
         if (!repo.pullRequest || !client) return;
-        const ref = repo.pullRequest.ref;
+        let ref = repo.pullRequest.ref;
         try {
           const state = await client.pullRequestState?.(repo.repo, ref);
+          let replaced = false;
           if (state) {
             repo.pullRequest = {
               ...repo.pullRequest,
@@ -363,6 +364,34 @@ export async function buildPrStatus(
               base: state.base,
               mergeable: state.mergeable,
             };
+          }
+          if (
+            ensurePulls &&
+            lifecycle.prId &&
+            client.pullRequestState &&
+            !client.readOnly &&
+            repo.state === 'open' &&
+            repo.branch &&
+            repo.targetExists &&
+            (!state || state.state !== 'open')
+          ) {
+            try {
+              const replacement = await createRepoPullRequest(client, reviewSet, repo, lifecycle.prId);
+              ref = replacement.ref;
+              repo.pullRequest = {
+                ref: replacement.ref,
+                url: replacement.url,
+                state: 'open',
+                head: repo.branch,
+                base: repo.target || reviewSet.targetBranch,
+              };
+              replaced = true;
+            } catch (error) {
+              repo.prError = forgeErrorMessage(error);
+              console.error(`Could not replace the closed pull request for ${repoLabel(repo)}:`, error);
+            }
+          }
+          if (state && !replaced) {
             const notes: string[] = [];
             if (state.state === 'closed') notes.push('the pull request was closed on the forge');
             if (state.head && repo.branch && state.head !== repo.branch) {

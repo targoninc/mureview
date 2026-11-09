@@ -21,6 +21,10 @@ export function ReviewSetPage() {
   const [syncComments, setSyncComments] = useState(false);
   const prId = detail?.pr.prId ?? null;
   const reviewSetId = detail?.reviewSet.id ?? null;
+  const stalePullRequest =
+    detail?.pr.repos.some(
+      (repo) => repo.state === 'open' && (repo.pullRequest?.state === 'closed' || repo.pullRequest?.state === 'merged'),
+    ) ?? false;
 
   // The last seen checkmarks, so the tree is right from the first paint.
   useEffect(() => {
@@ -52,7 +56,7 @@ export function ReviewSetPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, prId, reloadKey, syncComments]);
+  }, [id, prId, reloadKey, syncComments, stalePullRequest]);
 
   useEffect(() => {
     if (!id || !reviewSetId) return;
@@ -91,9 +95,13 @@ export function ReviewSetPage() {
         repos: detail.pr.repos.map((repo) => {
           const key = keyOf(repo);
           const pull = pullsByRepo.get(key);
+          const current = repo.pullRequest;
           return {
             ...repo,
-            pullRequest: repo.pullRequest ?? (pull ? { ref: pull.ref, url: pull.url } : undefined),
+            pullRequest:
+              pull && (!current || ((current.state === 'closed' || current.state === undefined) && pull.ref !== current.ref))
+                ? { ...current, ...pull }
+                : current,
             prError: prErrors.get(key) ?? repo.prError,
             commits: commitsByRepo.get(key) ?? repo.commits,
           };
