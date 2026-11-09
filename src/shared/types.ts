@@ -208,6 +208,7 @@ export interface RepoStatus {
   additions?: number;
   deletions?: number;
   truncated?: boolean;
+  fileCount?: number;
   headSha?: string;
   targetSha?: string;
   mergeBase?: string;

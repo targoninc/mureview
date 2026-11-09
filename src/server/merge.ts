@@ -83,7 +83,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
 
   const current =
     recentMergeStatus(reviewSet.id) ??
-    (await buildPrStatus(connections, reviewSet, false, { commits: false, clients, viewerId: user.id }));
+    (await buildPrStatus(connections, reviewSet, false, { commits: false, includeFiles: false, clients, viewerId: user.id }));
   // Layers that still have changes, plus layers already merged (so a stack's
   // order is known even when its bottom layers landed in an earlier run).
   const candidates = current.repos.filter(

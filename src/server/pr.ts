@@ -107,6 +107,7 @@ async function inspectBranch(
   branchSha: string,
   fresh: boolean,
   includeCommits: boolean,
+  includeFiles: boolean,
   knownPull: string | null = null,
   onPhase?: (phase: 'diffing' | 'done' | 'error') => void,
   targetSha?: string | null,
@@ -133,8 +134,9 @@ async function inspectBranch(
         additions: diff.additions,
         deletions: 0,
         truncated: diff.truncated,
+        fileCount: diff.files.length,
         commits: includeCommits ? await loadCommits(client, status.connectionId, repo, branchSha, undefined, knownPull ?? undefined) : undefined,
-        files: diff.files,
+        files: includeFiles ? diff.files : undefined,
       };
     }
 
@@ -151,12 +153,19 @@ async function inspectBranch(
         mergeBase: comparison.mergeBase,
         aheadBy: comparison.aheadBy,
         behindBy: comparison.behindBy,
+        fileCount: comparison.files.length,
         commits: [],
       };
     }
 
-    const files = comparison.files.map(toFileDiff);
-    const totals = summarize(files);
+    const fileCount = comparison.files.length;
+    const files = includeFiles ? comparison.files.map(toFileDiff) : undefined;
+    const totals = includeFiles
+      ? summarize(files!)
+      : comparison.files.reduce(
+          (acc, file) => ({ additions: acc.additions + file.additions, deletions: acc.deletions + file.deletions }),
+          { additions: 0, deletions: 0 },
+        );
     const comparisonCommits =
       comparison.commits.length >= comparison.aheadBy
         ? [...comparison.commits].sort((a, b) => (b.date || '').localeCompare(a.date || ''))
@@ -190,6 +199,7 @@ async function inspectBranch(
       additions: totals.additions,
       deletions: totals.deletions,
       truncated: comparison.truncated,
+      fileCount,
       commits,
       commitsTruncated: commits !== undefined && comparison.aheadBy > commits.length,
       note: [status.note, diverged].filter(Boolean).join(' ') || undefined,
@@ -229,6 +239,8 @@ function ensurePrLifecycle(reviewSetId: number, hasOpenRepos: boolean): PrLifecy
 export interface BuildPrOptions {
   /** Include comments and reviewed files (reads the database only). */
   discussions?: boolean;
+  /** Include each file's patch; merge/check pages only need counts. */
+  includeFiles?: boolean;
   /** Include the per-repository commit list (extra forge calls on cold caches). */
   commits?: boolean;
   /** Create missing forge pull requests for open repositories. */
@@ -254,6 +266,7 @@ export async function buildPrStatus(
 ): Promise<PrStatus> {
   const includeDiscussions = options.discussions ?? true;
   const includeCommits = options.commits ?? true;
+  const includeFiles = options.includeFiles ?? true;
   const ensurePulls = options.ensurePulls ?? true;
   const errors: string[] = [];
   const clients = options.clients ?? clientsFor(connections);
@@ -297,6 +310,7 @@ export async function buildPrStatus(
         sha,
         fresh,
         includeCommits,
+        includeFiles,
         knownPull,
         (value) => phase(status.connectionId, status.repo, status.position, value),
         targetSha,
@@ -316,7 +330,7 @@ export async function buildPrStatus(
 
     // Stacks can be read layer by layer or as one cumulative diff from the
     // target branch to the top of the stack.
-    const combined = stacked ? await combinedStacks(clients, repos, reviewSet, fresh) : undefined;
+    const combined = stacked ? await combinedStacks(clients, repos, reviewSet, fresh, includeFiles) : undefined;
 
     const hasOpen = openRepos.length > 0;
     const lifecycle = hasOpen ? ensurePrLifecycle(reviewSet.id, true) : hasRepoErrors ? null : ensurePrLifecycle(reviewSet.id, false);
@@ -324,7 +338,7 @@ export async function buildPrStatus(
     const stats = openRepos.reduce(
       (acc, repo) => ({
         repos: acc.repos + 1,
-        files: acc.files + (repo.files?.length ?? 0),
+        files: acc.files + (repo.files?.length ?? repo.fileCount ?? 0),
         additions: acc.additions + (repo.additions ?? 0),
         deletions: acc.deletions + (repo.deletions ?? 0),
       }),
@@ -408,6 +422,7 @@ async function combinedStacks(
   repos: RepoStatus[],
   reviewSet: ReviewSet,
   fresh: boolean,
+  includeFiles: boolean,
 ): Promise<RepoStatus[]> {
   const stacks = new Map<string, RepoStatus[]>();
   for (const repo of repos) {
@@ -428,8 +443,13 @@ async function combinedStacks(
       const targetRef = await client.getBranch(top.repo, reviewSet.targetBranch, { fresh });
       if (!targetRef) return;
       const comparison = (await cachedCompare(client, top.connectionId, top.repo, targetRef.sha, top.headSha!)).comparison;
-      const files = comparison.files.map(toFileDiff);
-      const totals = summarize(files);
+      const files = includeFiles ? comparison.files.map(toFileDiff) : undefined;
+      const totals = includeFiles
+        ? summarize(files!)
+        : comparison.files.reduce(
+            (acc, file) => ({ additions: acc.additions + file.additions, deletions: acc.deletions + file.deletions }),
+            { additions: 0, deletions: 0 },
+          );
       combined.push({
         ...top,
         position: -1,
@@ -443,6 +463,7 @@ async function combinedStacks(
         additions: totals.additions,
         deletions: totals.deletions,
         truncated: comparison.truncated,
+        fileCount: comparison.files.length,
         files,
         commits: comparison.commits,
       });

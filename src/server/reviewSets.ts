@@ -271,6 +271,7 @@ export async function getReviewSetCommits(ctx: Ctx): Promise<Response> {
   const status = await buildPrStatus(connections, access.reviewSet, fresh, {
     discussions: false,
     commits: true,
+    includeFiles: false,
     ensurePulls: false,
     clients,
   });
@@ -291,6 +292,7 @@ export async function getReviewSetChecks(ctx: Ctx): Promise<Response> {
   const status = await buildPrStatus(connections, access.reviewSet, false, {
     discussions: false,
     commits: false,
+    includeFiles: false,
     ensurePulls: false,
     clients,
   });
@@ -331,6 +333,7 @@ export async function getReviewSetDiscussion(ctx: Ctx): Promise<Response> {
   const status = await buildPrStatus(connections, access.reviewSet, false, {
     discussions: false,
     commits: false,
+    includeFiles: false,
     ensurePulls: canManage,
     headSync: true,
     clients,

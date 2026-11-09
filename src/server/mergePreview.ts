@@ -91,7 +91,7 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
     targetExists: repo.targetExists,
     aheadBy: repo.aheadBy ?? 0,
     behindBy: repo.behindBy ?? 0,
-    files: repo.files?.length ?? 0,
+    files: repo.files?.length ?? repo.fileCount ?? 0,
     additions: repo.additions ?? 0,
     deletions: repo.deletions ?? 0,
     truncated: repo.truncated ?? false,
@@ -158,6 +158,7 @@ export async function buildMergePreview(
 ): Promise<MergePreview> {
   const status = await buildPrStatus(connections, reviewSet, false, {
     commits: false,
+    includeFiles: false,
     progress: options.progressUserId !== undefined,
     progressUserId: options.progressUserId,
     viewerId: options.viewerId,
