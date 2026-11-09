@@ -386,15 +386,13 @@ export function MergePage() {
             {skippedSummary(skipped)}
           </p>
         ) : null}
-        {ready ? (
+        {ready && (results || openTotal === 0 || stacked) ? (
           <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>
             {results
               ? 'The merge finished. Review the per-repository results below.'
               : openTotal === 0
                 ? 'Nothing to merge: no matched branch has changes against the target branch.'
-                : stacked
-                ? `${openTotal} ${openTotal === 1 ? 'layer' : 'layers'} across ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'} will be merged bottom-up: each layer's pull request is retargeted onto ${target} and merged in order. Conflicts and checks are evaluated first.`
-                : `${openTotal} ${openTotal === 1 ? 'branch' : 'branches'} will be merged through one pull request per repository. Conflicts and checks are evaluated before merging.`}
+                : `${openTotal} ${openTotal === 1 ? 'layer' : 'layers'} across ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'} will be merged bottom-up: each layer's pull request is retargeted onto ${target} and merged in order. Conflicts and checks are evaluated first.`}
           </p>
         ) : null}
 
