@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BranchName, Button, Checkbox, Dialog, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
-import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
-import type { ForgeKind, MergePreviewRepo, MergeResult, RepoStatus, ReviewSetRepo } from '../../shared/types';
+import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, InfoIcon, XCircleFillIcon } from '@primer/octicons-react';
+import { nothingToMerge } from '../../shared/types';
+import type { ForgeKind, MergePreviewRepo, MergeResult, NothingToMerge, RepoStatus, ReviewSetRepo } from '../../shared/types';
 import { post } from '../lib/api';
 import { checkTone } from '../lib/checks';
 import { streamJson } from '../lib/ndjson';
@@ -51,6 +52,21 @@ function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTo
   if (repo.conflicts === 'unknown') return { text: 'conflicts could not be checked', tone: 'attention' };
   if (!repo.targetExists) return { text: `creates ${repo.target}`, tone: 'secondary' };
   return { text: 'no conflicts', tone: 'success' };
+}
+
+type SkippedCounts = Record<NothingToMerge, number>;
+
+/** One compact sentence about the repositories that are not shown as cards. */
+function skippedSummary(counts: SkippedCounts): string | null {
+  const total = counts['no-branch'] + counts.merged + counts['no-changes'];
+  if (total === 0) return null;
+  const parts = [
+    counts['no-branch'] > 0 ? `${counts['no-branch']} ${counts['no-branch'] === 1 ? 'has' : 'have'} no matching branch` : '',
+    counts.merged > 0 ? `${counts.merged} ${counts.merged === 1 ? 'is' : 'are'} already merged` : '',
+    counts['no-changes'] > 0 ? `${counts['no-changes']} ${counts['no-changes'] === 1 ? 'has' : 'have'} no changes` : '',
+  ].filter(Boolean);
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `${total} ${total === 1 ? 'repository' : 'repositories'} can't be merged: ${list}.`;
 }
 
 function RepoCard({ repo }: { repo: MergePreviewRepo }) {
@@ -289,17 +305,21 @@ export function MergePage() {
 
   const started = cards.length > 0 || ready;
 
-  // Repositories without a matched branch have nothing to merge; they form
-  // their own group below the ones that have pull requests.
-  const groups = useMemo(() => {
-    const withBranch: RepoCardInfo[] = [];
-    const without: RepoCardInfo[] = [];
-    for (const card of cards) (card.status?.branch || card.preview ? withBranch : without).push(card);
-    return [
-      { key: 'branch', title: 'With a matching branch', cards: withBranch },
-      { key: 'none', title: 'No matching branch', cards: without },
-    ].filter((group) => group.cards.length > 0);
+  // Repositories with nothing to merge (no matching branch, already merged or
+  // no changes) are only summarized, so they do not take up vertical space.
+  const skipped = useMemo(() => {
+    const counts: SkippedCounts = { 'no-branch': 0, merged: 0, 'no-changes': 0 };
+    for (const card of cards) {
+      const reason = card.status ? nothingToMerge(card.status) : null;
+      if (reason) counts[reason] += 1;
+    }
+    return counts;
   }, [cards]);
+  const skippedTotal = skipped['no-branch'] + skipped.merged + skipped['no-changes'];
+  const visibleCards = useMemo(
+    () => cards.filter((card) => !card.status || nothingToMerge(card.status) === null),
+    [cards],
+  );
 
   if (error && !started) {
     return (
@@ -360,6 +380,12 @@ export function MergePage() {
             'Merge branches'
           )}
         </Heading>
+        {skippedTotal > 0 ? (
+          <p className="row" style={{ gap: 6, margin: 0, color: 'var(--fgColor-muted)', fontSize: 12 }}>
+            <InfoIcon />
+            {skippedSummary(skipped)}
+          </p>
+        ) : null}
         {ready ? (
           <p style={{ margin: 0, color: 'var(--fgColor-muted)' }}>
             {results
@@ -415,14 +441,13 @@ export function MergePage() {
           </Flash>
         ) : null}
 
-        {groups.map((group) => (
-          <section className="merge-group" key={group.key} aria-label={group.title}>
-            <h2 className="merge-group-title">{group.title}</h2>
-            {group.cards.map((card) => (
+        {visibleCards.length > 0 ? (
+          <section className="merge-group" aria-label="Repositories to merge">
+            {visibleCards.map((card) => (
               <MergeCard key={cardKey(card)} card={card} />
             ))}
           </section>
-        ))}
+        ) : null}
 
         <div className="form-actions">
           <label className="merge-delete-branches" title="Delete each source branch once its changes have landed">

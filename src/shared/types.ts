@@ -231,6 +231,19 @@ export interface RepoStatus {
   files?: FileDiff[];
 }
 
+/**
+ * Why a repository has nothing to merge, or null when it does. Repositories
+ * that fit none of these still need attention (for example a read error).
+ */
+export type NothingToMerge = 'no-branch' | 'merged' | 'no-changes';
+
+export function nothingToMerge(repo: Pick<RepoStatus, 'state' | 'files'>): NothingToMerge | null {
+  if (repo.state === 'no-match') return 'no-branch';
+  if (repo.state === 'merged') return 'merged';
+  if (repo.state === 'open' && repo.files?.length === 0) return 'no-changes';
+  return null;
+}
+
 export type PrLifecycle = 'loading' | 'invalid' | 'empty' | 'open' | 'closed';
 
 export interface Comment {

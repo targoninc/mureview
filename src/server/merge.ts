@@ -1,5 +1,4 @@
-import type { MergeResult, RepoStatus } from '../shared/types';
-import { repoLabel } from '../shared/types';
+import { nothingToMerge, repoLabel, type MergeResult, type RepoStatus } from '../shared/types';
 import { connectionsFor } from './auth/identities';
 import { requireUser } from './auth/session';
 import { mapLimit } from './cache';
@@ -88,7 +87,10 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   // Layers that still have changes, plus layers already merged (so a stack's
   // order is known even when its bottom layers landed in an earlier run).
   const candidates = current.repos.filter(
-    (repo) => repo.branch && repo.position >= 0 && (repo.state === 'open' || repo.state === 'merged'),
+    (repo) =>
+      repo.branch &&
+      repo.position >= 0 &&
+      (repo.state === 'merged' || (repo.state === 'open' && nothingToMerge(repo) === null)),
   );
   if (!candidates.some((repo) => repo.state === 'open')) {
     throw new HttpError(400, 'Nothing to merge: no matched branch has changes against the target branch.');

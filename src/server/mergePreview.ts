@@ -1,4 +1,4 @@
-import type { ConflictState, MergePreview, MergePreviewRepo, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import { nothingToMerge, type ConflictState, type MergePreview, type MergePreviewRepo, type PrStatus, type RepoStatus, type ReviewSet } from '../shared/types';
 import { Cache, mapLimit } from './cache';
 import { constants } from './config';
 import type { ForgeConnectionRow } from './db';
@@ -166,7 +166,9 @@ export async function buildMergePreview(
   });
   const clients = options.clients ?? clientsFor(connections);
 
-  const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch);
+  // Only repositories with something to merge get a preview card; the rest
+  // (no matching branch, already merged, no changes) are summarized instead.
+  const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch && nothingToMerge(repo) === null);
   options.onStart?.(open.length);
   const repos = await mapLimit(open, 3, async (repo): Promise<MergePreviewRepo> => {
     const card = await previewRepo(clients.get(repo.connectionId), repo, repo.target || reviewSet.targetBranch);
