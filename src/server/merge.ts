@@ -6,12 +6,12 @@ import { mapLimit } from './cache';
 import { listUnsyncedComments } from './comments';
 import { invalidateForgeCaches } from './forges';
 import { HttpError, json, readJson } from './http';
-import { buildMergePreview } from './mergePreview';
+import { buildMergePreview, forgetMergeStatus, recentMergeStatus } from './mergePreview';
 import { publish } from './live';
 import { canManageReviewSet } from './permissions';
 import { buildPrStatus, clientsForActor } from './pr';
 import { markCommentSynced, reviewSetUrl } from './pullRequests';
-import { buildDetail, loadReadableReviewSet, requireId } from './reviewSets';
+import { loadReadableReviewSet, requireId } from './reviewSets';
 import type { Ctx } from './router';
 import { forgeErrorMessage } from './validate';
 
@@ -82,7 +82,9 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
   // shared review set, and the review set's creator may lack the rights.
   const clients = clientsForActor(user.id, connections);
 
-  const current = await buildPrStatus(connections, reviewSet, true, { commits: false, clients, viewerId: user.id });
+  const current =
+    recentMergeStatus(reviewSet.id) ??
+    (await buildPrStatus(connections, reviewSet, false, { commits: false, clients, viewerId: user.id }));
   // Layers that still have changes, plus layers already merged (so a stack's
   // order is known even when its bottom layers landed in an earlier run).
   const candidates = current.repos.filter(
@@ -259,8 +261,8 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
     return { connectionId: first.connectionId, label, ok: !failed, message: messages.join(' · '), mergedPrs };
   });
 
+  forgetMergeStatus(reviewSet.id);
   invalidateForgeCaches();
-  const detail = await buildDetail(user, reviewSet.id, true);
   publish(reviewSet.id, { type: 'prs', reason: 'merged' });
-  return json({ results, detail });
+  return json({ results });
 }

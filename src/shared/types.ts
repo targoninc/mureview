@@ -209,6 +209,8 @@ export interface RepoStatus {
   deletions?: number;
   truncated?: boolean;
   headSha?: string;
+  targetSha?: string;
+  mergeBase?: string;
   pullRequest?: {
     ref: string;
     url: string;
@@ -218,6 +220,7 @@ export interface RepoStatus {
     /** Where the forge says the pull request points now. */
     head?: string;
     base?: string;
+    mergeable?: boolean | null;
     /** Everyone's decisions, when the forge reports them. */
     reviewers?: Array<{ name: string; avatarUrl?: string; vote: ReviewVote; you?: boolean }>;
   };
@@ -361,6 +364,7 @@ export interface MergePreviewRepo {
     /** Where the forge says the pull request points now. */
     head?: string;
     base?: string;
+    mergeable?: boolean | null;
   };
   error?: string;
 }

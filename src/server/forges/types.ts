@@ -170,7 +170,7 @@ export interface ForgeClient {
   /** Everyone's review decision on a pull request, when the forge reports them. */
   pullRequestReviews?(repo: string, ref: string): Promise<ForgeReviewer[]>;
   /** The pull request's current state and branches on the forge. */
-  pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null>;
+  pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string; mergeable?: boolean | null } | null>;
   /** Registers a webhook that pushes live updates into mureview. */
   registerWebhook?(repo: string, url: string, secret: string): Promise<boolean>;
   /** When the stored credentials expire, if the forge reports it. */
@@ -251,11 +251,18 @@ export function latestOwnReview<T extends ForgeReview>(reviews: T[], login: stri
   return reviews.filter((review) => review.user?.login === login && review.state !== commentState).at(-1);
 }
 
-export function toPullRequestState(pull: { state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }): { state: 'open' | 'closed' | 'merged'; head: string; base: string } {
+export function toPullRequestState(pull: {
+  state?: string;
+  merged?: boolean;
+  mergeable?: boolean | null;
+  head?: { ref?: string };
+  base?: { ref?: string };
+}): { state: 'open' | 'closed' | 'merged'; head: string; base: string; mergeable?: boolean | null } {
   return {
     state: pull.merged ? 'merged' : pull.state === 'closed' ? 'closed' : 'open',
     head: pull.head?.ref ?? '',
     base: pull.base?.ref ?? '',
+    ...(pull.mergeable === undefined ? {} : { mergeable: pull.mergeable }),
   };
 }
 

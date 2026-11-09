@@ -1,5 +1,5 @@
-import type { ConflictState, MergePreview, MergePreviewRepo, RepoStatus, ReviewSet } from '../shared/types';
-import { mapLimit } from './cache';
+import type { ConflictState, MergePreview, MergePreviewRepo, PrStatus, RepoStatus, ReviewSet } from '../shared/types';
+import { Cache, mapLimit } from './cache';
 import { constants } from './config';
 import type { ForgeConnectionRow } from './db';
 import { type ForgeClient } from './forges';
@@ -9,6 +9,15 @@ import { buildPrStatus, clientsFor } from './pr';
 import { forgeErrorMessage } from './validate';
 
 const maxCheckedFiles = 40;
+const recentStatus = new Cache<PrStatus>(50, 60_000);
+
+export function recentMergeStatus(reviewSetId: number): PrStatus | undefined {
+  return recentStatus.get(String(reviewSetId));
+}
+
+export function forgetMergeStatus(reviewSetId: number): void {
+  recentStatus.delete(String(reviewSetId));
+}
 
 type Blob =
   | { status: 'missing' }
@@ -34,8 +43,14 @@ function fileConflicts(base: Blob, ours: Blob, theirs: Blob): 'conflict' | 'clea
   return hasConflict(base.content, ours.content, theirs.content) ? 'conflict' : 'clean';
 }
 
-async function checkRepo(client: ForgeClient, base: MergePreviewRepo, headSha: string, targetSha: string): Promise<MergePreviewRepo> {
-  const mergeBase = await client.mergeBase(base.repo, targetSha, headSha);
+async function checkRepo(
+  client: ForgeClient,
+  base: MergePreviewRepo,
+  headSha: string,
+  targetSha: string,
+  knownMergeBase?: string,
+): Promise<MergePreviewRepo> {
+  const mergeBase = knownMergeBase ?? (await client.mergeBase(base.repo, targetSha, headSha));
   if (!mergeBase) return { ...base, conflicts: 'unknown' };
   if (mergeBase === targetSha) return base; // fast-forward, nothing to conflict with
 
@@ -94,13 +109,28 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
       const permission = await actingPermission(client, repo.repo);
       base.canComplete = permission === 'write' ? 'yes' : permission === 'read' ? 'no' : 'unknown';
     }
-    const headRef = await client.getBranch(repo.repo, repo.branch!, { fresh: true });
-    if (!headRef) return base;
-    base.checks = await client.checks(repo.repo, headRef.sha, { pullRequest: repo.pullRequest?.ref });
+    const headSha = repo.headSha;
+    if (!headSha) return base;
+    base.checks = await client.checks(repo.repo, headSha, { pullRequest: repo.pullRequest?.ref });
     if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
-    const targetRef = await client.getBranch(repo.repo, target, { fresh: true });
-    if (!targetRef) return base;
-    return await checkRepo(client, base, headRef.sha, targetRef.sha);
+    const pull = base.pullRequest;
+    if (
+      repo.position === 0 &&
+      pull?.state !== 'closed' &&
+      pull?.state !== 'merged' &&
+      pull?.mergeable !== undefined &&
+      pull?.mergeable !== null &&
+      (!pull.base || pull.base === target)
+    ) {
+      return { ...base, conflicts: pull.mergeable ? 'none' : 'detected' };
+    }
+    let targetSha = repo.targetSha;
+    if (!targetSha) {
+      const targetRef = await client.getBranch(repo.repo, target, {});
+      targetSha = targetRef?.sha;
+    }
+    if (!targetSha) return base;
+    return await checkRepo(client, base, headSha, targetSha, repo.mergeBase);
   } catch (error) {
     return { ...base, conflicts: 'unknown', error: forgeErrorMessage(error) };
   }
@@ -126,7 +156,7 @@ export async function buildMergePreview(
   reviewSet: ReviewSet,
   options: MergePreviewOptions = {},
 ): Promise<MergePreview> {
-  const status = await buildPrStatus(connections, reviewSet, true, {
+  const status = await buildPrStatus(connections, reviewSet, false, {
     commits: false,
     progress: options.progressUserId !== undefined,
     progressUserId: options.progressUserId,
@@ -144,6 +174,7 @@ export async function buildMergePreview(
     return card;
   });
 
+  recentStatus.set(String(reviewSet.id), status);
   return {
     target: reviewSet.targetBranch,
     repos,

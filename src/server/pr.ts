@@ -147,6 +147,8 @@ async function inspectBranch(
         targetExists: true,
         state: 'merged',
         headSha: branchSha,
+        targetSha: targetRef.sha,
+        mergeBase: comparison.mergeBase,
         aheadBy: comparison.aheadBy,
         behindBy: comparison.behindBy,
         commits: [],
@@ -181,6 +183,8 @@ async function inspectBranch(
       targetExists: true,
       state: 'open',
       headSha: branchSha,
+      targetSha: targetRef.sha,
+      mergeBase: comparison.mergeBase,
       aheadBy: comparison.aheadBy,
       behindBy: comparison.behindBy,
       additions: totals.additions,
@@ -338,7 +342,13 @@ export async function buildPrStatus(
         try {
           const state = await client.pullRequestState?.(repo.repo, ref);
           if (state) {
-            repo.pullRequest = { ...repo.pullRequest, state: state.state, head: state.head, base: state.base };
+            repo.pullRequest = {
+              ...repo.pullRequest,
+              state: state.state,
+              head: state.head,
+              base: state.base,
+              mergeable: state.mergeable,
+            };
             const notes: string[] = [];
             if (state.state === 'closed') notes.push('the pull request was closed on the forge');
             if (state.head && repo.branch && state.head !== repo.branch) {
@@ -426,6 +436,8 @@ async function combinedStacks(
         target: reviewSet.targetBranch,
         targetExists: true,
         state: comparison.merged ? 'merged' : 'open',
+        targetSha: targetRef.sha,
+        mergeBase: comparison.mergeBase,
         aheadBy: comparison.aheadBy,
         behindBy: comparison.behindBy,
         additions: totals.additions,

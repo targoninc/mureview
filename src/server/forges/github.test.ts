@@ -238,13 +238,14 @@ test('reviewPullRequest approves, requests changes and withdraws', async () => {
 test('pullRequestState reports merged, closed and changed branches', async () => {
   globalThis.fetch = (async (input: unknown) => {
     const url = String(input);
-    if (url.endsWith('/pulls/5')) return Response.json({ state: 'closed', merged: true, head: { ref: 'other' }, base: { ref: 'main' } });
+    if (url.endsWith('/pulls/5'))
+      return Response.json({ state: 'closed', merged: true, mergeable: false, head: { ref: 'other' }, base: { ref: 'main' } });
     if (url.endsWith('/pulls/6')) return Response.json({ state: 'closed', merged: false, head: { ref: 'topic' }, base: { ref: 'main' } });
     return new Response('not found', { status: 404 });
   }) as unknown as typeof fetch;
 
   const client = new GithubClient('token');
-  expect(await client.pullRequestState('acme/repo', '5')).toEqual({ state: 'merged', head: 'other', base: 'main' });
+  expect(await client.pullRequestState('acme/repo', '5')).toEqual({ state: 'merged', head: 'other', base: 'main', mergeable: false });
   expect(await client.pullRequestState('acme/repo', '6')).toEqual({ state: 'closed', head: 'topic', base: 'main' });
   expect(await client.pullRequestState('acme/repo', '7')).toBeNull();
 });

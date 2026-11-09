@@ -644,11 +644,18 @@ export class ForgejoClient implements ForgeClient {
     );
   }
 
-  async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
+  async pullRequestState(
+    repo: string,
+    ref: string,
+  ): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string; mergeable?: boolean | null } | null> {
     try {
-      const pull = await this.request<{ state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }>(
-        `/repos/${repo}/pulls/${ref}`,
-      );
+      const pull = await this.request<{
+        state?: string;
+        merged?: boolean;
+        mergeable?: boolean | null;
+        head?: { ref?: string };
+        base?: { ref?: string };
+      }>(`/repos/${repo}/pulls/${ref}`);
       return toPullRequestState(pull);
     } catch (error) {
       if (error instanceof ForgeError && error.status === 404) return null;

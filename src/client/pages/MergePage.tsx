@@ -2,14 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BranchName, Button, Checkbox, Dialog, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, XCircleFillIcon } from '@primer/octicons-react';
-import type {
-  ForgeKind,
-  MergePreviewRepo,
-  MergeResult,
-  RepoStatus,
-  ReviewSetDetail,
-  ReviewSetRepo,
-} from '../../shared/types';
+import type { ForgeKind, MergePreviewRepo, MergeResult, RepoStatus, ReviewSetRepo } from '../../shared/types';
 import { post } from '../lib/api';
 import { checkTone } from '../lib/checks';
 import { streamJson } from '../lib/ndjson';
@@ -47,7 +40,13 @@ function cardKey(entry: { connectionId: number; repo: string; position: number }
 function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone } {
   if (repo.error) return { text: repo.error, tone: 'danger' };
   if (repo.conflicts === 'detected') {
-    return { text: `${repo.conflictFiles.length} conflicting ${repo.conflictFiles.length === 1 ? 'file' : 'files'}`, tone: 'danger' };
+    return {
+      text:
+        repo.conflictFiles.length > 0
+          ? `${repo.conflictFiles.length} conflicting ${repo.conflictFiles.length === 1 ? 'file' : 'files'}`
+          : 'merge conflicts',
+      tone: 'danger',
+    };
   }
   if (repo.conflicts === 'unknown') return { text: 'conflicts could not be checked', tone: 'attention' };
   if (!repo.targetExists) return { text: `creates ${repo.target}`, tone: 'secondary' };
@@ -279,7 +278,7 @@ export function MergePage() {
     setMerging(true);
     setError(null);
     try {
-      const result = await post<{ results: MergeResult[]; detail: ReviewSetDetail }>(`/review-sets/${id}/merge`, { deleteBranches });
+      const result = await post<{ results: MergeResult[] }>(`/review-sets/${id}/merge`, { deleteBranches });
       setResults(result.results);
     } catch (err) {
       setError((err as Error).message);

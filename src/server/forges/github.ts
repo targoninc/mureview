@@ -224,7 +224,6 @@ const pendingResponses = new Map<string, Promise<unknown>>();
 const responseStaleMs = 10 * 60_000;
 let responseGeneration = 0;
 
-/** How long an ordinary GitHub response may be reused without a request. */
 function responseTtl(path: string): number {
   if (/^\/user(?:\?|$)/.test(path) || /^\/repos\/[^/]+\/[^/?#]+(?:\?|$)/.test(path)) return 5 * 60_000;
   return 30_000;
@@ -506,7 +505,11 @@ export class GithubClient implements ForgeClient {
     const key = `${repo}#${branch}`;
     const load = async (): Promise<BranchInfo | null> => {
       try {
-        const found = await this.request<GithubBranch>(`/repos/${repo}/branches/${encodeURIComponent(branch)}`, {}, { revalidate: Boolean(options.fresh) });
+        const found = await this.request<GithubBranch>(
+          `/repos/${repo}/branches/${encodeURIComponent(branch)}`,
+          {},
+          { revalidate: Boolean(options.fresh) },
+        );
         return { name: found.name, sha: found.commit.sha };
       } catch (error) {
         if (error instanceof ForgeError && error.status === 404) return null;
@@ -676,9 +679,18 @@ export class GithubClient implements ForgeClient {
     );
   }
 
-  async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
+  async pullRequestState(
+    repo: string,
+    ref: string,
+  ): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string; mergeable?: boolean | null } | null> {
     try {
-      const pull = await this.request<{ state?: string; merged?: boolean; head?: { ref?: string }; base?: { ref?: string } }>(
+      const pull = await this.request<{
+        state?: string;
+        merged?: boolean;
+        mergeable?: boolean | null;
+        head?: { ref?: string };
+        base?: { ref?: string };
+      }>(
         `/repos/${repo}/pulls/${pullNumber(ref)}`,
       );
       return toPullRequestState(pull);
