@@ -4,7 +4,7 @@ import { db } from './db';
 import type { CompareFile, CompareResult, ForgeClient } from './forges';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from './patch';
 
-const version = 1;
+const version = 2;
 const maxCachedCommits = 300;
 
 interface StoredComparison extends CompareResult {
@@ -216,7 +216,7 @@ export function cachedCompare(
   baseSha: string,
   headSha: string,
 ): Promise<CachedComparison> {
-  const memoryKey = `${connectionId}:${repo}:${baseSha}`;
+  const memoryKey = `${version}:${connectionId}:${repo}:${baseSha}`;
   const remembered = memory.get(memoryKey);
   if (remembered && (remembered.comparison as StoredComparison).head === headSha) return Promise.resolve(remembered);
 

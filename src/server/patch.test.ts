@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { processFile } from '@pierre/diffs';
-import { addedFilePatch, countLines, deletedFilePatch, modifiedFilePatch, withPatchHeader } from './patch';
+import { addedFilePatch, countLines, deletedFilePatch, modifiedFilePatch, repairHunkCounts, withPatchHeader } from './patch';
 
 describe('addedFilePatch', () => {
   test('produces a patch the diff renderer can parse', () => {
@@ -77,4 +77,12 @@ test('hunks keep their declared line counts when files lack trailing newlines', 
   const both = modifiedFilePatch({ path: 'x.txt', type: 'modified' }, 'a\nb\nc\nd', 'a\nB\nc\nd');
   expect(both).not.toContain('\\ No newline');
   expect(processFile(both)).toBeTruthy();
+});
+
+test('repairs hunk headers that disagree with the body', () => {
+  const broken =
+    'diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1,8 +1,10 @@\n context\n-old\n+new\n';
+  const repaired = repairHunkCounts(broken);
+  expect(repaired).toContain('@@ -1,2 +1,2 @@');
+  expect(processFile(repaired)).toBeTruthy();
 });
