@@ -77,13 +77,33 @@ export function FileTreePanel({
     ensureFileIconSprite();
   }, []);
 
+  const repoCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const repo of entries) {
+      const key = `${repo.host}/${repo.repo}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return counts;
+  }, [entries]);
+  const repeatedRepos = useMemo(
+    () => new Set([...repoCounts].filter(([, count]) => count > 1).map(([key]) => key)),
+    [repoCounts],
+  );
   const entriesForTree = useMemo(() => {
     const list: Entry[] = [];
+    const seen = new Set<string>();
+    const displayed = new Set<string>();
     for (const repo of entries) {
-      const layer = stacked && repo.position >= 0 ? `Layer ${repo.position + 1} · ${repo.branch}` : undefined;
+      const layer =
+        (stacked || repeatedRepos.has(`${repo.host}/${repo.repo}`)) && repo.position >= 0
+          ? `Layer ${repo.position + 1} · ${repo.branch}`
+          : undefined;
       for (const file of repo.files ?? []) {
         const itemId = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
-        if (hiddenItems?.has(itemId)) continue;
+        const displayKey = `${repo.host}/${repo.repo}/${layer ?? ''}/${file.path}`;
+        if (hiddenItems?.has(itemId) || seen.has(itemId) || displayed.has(displayKey)) continue;
+        seen.add(itemId);
+        displayed.add(displayKey);
         list.push({
           segments: fileSegments(repo.host, repo.repo, file.path, layer),
           itemId,
@@ -93,7 +113,7 @@ export function FileTreePanel({
       }
     }
     return list;
-  }, [entries, stacked, hiddenItems]);
+  }, [entries, stacked, hiddenItems, repeatedRepos]);
 
   // The tree names directories by their path segments ("host/repo" and, for
   // stacks, "host/repo/Layer 2 · branch"), so that is what the icons key on.
@@ -103,13 +123,13 @@ export function FileTreePanel({
   );
   const layerKeys = useMemo(() => {
     const keys = new Set<string>();
-    if (!stacked) return keys;
+    if (!stacked && repeatedRepos.size === 0) return keys;
     for (const repo of entries) {
       if (repo.position < 0) continue;
       keys.add(`${repo.host}/${repo.repo}/Layer ${repo.position + 1} · ${repo.branch}`);
     }
     return keys;
-  }, [entries, stacked]);
+  }, [entries, stacked, repeatedRepos]);
 
   const tree = useMemo(() => buildFileTree(entriesForTree), [entriesForTree]);
   const treeKey = useMemo(

@@ -59,6 +59,15 @@ function summarize(files: FileDiff[]): { additions: number; deletions: number } 
   });
 }
 
+function uniqueFiles(files: CompareFile[]): CompareFile[] {
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    if (seen.has(file.path)) return false;
+    seen.add(file.path);
+    return true;
+  });
+}
+
 function targetlessDiff(client: ForgeClient, repo: string, branchSha: string): Promise<BranchDiff> {
   return cached(targetlessCache, `${client.baseUrl}#${repo}#${branchSha}`, async () => {
     const tree = await client.listBlobs(repo, branchSha);
@@ -158,11 +167,12 @@ async function inspectBranch(
       };
     }
 
-    const fileCount = comparison.files.length;
-    const files = includeFiles ? comparison.files.map(toFileDiff) : undefined;
+    const unique = uniqueFiles(comparison.files);
+    const fileCount = unique.length;
+    const files = includeFiles ? unique.map(toFileDiff) : undefined;
     const totals = includeFiles
       ? summarize(files!)
-      : comparison.files.reduce(
+      : unique.reduce(
           (acc, file) => ({ additions: acc.additions + file.additions, deletions: acc.deletions + file.deletions }),
           { additions: 0, deletions: 0 },
         );
@@ -472,10 +482,11 @@ async function combinedStacks(
       const targetRef = await client.getBranch(top.repo, reviewSet.targetBranch, { fresh });
       if (!targetRef) return;
       const comparison = (await cachedCompare(client, top.connectionId, top.repo, targetRef.sha, top.headSha!)).comparison;
-      const files = includeFiles ? comparison.files.map(toFileDiff) : undefined;
+      const unique = uniqueFiles(comparison.files);
+      const files = includeFiles ? unique.map(toFileDiff) : undefined;
       const totals = includeFiles
         ? summarize(files!)
-        : comparison.files.reduce(
+        : unique.reduce(
             (acc, file) => ({ additions: acc.additions + file.additions, deletions: acc.deletions + file.deletions }),
             { additions: 0, deletions: 0 },
           );
@@ -492,7 +503,7 @@ async function combinedStacks(
         additions: totals.additions,
         deletions: totals.deletions,
         truncated: comparison.truncated,
-        fileCount: comparison.files.length,
+        fileCount: unique.length,
         files,
         commits: comparison.commits,
       });

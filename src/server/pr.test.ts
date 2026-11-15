@@ -40,7 +40,10 @@ const comparison: CompareResult = {
   merged: false,
   aheadBy: 1,
   behindBy: 0,
-  files: [{ path: 'src/a.ts', type: 'modified', additions: 1, deletions: 0, patch: null }],
+  files: [
+    { path: 'src/a.ts', type: 'modified', additions: 1, deletions: 0, patch: null },
+    { path: 'src/a.ts', type: 'modified', additions: 1, deletions: 0, patch: null },
+  ],
   commits: [],
   truncated: false,
   mergeBase: 'base',
@@ -112,6 +115,7 @@ test('a closed tracked pull request is replaced when the branch has new changes'
   });
 
   expect(ensured).toBe(1);
+  expect(status.repos[0].fileCount).toBe(1);
   expect(status.repos[0].pullRequest?.ref).toBe('2');
   const row = db
     .query<{ forge_pr_ref: string }, [number]>('SELECT forge_pr_ref FROM pull_request_repos WHERE pr_id = ?')

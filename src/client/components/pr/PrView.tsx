@@ -82,10 +82,24 @@ function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
   const parsed: ParsedFile[] = [];
   const entries = view === 'combined' ? (pr.combined ?? []) : pr.repos;
   const stacked = Boolean(pr.combined);
+  const repoCounts = new Map<string, number>();
   for (const repo of entries) {
-    const layer = stacked && repo.position >= 0 ? layerLabel(repo) : undefined;
+    const key = `${repo.host}/${repo.repo}`;
+    repoCounts.set(key, (repoCounts.get(key) ?? 0) + 1);
+  }
+  const seen = new Set<string>();
+  const displayed = new Set<string>();
+  for (const repo of entries) {
+    const layer =
+      (stacked || (repoCounts.get(`${repo.host}/${repo.repo}`) ?? 0) > 1) && repo.position >= 0
+        ? layerLabel(repo)
+        : undefined;
     for (const file of repo.files ?? []) {
       const id = fileItemId(repo.connectionId, repo.repo, repo.position, file.path);
+      const displayKey = `${repo.host}/${repo.repo}/${layer ?? ''}/${file.path}`;
+      if (seen.has(id) || displayed.has(displayKey)) continue;
+      seen.add(id);
+      displayed.add(displayKey);
       let text = Boolean(file.patch);
       let fileDiff = null;
       try {
