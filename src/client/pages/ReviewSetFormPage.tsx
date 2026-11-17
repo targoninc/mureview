@@ -11,6 +11,7 @@ import {
   IconButton,
   Select,
   Spinner,
+  Textarea,
   TextInput,
   useConfirm,
 } from '@primer/react';
@@ -41,6 +42,8 @@ export function ReviewSetFormPage() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [prLinks, setPrLinks] = useState('');
+  const [importing, setImporting] = useState(false);
   const [available, setAvailable] = useState<AvailableRepo[] | null>(null);
   const [sources, setSources] = useState<RepoSource[]>([]);
   const [repoErrors, setRepoErrors] = useState<{ connectionId: number; message: string }[]>([]);
@@ -247,6 +250,7 @@ export function ReviewSetFormPage() {
         branch: item.branch,
         target: item.target,
         position: item.position,
+        pullRequest: item.pullRequest,
       })),
       branchRegex: form.branchRegex,
       targetBranch: form.targetBranch,
@@ -260,6 +264,22 @@ export function ReviewSetFormPage() {
       setError((err as Error).message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const createFromPullRequests = async () => {
+    setImporting(true);
+    setError(null);
+    try {
+      const result = await post<{ detail: { reviewSet: ReviewSet } }>('/review-sets/from-pull-requests', {
+        name: form.name,
+        urls: prLinks,
+      });
+      navigate(`/review-sets/${result.detail.reviewSet.id}`);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -352,6 +372,33 @@ export function ReviewSetFormPage() {
               ))}
             </ul>
           </Flash>
+        ) : null}
+
+        {!editing ? (
+          <FormControl>
+            <FormControl.Label>Create from pull requests</FormControl.Label>
+            <Textarea
+              block
+              rows={4}
+              value={prLinks}
+              onChange={(event) => setPrLinks(event.target.value)}
+              placeholder={
+                'https://github.com/owner/repo/pull/123\nhttps://git.example.com/owner/repo/pulls/456'
+              }
+            />
+            <FormControl.Caption>
+              Paste one pull request URL per line. The source and target branches come from the pull requests.
+            </FormControl.Caption>
+            <div className="row" style={{ justifyContent: 'flex-end', marginTop: 8 }}>
+              <Button
+                variant="primary"
+                disabled={!prLinks.trim() || importing || saving}
+                onClick={createFromPullRequests}
+              >
+                {importing ? 'Reading pull requests…' : 'Create from links'}
+              </Button>
+            </div>
+          </FormControl>
         ) : null}
 
         <FormControl>

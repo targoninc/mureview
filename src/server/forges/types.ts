@@ -170,7 +170,7 @@ export interface ForgeClient {
   /** Everyone's review decision on a pull request, when the forge reports them. */
   pullRequestReviews?(repo: string, ref: string): Promise<ForgeReviewer[]>;
   /** The pull request's current state and branches on the forge. */
-  pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string; mergeable?: boolean | null } | null>;
+  pullRequestState?(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string; headSha?: string; mergeable?: boolean | null } | null>;
   /** Registers a webhook that pushes live updates into mureview. */
   registerWebhook?(repo: string, url: string, secret: string): Promise<boolean>;
   /** When the stored credentials expire, if the forge reports it. */

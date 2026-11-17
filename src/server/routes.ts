@@ -27,6 +27,7 @@ import { listAvailableRepos, listRepoBranches } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
 import {
   createReviewSet,
+  createReviewSetFromPullRequests,
   deleteReviewSet,
   getReviewSetCommits,
   getReviewSetChecks,
@@ -85,6 +86,7 @@ api.get('/api/repos/branches', (ctx: Ctx) => {
 
 api.get('/api/review-sets', listReviewSets);
 api.post('/api/review-sets', createReviewSet);
+api.post('/api/review-sets/from-pull-requests', createReviewSetFromPullRequests);
 api.get('/api/review-sets/:id/detail', streamReviewSetDetail);
 api.get('/api/review-sets/:id/progress', getReviewSetProgress);
 api.get('/api/review-sets/:id/commits', getReviewSetCommits);

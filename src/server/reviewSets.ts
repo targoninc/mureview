@@ -2,7 +2,7 @@ import type { ForgeKind, ReviewSet, ReviewSetDetail, ReviewSetInput, ReviewSetRe
 import { loadReadableReviewSetRow, ownerInfo, reposAccessible, reviewSetRow, type OwnerInfo, type ReviewSetRow } from './access';
 import { mapLimit } from './cache';
 import { type ForgeConnectionRow, type UserRow, db } from './db';
-import { hostOf, organizationOf } from './forges';
+import { clientFor, hostOf, organizationOf } from './forges';
 import { HttpError, json, readJson, requireString } from './http';
 import { buildPrStatus, clientsForActor } from './pr';
 import { canManageRepoList, canManageReviewSet } from './permissions';
@@ -11,7 +11,9 @@ import { syncForgeComments } from './commentSync';
 import { ensureWebhooksForReviewSet } from './webhooks';
 import { listReviewed } from './reviewed';
 import { readRun } from './progress';
+import { forgeErrorMessage } from './validate';
 import { normalizeRepo } from './repos';
+import { parsePullRequestLinks } from './pullRequestLinks';
 import { connectionsFor } from './auth/identities';
 import type { Ctx } from './router';
 
@@ -21,6 +23,7 @@ interface RepoRow {
   branch: string | null;
   target_branch: string | null;
   position: number;
+  pull_request_ref: string | null;
   kind: ForgeKind;
   base_url: string;
 }
@@ -28,7 +31,7 @@ interface RepoRow {
 function reposFor(reviewSetId: number): ReviewSetRepo[] {
   return db
     .query<RepoRow, [number]>(
-      `SELECT rsr.connection_id, rsr.repo, rsr.branch, rsr.target_branch, rsr.position, fc.kind, fc.base_url
+      `SELECT rsr.connection_id, rsr.repo, rsr.branch, rsr.target_branch, rsr.position, rsr.pull_request_ref, fc.kind, fc.base_url
        FROM review_set_repos rsr
        JOIN forge_connections fc ON fc.id = rsr.connection_id
        WHERE rsr.review_set_id = ?
@@ -44,6 +47,7 @@ function reposFor(reviewSetId: number): ReviewSetRepo[] {
       branch: row.branch,
       target: row.target_branch,
       position: row.position,
+      pullRequest: row.pull_request_ref,
     }));
 }
 
@@ -52,7 +56,10 @@ function toReviewSet(row: ReviewSetRow): ReviewSet {
     id: row.id,
     name: row.name,
     repos: reposFor(row.id),
-    mode: row.mode === 'per-repo' || row.mode === 'stack' ? row.mode : 'pattern',
+    mode:
+      row.mode === 'per-repo' || row.mode === 'stack' || row.mode === 'pull-requests'
+        ? row.mode
+        : 'pattern',
     branchRegex: row.branch_regex,
     targetBranch: row.target_branch,
     createdAt: row.created_at,
@@ -83,7 +90,10 @@ type ConnectionResolver = (connectionId: number) => number | null;
 function parseInput(user: UserRow, body: unknown, resolveConnection?: ConnectionResolver): ReviewSetInput {
   const record = (body ?? {}) as Record<string, unknown>;
   const name = requireString(record.name, 'name', 200);
-  const mode: ReviewSetInput['mode'] = record.mode === 'per-repo' || record.mode === 'stack' ? record.mode : 'pattern';
+  const mode: ReviewSetInput['mode'] =
+    record.mode === 'per-repo' || record.mode === 'stack' || record.mode === 'pull-requests'
+      ? record.mode
+      : 'pattern';
 
   const raw = Array.isArray(record.repos) ? record.repos : [];
   const own = new Set(connectionsFor(user.id).map((connection) => connection.id));
@@ -92,7 +102,14 @@ function parseInput(user: UserRow, body: unknown, resolveConnection?: Connection
   const seen = new Set<string>();
 
   for (const entry of raw) {
-    const item = (entry ?? {}) as { connectionId?: unknown; repo?: unknown; branch?: unknown; target?: unknown; position?: unknown };
+    const item = (entry ?? {}) as {
+      connectionId?: unknown;
+      repo?: unknown;
+      branch?: unknown;
+      target?: unknown;
+      position?: unknown;
+      pullRequest?: unknown;
+    };
     const submitted = Number(item.connectionId);
     const connectionId = Number.isInteger(submitted) ? resolve(submitted) : null;
     if (connectionId === null) {
@@ -103,9 +120,16 @@ function parseInput(user: UserRow, body: unknown, resolveConnection?: Connection
 
     const branch = typeof item.branch === 'string' && item.branch.trim() ? item.branch.trim().slice(0, 255) : null;
     const target = typeof item.target === 'string' && item.target.trim() ? item.target.trim().slice(0, 255) : null;
+    const pullRequest =
+      typeof item.pullRequest === 'string' && item.pullRequest.trim() ? item.pullRequest.trim().slice(0, 255) : null;
     const position = Number.isInteger(Number(item.position)) && Number(item.position) >= 0 ? Number(item.position) : 0;
 
-    if (mode === 'stack') {
+    if (mode === 'pull-requests') {
+      if (!pullRequest) throw new HttpError(400, `Every pull request needs a link.`);
+      const key = `${connectionId}:${repo}:${position}:${pullRequest}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    } else if (mode === 'stack') {
       if (!branch) throw new HttpError(400, `Every layer of a stack needs a branch (${repo}).`);
       const key = `${connectionId}:${repo}:${position}`;
       if (seen.has(key)) continue;
@@ -118,7 +142,14 @@ function parseInput(user: UserRow, body: unknown, resolveConnection?: Connection
         throw new HttpError(400, `Pick a source and target branch for ${repo}.`);
       }
     }
-    repos.push({ connectionId, repo, branch, target: mode === 'stack' ? null : target, position: mode === 'stack' ? position : 0 });
+    repos.push({
+      connectionId,
+      repo,
+      branch,
+      target: mode === 'stack' ? null : target,
+      position: mode === 'stack' || mode === 'pull-requests' ? position : 0,
+      pullRequest: mode === 'pull-requests' ? pullRequest : null,
+    });
   }
 
   if (!repos.length) throw new HttpError(400, 'Add at least one repository.');
@@ -147,10 +178,10 @@ function parseInput(user: UserRow, body: unknown, resolveConnection?: Connection
   }
 
   const branchRegex = mode === 'pattern' ? requireString(record.branchRegex, 'branchRegex', 500) : '';
-  // Per-repo sets target each repository separately, so the set-level target
-  // is optional there; pattern and stack sets need one.
+  // Per-repository and pull-request sets target each repository separately, so
+  // the set-level target is optional there; pattern and stack sets need one.
   const targetBranch =
-    mode === 'per-repo'
+    mode === 'per-repo' || mode === 'pull-requests'
       ? (typeof record.targetBranch === 'string' ? record.targetBranch.trim().slice(0, 255) : '')
       : requireString(record.targetBranch, 'targetBranch', 255);
   return { name, repos, mode, branchRegex, targetBranch };
@@ -161,8 +192,16 @@ function saveRepos(reviewSetId: number, repos: ReviewSetInput['repos']): void {
     db.run('DELETE FROM review_set_repos WHERE review_set_id = ?', [reviewSetId]);
     for (const repo of repos) {
       db.run(
-        'INSERT INTO review_set_repos (review_set_id, connection_id, repo, position, branch, target_branch) VALUES (?, ?, ?, ?, ?, ?)',
-        [reviewSetId, repo.connectionId, repo.repo, repo.position ?? 0, repo.branch ?? null, repo.target ?? null],
+        'INSERT INTO review_set_repos (review_set_id, connection_id, repo, position, branch, target_branch, pull_request_ref) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [
+          reviewSetId,
+          repo.connectionId,
+          repo.repo,
+          repo.position ?? 0,
+          repo.branch ?? null,
+          repo.target ?? null,
+          repo.pullRequest ?? null,
+        ],
       );
     }
   });
@@ -402,6 +441,59 @@ export async function createReviewSet(ctx: Ctx): Promise<Response> {
   saveRepos(id, input.repos);
   // The review itself is built by the review page's stream, so saving stays
   // quick and the page can show what is loading repository by repository.
+  void ensureWebhooksForReviewSet(id);
+  return json({ detail: { reviewSet: toReviewSet(reviewSetRow(id)!), owned: true } }, 201);
+}
+
+export async function createReviewSetFromPullRequests(ctx: Ctx): Promise<Response> {
+  const user = ctx.user!;
+  const body = (await readJson(ctx.req)) as { name?: unknown; urls?: unknown };
+  const connections = connectionsFor(user.id);
+  let links;
+  try {
+    links = parsePullRequestLinks(body.urls, connections);
+  } catch (error) {
+    throw new HttpError(400, forgeErrorMessage(error));
+  }
+  if (links.length === 0) throw new HttpError(400, 'Paste at least one pull request URL.');
+  if (links.length > 50) throw new HttpError(400, 'A review set can include at most 50 pull requests.');
+
+  const repos: ReviewSetInput['repos'] = [];
+  for (const [position, link] of links.entries()) {
+    const client = clientFor(link.connection);
+    if (!client.pullRequestState) {
+      throw new HttpError(400, `${link.connection.kind} pull requests cannot be imported yet.`);
+    }
+    try {
+      const state = await client.pullRequestState(link.repo, link.ref);
+      if (!state || !state.head || !state.base) {
+        throw new HttpError(400, `Pull request ${link.repo}#${link.ref} was not found.`);
+      }
+      repos.push({
+        connectionId: link.connection.id,
+        repo: link.repo,
+        branch: state.head,
+        target: state.base,
+        position,
+        pullRequest: link.ref,
+      });
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(400, `Could not read ${link.repo}#${link.ref}: ${forgeErrorMessage(error)}.`);
+    }
+  }
+
+  const requestedName = typeof body.name === 'string' ? body.name.trim().slice(0, 200) : '';
+  const name =
+    requestedName ||
+    (links.length === 1 ? `${links[0].repo} #${links[0].ref}` : `Pull request review (${links.length})`);
+  const targetBranch = repos.every((repo) => repo.target === repos[0].target) ? (repos[0].target ?? '') : '';
+  const inserted = db.run(
+    "INSERT INTO review_sets (owner_id, name, mode, branch_regex, target_branch) VALUES (?, ?, 'pull-requests', '', ?)",
+    [user.id, name, targetBranch],
+  );
+  const id = Number(inserted.lastInsertRowid);
+  saveRepos(id, repos);
   void ensureWebhooksForReviewSet(id);
   return json({ detail: { reviewSet: toReviewSet(reviewSetRow(id)!), owned: true } }, 201);
 }

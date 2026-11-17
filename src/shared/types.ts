@@ -106,7 +106,7 @@ export interface LoadProgress {
   finished: boolean;
 }
 
-export type ReviewSetMode = 'pattern' | 'per-repo' | 'stack';
+export type ReviewSetMode = 'pattern' | 'per-repo' | 'stack' | 'pull-requests';
 
 export interface ReviewSetRepo {
   connectionId: number;
@@ -120,6 +120,8 @@ export interface ReviewSetRepo {
   target: string | null;
   /** The layer of a stack; 0 for pattern and per-repo review sets. */
   position: number;
+  /** The forge pull request this entry reviews, for pull-request review sets. */
+  pullRequest?: string | null;
 }
 
 export interface ReviewSet {
@@ -136,7 +138,14 @@ export interface ReviewSet {
 
 export interface ReviewSetInput {
   name: string;
-  repos: { connectionId: number; repo: string; branch?: string | null; target?: string | null; position?: number }[];
+  repos: {
+    connectionId: number;
+    repo: string;
+    branch?: string | null;
+    target?: string | null;
+    position?: number;
+    pullRequest?: string | null;
+  }[];
   mode: ReviewSetMode;
   branchRegex: string;
   targetBranch: string;

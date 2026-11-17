@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { BranchName, Button, Checkbox, Dialog, Flash, Heading, Label, Spinner, useConfirm } from '@primer/react';
 import { CheckCircleFillIcon, ClockIcon, GitMergeIcon, GitPullRequestIcon, InfoIcon, XCircleFillIcon } from '@primer/octicons-react';
 import { nothingToMerge } from '../../shared/types';
-import type { ForgeKind, MergePreviewRepo, MergeResult, NothingToMerge, RepoStatus, ReviewSetRepo } from '../../shared/types';
+import type { ForgeKind, MergePreviewRepo, MergeResult, NothingToMerge, RepoStatus, ReviewSetMode, ReviewSetRepo } from '../../shared/types';
 import { post } from '../lib/api';
 import { checkTone } from '../lib/checks';
 import { streamJson } from '../lib/ndjson';
@@ -16,7 +16,7 @@ import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 type ConflictTone = 'success' | 'danger' | 'attention' | 'secondary';
 
 type MergeEvent =
-  | { target: string; repos: ReviewSetRepo[] }
+  | { target: string; repos: ReviewSetRepo[]; mode: ReviewSetMode }
   | { status: RepoStatus }
   | { checking: number }
   | { repo: MergePreviewRepo }
@@ -213,6 +213,7 @@ export function MergePage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [target, setTarget] = useState('');
+  const [mode, setMode] = useState<ReviewSetMode>('pattern');
   const [cards, setCards] = useState<RepoCardInfo[]>([]);
   const [statusLoaded, setStatusLoaded] = useState(0);
   const [mergesLoaded, setMergesLoaded] = useState(0);
@@ -247,6 +248,7 @@ export function MergePage() {
     const handle = (event: MergeEvent) => {
       if ('target' in event) {
         setTarget(event.target);
+        setMode(event.mode);
         setCards(
           event.repos.map((repo) => ({
             connectionId: repo.connectionId,
@@ -351,7 +353,7 @@ export function MergePage() {
   const checksState = failing > 0 ? 'failure' : pending > 0 ? 'pending' : runs.length > 0 ? 'success' : 'none';
   const conflictCount = previews.filter((repo) => repo.conflicts === 'detected').length;
   const blockedCount = previews.filter((repo) => repo.canComplete === 'no').length;
-  const stacked = previews.some((repo) => repo.position > 0);
+  const stacked = mode === 'stack' && previews.some((repo) => repo.position > 0);
   const stackCount = new Set(previews.map((repo) => `${repo.connectionId}:${repo.repo}`)).size;
   const checksLabel =
     checksState === 'failure'

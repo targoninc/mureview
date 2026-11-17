@@ -116,6 +116,7 @@ const SCHEMA_V2 = `
     connection_id INTEGER NOT NULL REFERENCES forge_connections(id) ON DELETE CASCADE,
     repo TEXT NOT NULL,
     position INTEGER NOT NULL DEFAULT 0,
+    pull_request_ref TEXT,
     PRIMARY KEY (review_set_id, connection_id, repo, position)
   );
 
@@ -674,7 +675,13 @@ if (connectionColumns.length && !connectionColumns.some((column) => column.name 
 if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'installation_id')) {
   db.exec('ALTER TABLE forge_connections ADD COLUMN installation_id TEXT');
 }
-db.exec('PRAGMA user_version = 17;');
+const reviewSetRepoColumns = hasTable('review_set_repos')
+  ? db.query<{ name: string }, []>('PRAGMA table_info(review_set_repos)').all()
+  : [];
+if (reviewSetRepoColumns.length && !reviewSetRepoColumns.some((column) => column.name === 'pull_request_ref')) {
+  db.exec('ALTER TABLE review_set_repos ADD COLUMN pull_request_ref TEXT');
+}
+db.exec('PRAGMA user_version = 18;');
 
 export function getSetting(key: string): string | null {
   const row = db.query<{ value: string }, [string]>('SELECT value FROM settings WHERE key = ?').get(key);

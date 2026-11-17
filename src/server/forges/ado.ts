@@ -842,9 +842,17 @@ export class AdoClient implements ForgeClient {
     });
   }
 
-  async pullRequestState(repo: string, ref: string): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string } | null> {
+  async pullRequestState(
+    repo: string,
+    ref: string,
+  ): Promise<{ state: 'open' | 'closed' | 'merged'; head: string; base: string; headSha?: string } | null> {
     try {
-      const pull = await this.request<{ status?: string; sourceRefName?: string; targetRefName?: string }>(
+      const pull = await this.request<{
+        status?: string;
+        sourceRefName?: string;
+        targetRefName?: string;
+        lastMergeSourceCommit?: { commitId?: string };
+      }>(
         `${this.repoUrl(repo)}/pullRequests/${ref}?api-version=7.1`,
       );
       const strip = (name?: string) => (name ?? '').replace(/^refs\/heads\//, '');
@@ -852,6 +860,7 @@ export class AdoClient implements ForgeClient {
         state: pull.status === 'completed' ? 'merged' : pull.status === 'abandoned' ? 'closed' : 'open',
         head: strip(pull.sourceRefName),
         base: strip(pull.targetRefName),
+        headSha: pull.lastMergeSourceCommit?.commitId,
       };
     } catch (error) {
       if (error instanceof ForgeError && error.status === 404) return null;

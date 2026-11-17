@@ -79,7 +79,12 @@ async function checkRepo(
   return { ...base, conflicts, conflictFiles, checkedFiles: toCheck.length, uncheckedFiles: unchecked };
 }
 
-async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, target: string): Promise<MergePreviewRepo> {
+async function previewRepo(
+  client: ForgeClient | undefined,
+  repo: RepoStatus,
+  target: string,
+  stacked: boolean,
+): Promise<MergePreviewRepo> {
   const base: MergePreviewRepo = {
     connectionId: repo.connectionId,
     kind: repo.kind,
@@ -115,6 +120,7 @@ async function previewRepo(client: ForgeClient | undefined, repo: RepoStatus, ta
     if (!repo.targetExists) return base; // the target branch is created from the source, no conflicts possible
     const pull = base.pullRequest;
     if (
+      !stacked &&
       repo.position === 0 &&
       pull?.state !== 'closed' &&
       pull?.state !== 'merged' &&
@@ -172,7 +178,12 @@ export async function buildMergePreview(
   const open = status.repos.filter((repo) => repo.state === 'open' && repo.branch && nothingToMerge(repo) === null);
   options.onStart?.(open.length);
   const repos = await mapLimit(open, 3, async (repo): Promise<MergePreviewRepo> => {
-    const card = await previewRepo(clients.get(repo.connectionId), repo, repo.target || reviewSet.targetBranch);
+    const card = await previewRepo(
+      clients.get(repo.connectionId),
+      repo,
+      repo.target || reviewSet.targetBranch,
+      reviewSet.mode === 'stack',
+    );
     options.onRepo?.(card);
     return card;
   });

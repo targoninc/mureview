@@ -40,7 +40,7 @@ export async function streamMergePreview(ctx: Ctx): Promise<Response> {
         }
       };
       try {
-        send({ target: access.reviewSet.targetBranch, repos: access.reviewSet.repos });
+        send({ target: access.reviewSet.targetBranch, repos: access.reviewSet.repos, mode: access.reviewSet.mode });
         const preview = await buildMergePreview(connections, access.reviewSet, {
           progressUserId: user.id,
           viewerId: user.id,
@@ -114,7 +114,7 @@ export async function mergeReviewSet(ctx: Ctx): Promise<Response> {
     if (client.readOnly) return { connectionId: first.connectionId, label, ok: false, message: 'mureview cannot merge on this forge yet', mergedPrs: 0 };
 
     const ordered = [...layers].sort((a, b) => a.position - b.position);
-    const stacked = ordered.length > 1 || first.position > 0;
+    const stacked = reviewSet.mode === 'stack' && (ordered.length > 1 || first.position > 0);
     const messages: string[] = [];
     let failed = false;
     let mergedPrs = 0;

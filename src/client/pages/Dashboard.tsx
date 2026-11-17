@@ -18,7 +18,15 @@ function ReviewSetItem({ reviewSet }: { reviewSet: ReviewSet }) {
     .map((repo) => `${repoLabel(repo)}: ${repo.branch} → ${repo.target ?? reviewSet.targetBranch}`)
     .join('\n');
   const summary =
-    reviewSet.mode === 'pattern' ? (
+    reviewSet.mode === 'pull-requests' ? (
+      <>
+        <Label variant="secondary">pull requests</Label>
+        <span className="row" title={branchPairs}>
+          <GitBranchIcon size={14} />
+          {reviewSet.repos.length} {reviewSet.repos.length === 1 ? 'pull request' : 'pull requests'} → their targets
+        </span>
+      </>
+    ) : reviewSet.mode === 'pattern' ? (
       <>
         <Label variant="secondary">/{reviewSet.branchRegex}/</Label>
         <span className="row">

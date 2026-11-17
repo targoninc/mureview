@@ -119,6 +119,7 @@ export function PrHeader({
   const state = stateVariant(pr.state);
   const openRepos = pr.repos.filter((repo) => repo.state === 'open');
   const openPullRequests = pr.repos.filter((repo) => repo.pullRequest).length;
+  const pullRequests = reviewSet.mode === 'pull-requests';
   const loadingRepos = progress !== null && progress.total > 0 && progress.loaded < progress.total;
   const showDiffRow = pr.state === 'loading' || pr.stats.files > 0;
   const collapseToggle = (
@@ -133,8 +134,17 @@ export function PrHeader({
     />
   );
   const stackCount = new Set(openRepos.map((repo) => `${repo.connectionId}:${repo.repo}`)).size;
-  const repoNoun =
-    reviewSet.mode === 'stack' ? (openRepos.length === 1 ? 'layer' : 'layers') : openRepos.length === 1 ? 'branch' : 'branches';
+  const repoNoun = pullRequests
+    ? openRepos.length === 1
+      ? 'pull request'
+      : 'pull requests'
+    : reviewSet.mode === 'stack'
+      ? openRepos.length === 1
+        ? 'layer'
+        : 'layers'
+      : openRepos.length === 1
+        ? 'branch'
+        : 'branches';
   const targetLabel = <BranchName>{reviewSet.targetBranch}</BranchName>;
 
   return (
@@ -168,7 +178,7 @@ export function PrHeader({
                     <>
                       {openRepos.length} {repoNoun}
                       {reviewSet.mode === 'stack' ? ` · ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'}` : ''} →{' '}
-                      {reviewSet.mode === 'per-repo' ? 'their targets' : targetLabel} · {reviewedCount}/{pr.stats.files} viewed
+                      {reviewSet.mode === 'per-repo' || pullRequests ? 'their targets' : targetLabel} · {reviewedCount}/{pr.stats.files} viewed
                     </>
                   ) : (
                     <>
@@ -180,20 +190,22 @@ export function PrHeader({
                       ) : (
                         <>
                           Merging {openRepos.length} {repoNoun}{' '}
-                          {reviewSet.mode === 'per-repo' ? 'into their target branches' : <>into {targetLabel}</>}
+                          {reviewSet.mode === 'per-repo' || pullRequests ? 'into their target branches' : <>into {targetLabel}</>}
                         </>
                       )}{' '}
                       · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
                     </>
                   )
                 ) : pr.state === 'closed' ? (
-                  reviewSet.mode === 'per-repo' ? (
-                    "Every matched branch is merged into its own target branch"
+                  reviewSet.mode === 'per-repo' || pullRequests ? (
+                    "Every pull request is merged into its own target branch"
                   ) : (
                     <>Every matched branch is merged into {targetLabel}</>
                   )
                 ) : compact ? (
-                  reviewSet.mode === 'stack' ? (
+                  pullRequests ? (
+                    <>Reviewing {openRepos.length} {repoNoun}</>
+                  ) : reviewSet.mode === 'stack' ? (
                     <>Watching stacks → {targetLabel}</>
                   ) : reviewSet.mode === 'per-repo' ? (
                     "Watching every repository's branch"
@@ -202,7 +214,9 @@ export function PrHeader({
                   )
                 ) : (
                   <>
-                    {reviewSet.mode === 'stack' ? (
+                    {pullRequests ? (
+                      <>Reviewing existing pull requests against their targets</>
+                    ) : reviewSet.mode === 'stack' ? (
                       <>Watching the stacks of every repository, merging bottom-up into {targetLabel}</>
                     ) : reviewSet.mode === 'per-repo' ? (
                       'Watching the selected branch of every repository'

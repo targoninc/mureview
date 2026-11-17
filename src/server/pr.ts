@@ -11,7 +11,14 @@ import { addedFilePatch, countLines } from './patch';
 import { beginRun, finishRun, setPhase } from './progress';
 import { attachKnownPullRequests, createRepoPullRequest, ensureRepoPullRequests, reviewSetPullRequest } from './pullRequests';
 import { listReviewed, listReviewedBy, resetMarksForNewCommits } from './reviewed';
-import { compilePatterns, forgeErrorMessage, inspectRepos, multiMatchError } from './validate';
+import {
+  compilePatterns,
+  emptyRepoStatus,
+  forgeErrorMessage,
+  inspectRepos,
+  multiMatchError,
+  type LocatedRepo,
+} from './validate';
 
 const zeroStats = () => ({ repos: 0, files: 0, additions: 0, deletions: 0 });
 
@@ -117,6 +124,7 @@ async function inspectBranch(
   fresh: boolean,
   includeCommits: boolean,
   includeFiles: boolean,
+  stacked: boolean,
   knownPull: string | null = null,
   onPhase?: (phase: 'diffing' | 'done' | 'error') => void,
   targetSha?: string | null,
@@ -193,7 +201,7 @@ async function inspectBranch(
     // A layer of a stack is supposed to build on the branch below it; when the
     // forge reports a different merge base, the stack is out of order.
     const diverged =
-      status.position > 0 && comparison.mergeBase && comparison.mergeBase !== targetRef.sha
+      stacked && status.position > 0 && comparison.mergeBase && comparison.mergeBase !== targetRef.sha
         ? `This layer's branch does not build on ${target}; they split at ${comparison.mergeBase.slice(0, 7)}.`
         : undefined;
     onPhase?.('done');
@@ -219,6 +227,77 @@ async function inspectBranch(
     onPhase?.('error');
     return { ...status, error: `Could not build the diff for ${repoLabel(status)} (${forgeErrorMessage(error)}).`, state: 'error' };
   }
+}
+
+async function inspectPullRequests(
+  clients: Map<number, ForgeClient>,
+  repos: ReviewSet['repos'],
+  fresh: boolean,
+  onPhase?: (repo: ReviewSet['repos'][number], phase: 'checking' | 'done' | 'error') => void,
+): Promise<LocatedRepo[]> {
+  return mapLimit(repos, 4, async (repo): Promise<LocatedRepo> => {
+    const client = clients.get(repo.connectionId);
+    if (!client) {
+      onPhase?.(repo, 'error');
+      return {
+        status: emptyRepoStatus(repo, `The connection for ${repo.host} was removed.`),
+        sha: null,
+      };
+    }
+    if (!repo.pullRequest) {
+      onPhase?.(repo, 'error');
+      return { status: emptyRepoStatus(repo, 'This entry has no pull request.'), sha: null };
+    }
+    onPhase?.(repo, 'checking');
+    try {
+      const state = await client.pullRequestState?.(repo.repo, repo.pullRequest);
+      if (!state || !state.head || !state.base) {
+        onPhase?.(repo, 'error');
+        return {
+          status: emptyRepoStatus(repo, `Pull request ${repo.repo}#${repo.pullRequest} was not found.`),
+          sha: null,
+        };
+      }
+      const head = state.headSha
+        ? { name: state.head, sha: state.headSha }
+        : await client.getBranch(repo.repo, state.head, { fresh });
+      if (!head) {
+        onPhase?.(repo, 'error');
+        return {
+          status: emptyRepoStatus(repo, `The branch ${state.head} of pull request ${repo.repo}#${repo.pullRequest} no longer exists.`),
+          sha: null,
+        };
+      }
+      onPhase?.(repo, 'done');
+      return {
+        status: {
+          ...emptyRepoStatus(repo, undefined, state.base),
+          accessible: true,
+          matches: [state.head],
+          branch: state.head,
+          target: state.base,
+          targetExists: true,
+          pullRequest: {
+            ref: repo.pullRequest,
+            url: client.pullRequestUrl(repo.repo, repo.pullRequest),
+            state: state.state,
+            head: state.head,
+            base: state.base,
+          },
+        },
+        sha: head.sha,
+      };
+    } catch (error) {
+      onPhase?.(repo, 'error');
+      return {
+        status: emptyRepoStatus(
+          repo,
+          `Could not read pull request ${repo.repo}#${repo.pullRequest} (${forgeErrorMessage(error)}).`,
+        ),
+        sha: null,
+      };
+    }
+  });
 }
 
 interface PrLifecycleResult {
@@ -282,7 +361,10 @@ export async function buildPrStatus(
   const clients = options.clients ?? clientsFor(connections);
   const perRepo = reviewSet.mode === 'per-repo';
   const stacked = reviewSet.mode === 'stack';
-  const compiled = perRepo || stacked ? { patterns: [] as RegExp[], error: null } : compilePatterns(reviewSet.branchRegex);
+  const pullRequests = reviewSet.mode === 'pull-requests';
+  const compiled =
+    perRepo || stacked || pullRequests ? { patterns: [] as RegExp[], error: null } : compilePatterns(reviewSet.branchRegex);
+  const ensurePullsForSet = ensurePulls && !pullRequests;
   if (compiled.error) errors.push(compiled.error);
 
   const layerLabel = (repo: ReviewSet['repos'][number]) =>
@@ -301,12 +383,16 @@ export async function buildPrStatus(
   };
 
   try {
-    const located = await inspectRepos(
-      clients,
-      reviewSet.repos,
-      { patterns: compiled.patterns, perRepo, stack: stacked, defaultTarget: reviewSet.targetBranch, fresh },
-      (repo, value) => phase(repo.connectionId, repo.repo, repo.position, value),
-    );
+    const located = pullRequests
+      ? await inspectPullRequests(clients, reviewSet.repos, fresh, (repo, value) =>
+          phase(repo.connectionId, repo.repo, repo.position, value),
+        )
+      : await inspectRepos(
+          clients,
+          reviewSet.repos,
+          { patterns: compiled.patterns, perRepo, stack: stacked, defaultTarget: reviewSet.targetBranch, fresh },
+          (repo, value) => phase(repo.connectionId, repo.repo, repo.position, value),
+        );
     const repos = await mapLimit(located, 4, async ({ status, sha, targetSha }) => {
       const client = clients.get(status.connectionId);
       if (!status.branch || !sha || !client) {
@@ -321,6 +407,7 @@ export async function buildPrStatus(
         fresh,
         includeCommits,
         includeFiles,
+        stacked,
         knownPull,
         (value) => phase(status.connectionId, status.repo, status.position, value),
         targetSha,
@@ -357,8 +444,19 @@ export async function buildPrStatus(
 
     const empty = { comments: [], reviewed: [], reviewedBy: [], prId: null, stats: zeroStats() };
     if (hasOpen && lifecycle) {
-      if (lifecycle.prId && ensurePulls) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
+      if (lifecycle.prId && ensurePullsForSet) await ensureRepoPullRequests(clients, reviewSet, repos, lifecycle.prId);
       else attachKnownPullRequests(clients, repos, lifecycle.prId);
+      if (pullRequests && lifecycle.prId) {
+        for (const repo of repos) {
+          if (!repo.pullRequest || !repo.branch) continue;
+          db.run(
+            `INSERT INTO pull_request_repos (pr_id, connection_id, repo, position, forge_pr_ref, head_sha) VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(pr_id, connection_id, repo, position)
+             DO UPDATE SET forge_pr_ref = excluded.forge_pr_ref, head_sha = excluded.head_sha`,
+            [lifecycle.prId, repo.connectionId, repo.repo, repo.position, repo.pullRequest.ref, repo.headSha ?? ''],
+          );
+        }
+      }
       await mapLimit(repos, 4, async (repo) => {
         const client = clients.get(repo.connectionId);
         if (!repo.pullRequest || !client) return;
@@ -376,7 +474,7 @@ export async function buildPrStatus(
             };
           }
           if (
-            ensurePulls &&
+            ensurePullsForSet &&
             lifecycle.prId &&
             client.pullRequestState &&
             !client.readOnly &&
