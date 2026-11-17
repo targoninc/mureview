@@ -22,6 +22,7 @@ import { checkTone } from '../../lib/checks';
 import { orderByTree } from '../../lib/fileTree';
 import { fileItemId, fileSegments, forgeAvatarUrl, parseItemId, repoItemKey, repoStatusText } from '../../lib/format';
 import { repoLabel } from '../../../shared/types';
+import { repairHunkCounts } from '../../../shared/patch';
 import { DEFAULT_DIFF_FONT_SIZE, diffLineHeight } from '../../../shared/fonts';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
 import { marksKey, writeCachedMarks } from '../../lib/markCache';
@@ -103,7 +104,7 @@ function parseFiles(pr: PrStatus, view: 'layers' | 'combined'): ParsedFile[] {
       let text = Boolean(file.patch);
       let fileDiff = null;
       try {
-        fileDiff = processFile(file.patch ?? placeholderPatch(file), { cacheKey: id });
+        fileDiff = processFile(repairHunkCounts(file.patch ?? placeholderPatch(file)), { cacheKey: id });
       } catch {
         fileDiff = null;
       }
