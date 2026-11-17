@@ -7,7 +7,7 @@ import { MONO_FONTS, SYSTEM_MONO_FONT, monoFontFamily, monoFontOption, type Mono
 
 const SAMPLE_PATCH = `--- a/src/server/totals.ts
 +++ b/src/server/totals.ts
-@@ -1,8 +1,10 @@
+@@ -1,7 +1,11 @@
  import { Item } from './types';
  
  export function total(items: Item[]): number {
