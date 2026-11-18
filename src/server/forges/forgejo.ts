@@ -4,7 +4,7 @@ import { pullNumber } from './github';
 // The database and crypto are imported lazily so importing this module (tests,
 // type checks) never opens the database.
 import type { ForgeConnectionRow } from '../db';
-import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from '../patch';
+import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats, withPatchHeader } from '../patch';
 import {
   type BranchInfo,
   type CheckInfo,
@@ -55,6 +55,7 @@ interface GiteaCompareFile {
   status: string;
   additions: number;
   deletions: number;
+  patch?: string;
 }
 
 interface GiteaCompare {
@@ -104,6 +105,12 @@ interface GiteaTree {
   truncated: boolean;
 }
 
+interface GiteaContent {
+  content?: string;
+  encoding?: string;
+  size?: number;
+}
+
 interface GiteaPull {
   number: number;
   head: { ref: string };
@@ -111,7 +118,7 @@ interface GiteaPull {
   body?: string | null;
 }
 
-const maxFileBytes = 200_000;
+const maxFileBytes = 2_000_000;
 const maxFiles = 300;
 
 export interface ForgejoAuth {
@@ -332,8 +339,21 @@ export class ForgejoClient implements ForgeClient {
   private async blobAt(repo: string, ref: string, path: string): Promise<string | null> {
     const listing = await this.listBlobs(repo, ref);
     const blob = listing.blobs.find((entry) => entry.path === path);
-    if (!blob || blob.size > maxFileBytes) return null;
-    return this.getBlobText(repo, blob.sha);
+    if (blob) {
+      if (blob.size > maxFileBytes) return null;
+      return this.getBlobText(repo, blob.sha);
+    }
+    try {
+      const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+      const file = await this.request<GiteaContent>(
+        `/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+      );
+      if ((file.encoding && file.encoding !== 'base64') || !file.content) return null;
+      if ((file.size ?? 0) > maxFileBytes) return null;
+      return decodeText(Buffer.from(file.content, 'base64'));
+    } catch {
+      return null;
+    }
   }
 
   private async buildFile(repo: string, baseSha: string, headSha: string, file: GiteaCompareFile): Promise<CompareFile> {
@@ -349,6 +369,13 @@ export class ForgejoClient implements ForgeClient {
       patch: null as string | null,
     };
     const withPatch = (patch: string) => ({ ...base, patch, ...patchStats(patch) });
+    if (file.patch?.trim()) {
+      return withPatch(
+        file.patch.startsWith('diff --git')
+          ? file.patch
+          : withPatchHeader({ path, prevPath, type, patch: file.patch }),
+      );
+    }
 
     if (type === 'added') {
       const content = await this.blobAt(repo, headSha, path);
