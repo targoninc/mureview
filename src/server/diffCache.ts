@@ -4,7 +4,7 @@ import { db } from './db';
 import type { CompareFile, CompareResult, ForgeClient } from './forges';
 import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from './patch';
 
-const version = 4;
+const version = 5;
 const maxCachedCommits = 300;
 
 interface StoredComparison extends CompareResult {
