@@ -349,8 +349,8 @@ export function PrHeader({
                 <span className="skeleton skeleton-diff" role="status" aria-label="Calculating the total diff" />
               ) : (
                 <span className="pr-header-diff">
-                  <span className="additions">+{pr.stats.additions}</span>{' '}
-                  <span className="deletions">−{pr.stats.deletions}</span>
+                  <span className="additions">+{pr.stats.additions ?? 0}</span>{' '}
+                  <span className="deletions">−{pr.stats.deletions ?? 0}</span>
                 </span>
               )}
               <IconButton

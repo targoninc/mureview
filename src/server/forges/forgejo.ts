@@ -4,7 +4,7 @@ import { pullNumber } from './github';
 // The database and crypto are imported lazily so importing this module (tests,
 // type checks) never opens the database.
 import type { ForgeConnectionRow } from '../db';
-import { addedFilePatch, deletedFilePatch, modifiedFilePatch } from '../patch';
+import { addedFilePatch, deletedFilePatch, modifiedFilePatch, patchStats } from '../patch';
 import {
   type BranchInfo,
   type CheckInfo,
@@ -340,15 +340,23 @@ export class ForgejoClient implements ForgeClient {
     const type: FileStatus = statusMap[file.status] ?? 'modified';
     const path = file.filename;
     const prevPath = file.previous_filename;
-    const base = { path, prevPath, type, additions: file.additions, deletions: file.deletions, patch: null as string | null };
+    const base = {
+      path,
+      prevPath,
+      type,
+      additions: Number.isFinite(file.additions) ? file.additions : 0,
+      deletions: Number.isFinite(file.deletions) ? file.deletions : 0,
+      patch: null as string | null,
+    };
+    const withPatch = (patch: string) => ({ ...base, patch, ...patchStats(patch) });
 
     if (type === 'added') {
       const content = await this.blobAt(repo, headSha, path);
-      return content === null ? base : { ...base, patch: addedFilePatch(path, content) };
+      return content === null ? base : withPatch(addedFilePatch(path, content));
     }
     if (type === 'deleted') {
       const content = await this.blobAt(repo, baseSha, path);
-      return content === null ? base : { ...base, patch: deletedFilePatch(path, content) };
+      return content === null ? base : withPatch(deletedFilePatch(path, content));
     }
 
     const [oldContent, newContent] = await Promise.all([
@@ -356,7 +364,7 @@ export class ForgejoClient implements ForgeClient {
       this.blobAt(repo, headSha, path),
     ]);
     if (oldContent === null || newContent === null) return base;
-    return { ...base, patch: modifiedFilePatch({ path, prevPath, type }, oldContent, newContent) };
+    return withPatch(modifiedFilePatch({ path, prevPath, type }, oldContent, newContent));
   }
 
   compare(repo: string, baseSha: string, headSha: string): Promise<CompareResult> {

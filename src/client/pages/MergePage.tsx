@@ -91,8 +91,8 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             <span>
               {repo.files} {repo.files === 1 ? 'file' : 'files'}
             </span>
-            <span className="additions">+{repo.additions}</span>
-            <span className="deletions">−{repo.deletions}</span>
+            <span className="additions">+{repo.additions ?? 0}</span>
+            <span className="deletions">−{repo.deletions ?? 0}</span>
             {repo.aheadBy > 0 ? <span>{repo.aheadBy} commits ahead</span> : null}
             {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
             {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
