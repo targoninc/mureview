@@ -23,7 +23,7 @@ import { reviewPullRequestRoute } from './reviews';
 import { forgeWebhook, githubAppWebhook } from './webhooks';
 import { updatePreferences } from './preferences';
 import { mergeReviewSet, streamMergePreview } from './merge';
-import { listAvailableRepos, listRepoBranches } from './repoSearch';
+import { listAvailableRepos, listRepoBranches, streamAvailableRepos } from './repoSearch';
 import { setReviewedRoute } from './reviewed';
 import {
   createReviewSet,
@@ -76,6 +76,7 @@ api.post('/api/connections/ado', connectAdo);
 api.delete('/api/account/data', deleteAccountData);
 api.delete('/api/connections/:id', deleteConnection);
 api.get('/api/repos', (ctx: Ctx) => listAvailableRepos(requireUser(ctx), ctx.url.searchParams.get('fresh') === '1').then((result) => json(result)));
+api.get('/api/repos/stream', (ctx: Ctx) => { requireUser(ctx); return streamAvailableRepos(ctx); });
 api.get('/api/repos/branches', (ctx: Ctx) => {
   const user = requireUser(ctx);
   const connectionId = Number(ctx.url.searchParams.get('connectionId'));

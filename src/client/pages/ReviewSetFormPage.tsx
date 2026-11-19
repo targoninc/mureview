@@ -20,6 +20,7 @@ import type { AvailableRepo, RepoSource, ReviewSet, ReviewSetMode, ReviewSetRepo
 import { repoLabel } from '../../shared/types';
 import { ServiceIcon, serviceDetail } from '../components/ServiceIcon';
 import { del, post, put, api } from '../lib/api';
+import { streamJson } from '../lib/ndjson';
 import { useDetail } from '../lib/useDetail';
 
 interface FormState {
@@ -34,6 +35,23 @@ const emptyForm: FormState = { name: '', mode: 'pattern', selected: [], branchRe
 
 type BranchList = { state: 'loading' } | { state: 'error' } | { state: 'ready'; branches: string[] };
 
+type RepoStreamEvent =
+  | {
+      type: 'connections';
+      connections: { connectionId: number; kind: ReviewSetRepo['kind']; host: string; login: string; label: string }[];
+    }
+  | { type: 'loaded'; connectionId: number; sources: RepoSource[]; repos: AvailableRepo[]; error: { connectionId: number; message: string } | null }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
+
+interface PendingSource {
+  connectionId: number;
+  kind: ReviewSetRepo['kind'];
+  host: string;
+  login: string;
+  label: string;
+}
+
 export function ReviewSetFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -47,6 +65,7 @@ export function ReviewSetFormPage() {
   const [available, setAvailable] = useState<AvailableRepo[] | null>(null);
   const [sources, setSources] = useState<RepoSource[]>([]);
   const [repoErrors, setRepoErrors] = useState<{ connectionId: number; message: string }[]>([]);
+  const [pendingSources, setPendingSources] = useState<PendingSource[]>([]);
   const [search, setSearch] = useState('');
   const [hiddenSources, setHiddenSources] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
@@ -85,13 +104,33 @@ export function ReviewSetFormPage() {
   }, [form.mode, form.selected, sources, detail]);
 
   useEffect(() => {
-    api<{ repos: AvailableRepo[]; sources: RepoSource[]; errors: { connectionId: number; message: string }[] }>('/repos')
-      .then((result) => {
-        setAvailable(result.repos);
-        setSources(result.sources);
-        setRepoErrors(result.errors);
-      })
-      .catch((err: Error) => setRepoErrors([{ connectionId: 0, message: err.message }]));
+    const controller = new AbortController();
+    setAvailable(null);
+    setSources([]);
+    setRepoErrors([]);
+    setPendingSources([]);
+    const handle = (event: RepoStreamEvent) => {
+      if (event.type === 'connections') {
+        setPendingSources(event.connections);
+        if (event.connections.length === 0) setAvailable([]);
+      } else if (event.type === 'loaded') {
+        setPendingSources((current) => current.filter((source) => source.connectionId !== event.connectionId));
+        setAvailable((current) => [...(current ?? []), ...event.repos]);
+        setSources((current) => [...current, ...event.sources]);
+        if (event.error) setRepoErrors((current) => [...current, event.error!]);
+      } else if (event.type === 'error') {
+        setPendingSources([]);
+        setAvailable((current) => current ?? []);
+        setRepoErrors([{ connectionId: 0, message: event.message }]);
+      }
+    };
+    streamJson<RepoStreamEvent>('/repos/stream', handle, controller.signal).catch((err: Error) => {
+      if (err.name === 'AbortError') return;
+      setPendingSources([]);
+      setAvailable((current) => current ?? []);
+      setRepoErrors((current) => [...current, { connectionId: 0, message: err.message }]);
+    });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -432,6 +471,13 @@ export function ReviewSetFormPage() {
             >
               <div className="stack sources-menu" style={{ padding: 12, gap: 8 }}>
                 <strong style={{ fontSize: 12 }}>Sources</strong>
+                {pendingSources.map((source) => (
+                  <span key={`pending:${source.connectionId}`} className="row" style={{ gap: 8, fontSize: 12 }}>
+                    <Spinner size="small" aria-label={`Loading ${source.label}`} />
+                    <ServiceIcon kind={source.kind} detail={serviceDetail(source.kind, source)} />
+                    <span className="source-label">{source.label}</span>
+                  </span>
+                ))}
                 {sources.map((source) => (
                   <label key={source.id} className="row" style={{ gap: 8, cursor: 'pointer', fontSize: 12 }}>
                     <Checkbox checked={!hiddenSources.has(source.id)} onChange={() => toggleSource(source.id)} />
@@ -439,10 +485,18 @@ export function ReviewSetFormPage() {
                     <span className="source-label">{source.label}</span>
                   </label>
                 ))}
-                {sources.length === 0 ? <span style={{ fontSize: 12 }}>No forges connected.</span> : null}
+                {sources.length === 0 && pendingSources.length === 0 ? (
+                  <span style={{ fontSize: 12 }}>No forges connected.</span>
+                ) : null}
               </div>
             </AnchoredOverlay>
           </div>
+          {pendingSources.length > 0 ? (
+            <div className="row" style={{ gap: 6, marginTop: 8, color: 'var(--fgColor-muted)', fontSize: 12 }}>
+              <Spinner size="small" aria-label="Loading forge repositories" />
+              Loading {pendingSources.map((source) => source.label).join(', ')}…
+            </div>
+          ) : null}
           <div className="row" style={{ gap: 8, marginTop: 8 }}>
             <Button
               size="small"
@@ -509,7 +563,7 @@ export function ReviewSetFormPage() {
               </div>
             </>
           ) : null}
-          {available !== null && results.length === 0 ? (
+          {available !== null && results.length === 0 && pendingSources.length === 0 ? (
             <FormControl.Caption>
               {search ? `No repositories match "${search}".` : 'No repositories available. Connect a forge under Settings.'}
             </FormControl.Caption>

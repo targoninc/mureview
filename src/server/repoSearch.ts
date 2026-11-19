@@ -4,6 +4,7 @@ import { Cache, cached, mapLimit } from './cache';
 import { clientFor, hostOf, organizationOf } from './forges';
 import { connectionsFor } from './auth/identities';
 import { HttpError } from './http';
+import type { Ctx } from './router';
 import { forgeErrorMessage } from './validate';
 
 /**
@@ -73,29 +74,113 @@ async function loadConnectionRepos(connection: ForgeConnectionRow): Promise<Conn
   return { sources, repos };
 }
 
+async function loadConnection(
+  connection: ForgeConnectionRow,
+  fresh: boolean,
+): Promise<{ loaded: ConnectionRepos; error: { connectionId: number; message: string } | null }> {
+  const key = `connection:${connection.id}`;
+  const label = forgeSourceLabel(connection);
+  try {
+    const loaded = fresh
+      ? await withTimeout(loadConnectionRepos(connection))
+      : await withTimeout(cached(repoCache, key, () => loadConnectionRepos(connection)));
+    return { loaded, error: null };
+  } catch (error) {
+    // Serving the last successful list keeps the picker usable while the
+    // forge is unreachable, rate limited or the token needs attention.
+    const stale = repoCache.getStale(key, staleTtlMs);
+    const detail = forgeErrorMessage(error);
+    const message = `${label}: ${detail}${stale ? ' — showing the last successful repository list' : ''}`;
+    return { loaded: stale ?? baseRepos(connection), error: { connectionId: connection.id, message } };
+  }
+}
+
+const connectionTimeoutMs = 15_000;
+
+function withTimeout<T>(task: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('the forge request timed out')), connectionTimeoutMs);
+    task.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export async function listAvailableRepos(user: UserRow, fresh = false): Promise<RepoSearchResponse> {
   const connections = connectionsFor(user.id);
-  const results = await mapLimit(connections, 4, async (connection) => {
-    const key = `connection:${connection.id}`;
-    const label = forgeSourceLabel(connection);
-    try {
-      const loaded = fresh ? await loadConnectionRepos(connection) : await cached(repoCache, key, () => loadConnectionRepos(connection));
-      return { loaded, error: null as null | { connectionId: number; message: string } };
-    } catch (error) {
-      // Serving the last successful list keeps the picker usable while the
-      // forge is unreachable, rate limited or the token needs attention.
-      const stale = repoCache.getStale(key, staleTtlMs);
-      const detail = forgeErrorMessage(error);
-      const message = `${label}: ${detail}${stale ? ' — showing the last successful repository list' : ''}`;
-      return { loaded: stale ?? baseRepos(connection), error: { connectionId: connection.id, message } };
-    }
-  });
-
+  const results = await mapLimit(connections, 4, (connection) => loadConnection(connection, fresh));
   return {
     repos: results.flatMap((result) => result.loaded.repos),
     sources: results.flatMap((result) => result.loaded.sources),
     errors: results.flatMap((result) => (result.error ? [result.error] : [])),
   };
+}
+
+interface RepoStreamEvent {
+  type: 'connections' | 'loaded' | 'done' | 'error';
+  connections?: { connectionId: number; kind: ForgeConnectionRow['kind']; host: string; login: string; label: string }[];
+  connectionId?: number;
+  sources?: RepoSource[];
+  repos?: AvailableRepo[];
+  error?: { connectionId: number; message: string } | null;
+  message?: string;
+}
+
+export async function streamAvailableRepos(ctx: Ctx): Promise<Response> {
+  const user = ctx.user!;
+  const connections = connectionsFor(user.id);
+  const fresh = ctx.url.searchParams.get('fresh') === '1';
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: RepoStreamEvent) => {
+        try {
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        } catch {
+          // The client went away.
+        }
+      };
+      try {
+        send({
+          type: 'connections',
+          connections: connections.map((connection) => ({
+            connectionId: connection.id,
+            kind: connection.kind,
+            host: hostOf(connection.base_url),
+            login: connection.login,
+            label: forgeSourceLabel(connection),
+          })),
+        });
+        await Promise.all(
+          connections.map(async (connection) => {
+            const result = await loadConnection(connection, fresh);
+            send({
+              type: 'loaded',
+              connectionId: connection.id,
+              sources: result.loaded.sources,
+              repos: result.loaded.repos,
+              error: result.error,
+            });
+          }),
+        );
+        send({ type: 'done' });
+      } catch (error) {
+        send({ type: 'error', message: forgeErrorMessage(error) });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
 }
 
 /** The branch names of one repository, for the per-repo branch pickers. */
