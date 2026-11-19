@@ -104,10 +104,7 @@ export function KeybindSettings({
           </div>
         );
       })}
-      <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px' }}>
-        <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-          Mod is Ctrl on Windows/Linux and ⌘ on macOS.
-        </span>
+      <div className="row" style={{ justifyContent: 'flex-end', alignItems: 'center', padding: '12px 16px' }}>
         <div className="row" style={{ gap: 8 }}>
           {saving ? <Spinner size="small" aria-label="Saving shortcuts" /> : null}
           <Button size="small" disabled={saving || !custom} onClick={() => {
