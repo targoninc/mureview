@@ -1133,7 +1133,8 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       {pullsOpen ? (
         <Dialog
           title="Pull requests"
-          width="large"
+          width="fit-content"
+          style={{ maxWidth: '90vw' }}
           onClose={() => setPullsOpen(false)}
           footerButtons={[{ content: 'Close', onClick: () => setPullsOpen(false), buttonType: 'default' }]}
         >
