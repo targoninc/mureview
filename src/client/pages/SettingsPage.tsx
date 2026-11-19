@@ -606,7 +606,7 @@ export function SettingsPage() {
               Keybinds
             </Heading>
             <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
-              Click a shortcut and press the new combination. Mod means Ctrl on Windows/Linux and ⌘ on macOS.
+              Mod means Ctrl on Windows/Linux and ⌘ on macOS.
             </span>
             <KeybindSettings
               keybinds={me.user?.keybinds ?? {}}
