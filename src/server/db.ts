@@ -19,6 +19,7 @@ export interface UserRow {
   diff_font_size: number;
   auto_mark_viewed: number;
   hide_viewed_files: number;
+  keybinds: string;
   created_at: string;
 }
 
@@ -55,6 +56,7 @@ const SCHEMA_V2 = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL DEFAULT '',
     avatar_url TEXT NOT NULL DEFAULT '',
+    keybinds TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -667,6 +669,9 @@ if (userColumns.length && !userColumns.some((column) => column.name === 'auto_ma
 }
 if (userColumns.length && !userColumns.some((column) => column.name === 'hide_viewed_files')) {
   db.exec('ALTER TABLE users ADD COLUMN hide_viewed_files INTEGER NOT NULL DEFAULT 0');
+}
+if (userColumns.length && !userColumns.some((column) => column.name === 'keybinds')) {
+  db.exec("ALTER TABLE users ADD COLUMN keybinds TEXT NOT NULL DEFAULT '{}'");
 }
 const connectionColumns = hasTable('forge_connections') ? db.query<{ name: string }, []>('PRAGMA table_info(forge_connections)').all() : [];
 if (connectionColumns.length && !connectionColumns.some((column) => column.name === 'webhook_secret')) {

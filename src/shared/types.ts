@@ -26,6 +26,8 @@ export interface User {
   autoMarkViewed: boolean;
   /** Hide viewed files from the file tree. */
   hideViewedFiles: boolean;
+  /** Custom keyboard shortcut overrides, keyed by action id. */
+  keybinds: Record<string, string>;
 }
 
 export interface IdentityInfo {

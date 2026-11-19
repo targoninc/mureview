@@ -24,6 +24,7 @@ import { fileItemId, fileSegments, forgeAvatarUrl, parseItemId, repoItemKey, rep
 import { repoLabel } from '../../../shared/types';
 import { repairHunkCounts } from '../../../shared/patch';
 import { DEFAULT_DIFF_FONT_SIZE, diffLineHeight } from '../../../shared/fonts';
+import { keybindFor, keybindLabel, matchesKeybind } from '../../../shared/keybinds';
 import { useLiveReviewSet, type LiveEvent } from '../../lib/live';
 import { marksKey, writeCachedMarks } from '../../lib/markCache';
 import { useAutoViewed } from '../../lib/useAutoViewed';
@@ -782,13 +783,11 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
   const pullRequests = pr.repos.filter((repo) => repo.pullRequest);
   const reposWithoutPulls = pr.repos.filter((repo) => !repo.pullRequest && repo.position >= 0);
 
-  // Ctrl+Shift+Arrow (Cmd+Shift+Arrow on macOS) moves between files while
-  // the single file view is open.
+  const previousCombo = keybindFor(user?.keybinds, 'previous-file');
+  const nextCombo = keybindFor(user?.keybinds, 'next-file');
   useEffect(() => {
     if (fileMode !== 'single') return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return;
-      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
       // Only text entry swallows the shortcut; checkboxes and buttons keep it.
       const target = event.target;
       if (
@@ -800,14 +799,18 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
       ) {
         return;
       }
-      const entry = event.key === 'ArrowUp' ? previousEntry : nextEntry;
+      const entry = matchesKeybind(event, previousCombo)
+        ? previousEntry
+        : matchesKeybind(event, nextCombo)
+          ? nextEntry
+          : undefined;
       if (!entry) return;
       event.preventDefault();
       setFocusedId(entry.id);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [fileMode, previousEntry, nextEntry]);
+  }, [fileMode, previousEntry, nextEntry, previousCombo, nextCombo]);
 
   const fileNavButton = (entry: (typeof ordered)[number] | undefined, direction: 'previous' | 'next') => (
     <button
@@ -819,7 +822,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
     >
       {direction === 'previous' ? <ChevronUpIcon size={16} /> : <ChevronDownIcon size={16} />}
       <span className="single-file-nav-label">{direction === 'previous' ? 'Previous file' : 'Next file'}</span>
-      <span className="single-file-nav-hint">{direction === 'previous' ? 'Ctrl+Shift+↑' : 'Ctrl+Shift+↓'}</span>
+      <span className="single-file-nav-hint">{keybindLabel(direction === 'previous' ? previousCombo : nextCombo)}</span>
       {entry ? <span className="single-file-nav-path">{entry.path}</span> : null}
       <span className="single-file-nav-count">
         {activeIndex + 1} / {ordered.length}

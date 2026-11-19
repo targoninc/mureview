@@ -6,6 +6,18 @@ import { type UserRow, db } from '../db';
 import { HttpError, clearCookie, parseCookies, setCookie } from '../http';
 import type { Ctx } from '../router';
 
+function keybindOverrides(value: string): Record<string, string> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[0] === 'string' && typeof entry[1] === 'string'),
+    );
+  } catch {
+    return {};
+  }
+}
+
 export function publicUser(row: UserRow): User {
   return {
     id: row.id,
@@ -15,6 +27,7 @@ export function publicUser(row: UserRow): User {
     diffFontSize: row.diff_font_size,
     autoMarkViewed: row.auto_mark_viewed === 1,
     hideViewedFiles: row.hide_viewed_files === 1,
+    keybinds: keybindOverrides(row.keybinds),
   };
 }
 

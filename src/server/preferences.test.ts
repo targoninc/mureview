@@ -64,3 +64,19 @@ describe('updatePreferences', () => {
     expect(publicUser(userRow(id)).diffFontSize).toBe(18);
   });
 });
+
+test('keybind overrides save, read back, and reject invalid or duplicate shortcuts', async () => {
+  const id = addUser('pref-keybinds');
+  await updatePreferences(userCtx(id, { keybinds: { 'previous-file': 'Ctrl+Alt+P' } }));
+  expect(publicUser(userRow(id)).keybinds).toEqual({ 'previous-file': 'Ctrl+Alt+P' });
+
+  await expect(updatePreferences(userCtx(id, { keybinds: { 'previous-file': 'not a shortcut' } }))).rejects.toThrow(
+    'valid keyboard combination',
+  );
+  await expect(
+    updatePreferences(userCtx(id, { keybinds: { 'next-file': 'Mod+Shift+ArrowUp' } })),
+  ).rejects.toThrow('assigned to more than one action');
+
+  await updatePreferences(userCtx(id, { keybinds: {} }));
+  expect(publicUser(userRow(id)).keybinds).toEqual({});
+});

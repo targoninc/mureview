@@ -13,6 +13,7 @@ import type { Comment, RepoStatus } from '../../../shared/types';
 import { del, post } from '../../lib/api';
 import { useAppContext } from '../../lib/appContext';
 import { forgeCommentLink, timeAgo } from '../../lib/format';
+import { keybindFor, matchesKeybind } from '../../../shared/keybinds';
 import { serviceNames } from '../ServiceIcon';
 import { CommentBody } from './CommentBody';
 import type { Side } from './annotations';
@@ -223,6 +224,8 @@ export function CommentComposer({
   onCancel?: () => void;
   onDone: (comment: Comment) => void;
 }) {
+  const { user } = useAppContext();
+  const submitCombo = keybindFor(user?.keybinds, 'submit-comment');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -252,7 +255,7 @@ export function CommentComposer({
         autoFocus={autoFocus}
         onChange={(event) => setBody(event.target.value)}
         onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submit();
+          if (matchesKeybind(event, submitCombo)) submit();
         }}
       />
       {error ? <Flash variant="danger">{error}</Flash> : null}

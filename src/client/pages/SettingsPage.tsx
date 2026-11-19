@@ -1,6 +1,17 @@
 import { Fragment, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Avatar, Button, Flash, Heading, Select, Spinner, ToggleSwitch, useConfirm } from '@primer/react';
-import { ShieldIcon, TrashIcon } from '@primer/octicons-react';
+import { Avatar, Button, Flash, Heading, Select, Spinner, TextInput, ToggleSwitch, useConfirm } from '@primer/react';
+import {
+  EyeIcon,
+  GearIcon,
+  HubotIcon,
+  PaintbrushIcon,
+  PersonIcon,
+  PlugIcon,
+  SearchIcon,
+  ShieldIcon,
+  TrashIcon,
+  type Icon,
+} from '@primer/octicons-react';
 import type { AuthProvider, ForgeKind, MeResponse, User } from '../../shared/types';
 import { useAppContext } from '../lib/appContext';
 import { DEFAULT_DIFF_FONT_SIZE, DEFAULT_MONO_FONT, DIFF_FONT_SIZES, monoFontFamily, monoFontOption, type MonoFontOption } from '../../shared/fonts';
@@ -10,6 +21,8 @@ import { connectionAvatarUrl } from '../lib/format';
 import { AdoForm, ForgejoForm, TangledForm, providerVisual } from '../components/Login';
 import { ServiceGlyph, ServiceIcon, serviceDetail, serviceNames } from '../components/ServiceIcon';
 import { McpSettings } from '../components/McpSettings';
+import { KeybindSettings } from '../components/KeybindSettings';
+import { DEFAULT_KEYBINDS, KEYBINDS, isValidKeybindCombo, keybindFor } from '../../shared/keybinds';
 
 
 const authProviderNames: Record<AuthProvider, string> = {
@@ -36,6 +49,23 @@ interface ConnectOption {
   icon: ReactNode;
 }
 
+interface SettingsSection {
+  id: string;
+  label: string;
+  keywords: string;
+  icon: Icon;
+}
+
+const settingsSections: SettingsSection[] = [
+  { id: 'account', label: 'Account', keywords: 'sign in identity login provider', icon: PersonIcon },
+  { id: 'connections', label: 'Connections', keywords: 'forge github gitlab forgejo azure devops tangled repository', icon: PlugIcon },
+  { id: 'appearance', label: 'Appearance', keywords: 'font diff size text monospace', icon: PaintbrushIcon },
+  { id: 'reviewing', label: 'Reviewing', keywords: 'viewed files marks automatically hide', icon: EyeIcon },
+  { id: 'keybinds', label: 'Keybinds', keywords: 'shortcuts keyboard combinations hotkeys', icon: GearIcon },
+  { id: 'agent', label: 'Agent access', keywords: 'mcp keys agents tokens', icon: HubotIcon },
+  { id: 'danger', label: 'Danger zone', keywords: 'delete remove account data', icon: TrashIcon },
+];
+
 export function SettingsPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +75,10 @@ export function SettingsPage() {
   const [savingToggle, setSavingToggle] = useState<string | null>(null);
   const [savingDiffSize, setSavingDiffSize] = useState(false);
   const [fontPickerOpen, setFontPickerOpen] = useState(false);
+  const [keybindError, setKeybindError] = useState<string | null>(null);
+  const [savingKeybind, setSavingKeybind] = useState(false);
+  const [sectionQuery, setSectionQuery] = useState('');
+  const [activeSection, setActiveSection] = useState('account');
   const confirm = useConfirm();
   const { updateUser } = useAppContext();
 
@@ -62,6 +96,75 @@ export function SettingsPage() {
   }, []);
 
   useEffect(load, [load]);
+
+  const saveKeybinds = async (next: Record<string, string>) => {
+    const previous = me?.user?.keybinds ?? {};
+    const used = new Map<string, string>();
+    for (const keybind of KEYBINDS) {
+      const combo = keybindFor(next, keybind.id);
+      if (used.has(combo)) {
+        setKeybindError(`${combo} is already used by ${used.get(combo)}.`);
+        return;
+      }
+      used.set(combo, keybind.label);
+    }
+    setSavingKeybind(true);
+    setKeybindError(null);
+    applyUser({ keybinds: next });
+    try {
+      await put('/me/preferences', { keybinds: next });
+      setNotice('Keyboard shortcuts saved.');
+    } catch (err) {
+      applyUser({ keybinds: previous });
+      setKeybindError((err as Error).message);
+    } finally {
+      setSavingKeybind(false);
+    }
+  };
+
+  const changeKeybind = (id: string, combo: string) => {
+    if (!isValidKeybindCombo(combo)) {
+      setKeybindError(`"${combo}" is not a valid shortcut.`);
+      return;
+    }
+    const next = { ...(me?.user?.keybinds ?? {}) };
+    if (combo === DEFAULT_KEYBINDS[id as keyof typeof DEFAULT_KEYBINDS]) delete next[id];
+    else next[id] = combo;
+    void saveKeybinds(next);
+  };
+
+  const resetKeybind = (id: string) => {
+    const next = { ...(me?.user?.keybinds ?? {}) };
+    delete next[id];
+    void saveKeybinds(next);
+  };
+
+  useEffect(() => {
+    const scroll = document.querySelector<HTMLElement>('.page-scroll');
+    const update = () => {
+      let next = settingsSections[0].id;
+      const top = scroll?.getBoundingClientRect().top ?? 0;
+      for (const section of settingsSections) {
+        const element = document.getElementById(`settings-${section.id}`);
+        if (element && element.getBoundingClientRect().top - top <= 96) next = section.id;
+      }
+      setActiveSection(next);
+    };
+    scroll?.addEventListener('scroll', update, { passive: true });
+    update();
+    return () => scroll?.removeEventListener('scroll', update);
+  }, []);
+
+  const filteredSections = settingsSections.filter((section) => {
+    const query = sectionQuery.trim().toLowerCase();
+    return !query || `${section.label} ${section.keywords}`.toLowerCase().includes(query);
+  });
+
+  const goToSection = (id: string) => {
+    setActiveSection(id);
+    document.getElementById(`settings-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -187,17 +290,48 @@ export function SettingsPage() {
 
   return (
     <div className="page-scroll">
-      <div className="page-inner" style={{ maxWidth: 720 }}>
-        <Heading as="h1" variant="medium">
-          Account
-        </Heading>
-        {error ? <Flash variant="danger">{error}</Flash> : null}
-        {notice ? <Flash variant="success">{notice}</Flash> : null}
+      <div className="settings-layout">
+        <aside className="settings-nav">
+          <TextInput
+            block
+            leadingVisual={SearchIcon}
+            aria-label="Search settings"
+            placeholder="Search settings"
+            value={sectionQuery}
+            onChange={(event) => setSectionQuery(event.target.value)}
+          />
+          <nav className="settings-nav-list" aria-label="Settings sections">
+            {filteredSections.map((section) => {
+              const Icon = section.icon;
+              return (
+                <button
+                  type="button"
+                  key={section.id}
+                  className="settings-nav-item"
+                  aria-current={activeSection === section.id ? 'page' : undefined}
+                  onClick={() => goToSection(section.id)}
+                >
+                  <Icon size={16} />
+                  <span>{section.label}</span>
+                </button>
+              );
+            })}
+            {filteredSections.length === 0 ? <span className="settings-nav-empty">No matching sections.</span> : null}
+          </nav>
+        </aside>
 
-        <div className="stack">
-          <Heading as="h2" variant="small">
-            Sign-in methods
+        <div className="settings-content">
+          <Heading as="h1" variant="medium">
+            Settings
           </Heading>
+          {error ? <Flash variant="danger">{error}</Flash> : null}
+          {notice ? <Flash variant="success">{notice}</Flash> : null}
+
+          <section id="settings-account" className="settings-section">
+            <div className="stack">
+              <Heading as="h2" variant="small">
+                Sign-in methods
+              </Heading>
           <div className="repo-list">
             {me.identities.map((identity) => {
               const label = authProviderNames[identity.provider];
@@ -213,8 +347,10 @@ export function SettingsPage() {
               );
             })}
           </div>
-        </div>
+            </div>
+          </section>
 
+          <section id="settings-connections" className="settings-section">
         <div className="stack">
           <Heading as="h2" variant="small">
             Forge connections
@@ -380,8 +516,10 @@ export function SettingsPage() {
               </Fragment>
             ))}
           </div>
-        </div>
+            </div>
+          </section>
 
+          <section id="settings-appearance" className="settings-section">
         <div className="stack">
           <Heading as="h2" variant="small">
             Diffs
@@ -417,8 +555,10 @@ export function SettingsPage() {
               </Select>
             </div>
           </div>
-        </div>
+            </div>
+          </section>
 
+          <section id="settings-reviewing" className="settings-section">
         <div className="stack">
           <Heading as="h2" variant="small">
             Reviewing
@@ -458,10 +598,31 @@ export function SettingsPage() {
               />
             </div>
           </div>
-        </div>
+            </div>
+          </section>
 
+          <section id="settings-keybinds" className="settings-section">
+            <Heading as="h2" variant="small">
+              Keybinds
+            </Heading>
+            <span style={{ fontSize: 12, color: 'var(--fgColor-muted)' }}>
+              Click a shortcut and press the new combination. Mod means Ctrl on Windows/Linux and ⌘ on macOS.
+            </span>
+            <KeybindSettings
+              keybinds={me.user?.keybinds ?? {}}
+              saving={savingKeybind}
+              error={keybindError}
+              onChange={changeKeybind}
+              onReset={resetKeybind}
+              onResetAll={() => void saveKeybinds({})}
+            />
+          </section>
+
+          <section id="settings-agent" className="settings-section">
         <McpSettings />
+          </section>
 
+          <section id="settings-danger" className="settings-section">
         <div className="stack">
           <Heading as="h2" variant="small">
             Danger zone
@@ -478,6 +639,8 @@ export function SettingsPage() {
               Delete data
             </Button>
           </div>
+        </div>
+          </section>
         </div>
       </div>
 
