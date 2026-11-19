@@ -290,13 +290,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--borderColor-muted);
-}
-
-.pr-checks-group:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+  padding: 12px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background-color: var(--bgColor-muted);
 }
 
 .check-dot {

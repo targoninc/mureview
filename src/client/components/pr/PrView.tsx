@@ -1138,8 +1138,7 @@ export function PrView({ detail, onReload, progress }: PrViewProps) {
           footerButtons={[{ content: 'Close', onClick: () => setPullsOpen(false), buttonType: 'default' }]}
         >
           <div className="stack" style={{ gap: 20 }}>
-            <div className="stack" style={{ gap: 0 }}>
-              <strong style={{ fontSize: 12 }}>Pull requests</strong>
+            <div className="stack" style={{ gap: 12 }}>
               {voteError ? <Flash variant="danger">{voteError}</Flash> : null}
               {pullRequests.length === 0 ? (
                 <span style={{ color: 'var(--fgColor-muted)', fontSize: 12 }}>No pull requests yet.</span>
