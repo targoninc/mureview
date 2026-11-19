@@ -175,25 +175,36 @@ export function PrHeader({
                   </span>
                 ) : openRepos.length > 0 ? (
                   compact ? (
-                    <>
-                      {openRepos.length} {repoNoun}
-                      {reviewSet.mode === 'stack' ? ` · ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'}` : ''} →{' '}
-                      {reviewSet.mode === 'per-repo' || pullRequests ? 'their targets' : targetLabel} · {reviewedCount}/{pr.stats.files} viewed
-                    </>
+                    pullRequests ? (
+                      <>
+                        {reviewedCount}/{pr.stats.files} viewed
+                      </>
+                    ) : (
+                      <>
+                        {openRepos.length} {repoNoun}
+                        {reviewSet.mode === 'stack' ? ` · ${stackCount} ${stackCount === 1 ? 'stack' : 'stacks'}` : ''} →{' '}
+                        {reviewSet.mode === 'per-repo' ? 'their targets' : targetLabel} · {reviewedCount}/{pr.stats.files} viewed
+                      </>
+                    )
                   ) : (
                     <>
-                      {reviewSet.mode === 'stack' ? (
+                      {!pullRequests ? (
                         <>
-                          {openRepos.length} {repoNoun} across {stackCount} {stackCount === 1 ? 'stack' : 'stacks'}, merging
-                          bottom-up into {targetLabel}
+                          {reviewSet.mode === 'stack' ? (
+                            <>
+                              {openRepos.length} {repoNoun} across {stackCount} {stackCount === 1 ? 'stack' : 'stacks'}, merging
+                              bottom-up into {targetLabel}
+                            </>
+                          ) : (
+                            <>
+                              Merging {openRepos.length} {repoNoun}{' '}
+                              {reviewSet.mode === 'per-repo' ? 'into their target branches' : <>into {targetLabel}</>}
+                            </>
+                          )}{' '}
+                          ·{' '}
                         </>
-                      ) : (
-                        <>
-                          Merging {openRepos.length} {repoNoun}{' '}
-                          {reviewSet.mode === 'per-repo' || pullRequests ? 'into their target branches' : <>into {targetLabel}</>}
-                        </>
-                      )}{' '}
-                      · {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
+                      ) : null}
+                      {pr.stats.files} files · {reviewedCount}/{pr.stats.files} viewed
                     </>
                   )
                 ) : pr.state === 'closed' ? (
