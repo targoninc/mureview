@@ -187,6 +187,27 @@ docker run -p 8081:8081 \
   mureview
 ```
 
+### Docker DNS and Tailscale
+
+If every forge request fails with `getaddrinfo EAI_AGAIN` after installing
+Tailscale, Docker inherited Tailscale's MagicDNS resolver
+(`100.100.100.100`), which is not reachable inside the container. Give Docker
+its own resolvers and recreate the container:
+
+```bash
+# Either add --dns 1.1.1.1 --dns 8.8.8.8 to docker run, or configure the daemon:
+sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
+{ "dns": ["1.1.1.1", "8.8.8.8"] }
+JSON
+sudo systemctl restart docker
+
+docker run --dns 1.1.1.1 --dns 8.8.8.8 ... mureview
+```
+
+Alternatively, leave Docker's DNS alone and stop Tailscale from rewriting the
+host resolver with `sudo tailscale set --accept-dns=false`, then restart the
+container. Verify with `docker exec <container> getent hosts api.github.com`.
+
 ## Layout
 
 ```
