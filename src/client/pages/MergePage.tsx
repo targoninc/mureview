@@ -38,7 +38,7 @@ function cardKey(entry: { connectionId: number; repo: string; position: number }
   return repoItemKey(entry);
 }
 
-function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone } {
+function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTone; iconOnly?: boolean } {
   if (repo.error) return { text: repo.error, tone: 'danger' };
   if (repo.conflicts === 'detected') {
     return {
@@ -51,7 +51,7 @@ function conflictBadge(repo: MergePreviewRepo): { text: string; tone: ConflictTo
   }
   if (repo.conflicts === 'unknown') return { text: 'conflicts could not be checked', tone: 'attention' };
   if (!repo.targetExists) return { text: `creates ${repo.target}`, tone: 'secondary' };
-  return { text: 'no conflicts', tone: 'success' };
+  return { text: 'no conflicts', tone: 'success', iconOnly: true };
 }
 
 type SkippedCounts = Record<NothingToMerge, number>;
@@ -99,7 +99,13 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
           </span>
           {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
           {repo.checks.state === 'failure' ? <Label variant="danger">checks failing</Label> : null}
-          <Label variant={badge.tone}>{badge.text}</Label>
+          {badge.iconOnly ? (
+            <span className="merge-ok-indicator" role="img" aria-label="no conflicts" title="no conflicts">
+              <CheckCircleFillIcon size={16} />
+            </span>
+          ) : (
+            <Label variant={badge.tone}>{badge.text}</Label>
+          )}
           {repo.pullRequest ? (
             <Button
               as="a"

@@ -2100,3 +2100,8 @@ a.comment-mention:hover {
     max-width: none;
   }
 }
+
+.merge-ok-indicator {
+  display: inline-flex;
+  color: var(--fgColor-success);
+}
