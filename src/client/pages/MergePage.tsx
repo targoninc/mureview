@@ -93,8 +93,14 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
             </span>
             <span className="additions">+{repo.additions ?? 0}</span>
             <span className="deletions">−{repo.deletions ?? 0}</span>
-            {repo.aheadBy > 0 ? <span>{repo.aheadBy} commits ahead</span> : null}
-            {repo.behindBy > 0 ? <span>{repo.behindBy} commits behind</span> : null}
+            {repo.aheadBy > 0 || repo.behindBy > 0 ? (
+              <span
+                title={`${repo.aheadBy} commits ahead, ${repo.behindBy} commits behind`}
+                aria-label={`${repo.aheadBy} commits ahead, ${repo.behindBy} commits behind`}
+              >
+                {repo.aheadBy} | {repo.behindBy}
+              </span>
+            ) : null}
             {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
           </span>
           {repo.canComplete === 'no' ? <Label variant="attention">no permission</Label> : null}
