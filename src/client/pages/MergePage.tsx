@@ -98,7 +98,7 @@ function RepoCard({ repo }: { repo: MergePreviewRepo }) {
                 title={`${repo.aheadBy} commits ahead, ${repo.behindBy} commits behind`}
                 aria-label={`${repo.aheadBy} commits ahead, ${repo.behindBy} commits behind`}
               >
-                {repo.aheadBy} | {repo.behindBy}
+                {repo.behindBy} | {repo.aheadBy}
               </span>
             ) : null}
             {repo.uncheckedFiles > 0 ? <span>{repo.uncheckedFiles} files not checked</span> : null}
